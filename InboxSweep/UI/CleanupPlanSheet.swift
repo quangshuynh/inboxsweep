@@ -40,7 +40,6 @@ struct CleanupPlanSheet: View {
         }
         .frame(minWidth: 620, idealWidth: 720, minHeight: 460, idealHeight: 580)
         .onAppear(perform: seedActions)
-        .accessibilityIdentifier("cleanupPlan.screen")
     }
 
     // MARK: - Plan
@@ -72,18 +71,25 @@ struct CleanupPlanSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // The screen's identifier sits on its title rather than on the containing stack:
+            // an identifier applied to a container is pushed down onto its descendants and
+            // erases theirs, which would take the disclaimer and the window notice with it.
             Text("Cleanup preview")
                 .font(.title3.weight(.semibold))
+                .accessibilityIdentifier("cleanupPlan.screen")
 
             Label {
+                // The identifier sits on the text itself: a `Label` is not its own
+                // accessibility element here, so an identifier on the label would not be
+                // findable — and this is the one sentence a test must be able to find.
                 Text(CleanupPlan.disclaimer)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("cleanupPlan.disclaimer")
             } icon: {
                 Image(systemName: "eye")
             }
             .font(.callout)
             .foregroundStyle(.secondary)
-            .accessibilityIdentifier("cleanupPlan.disclaimer")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -118,6 +124,7 @@ struct CleanupPlanSheet: View {
                     total(plan.totalProtectedMessageCount, "Held back as protected")
                     Spacer()
                 }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("cleanupPlan.totals")
 
                 Text(plan.window.explanation)
