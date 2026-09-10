@@ -9,8 +9,42 @@ struct FakeWebAuthenticator: WebAuthenticating {
 
     let respond: @Sendable (_ authorizationURL: URL, _ callbackScheme: String) throws -> URL
 
+    /// Whether the answer is delivered through the production callback bridge, on a queue that
+    /// is not the main queue — the way `ASWebAuthenticationSession` really answers.
+    ///
+    /// Off by default so most tests stay simple, and turned on by ``offTheMainQueue`` for the
+    /// tests that exist to cover the callback's isolation.
+    var deliversOffTheMainQueue = false
+
     func authenticate(url: URL, callbackScheme: String) async throws -> URL {
-        try respond(url, callbackScheme)
+        guard deliversOffTheMainQueue else { return try respond(url, callbackScheme) }
+
+        let callback = WebAuthenticationCallback()
+        let outcome: WebAuthenticationCallback.Outcome
+        do {
+            outcome = .success(try respond(url, callbackScheme))
+        } catch {
+            outcome = .failure(MailProviderError.wrapping(error))
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            guard callback.attach(continuation) else { return }
+            DispatchQueue.global(qos: .userInitiated).async {
+                callback.finish(outcome)
+            }
+        }
+    }
+
+    /// The same responses, but delivered from a background queue through the real bridge.
+    ///
+    /// This is the shape that used to crash the app: a completion handler that has inherited
+    /// `@MainActor` traps in libdispatch when AuthenticationServices calls it from its own
+    /// queue, so a fake that always answers inline on the caller's executor cannot catch the
+    /// regression.
+    var offTheMainQueue: FakeWebAuthenticator {
+        var copy = self
+        copy.deliversOffTheMainQueue = true
+        return copy
     }
 
     /// Redirects back with an authorization code, echoing the `state` the app sent — which is
