@@ -131,12 +131,18 @@ nonisolated enum CleanupProposalEngine {
             signals.insert(.recurringCadence)
         }
 
-        if Double(summary.unreadCount) / Double(count) >= rules.unreadShare {
-            signals.insert(.mostlyUnread)
-        }
+        // Both of the following are *absences*, and an absence observed over two or three
+        // messages is not an observation — every sender who has written to you once has no
+        // starred mail and nothing that looks like a reply. Below the same floor that gates a
+        // cleanup proposal, neither counts.
+        if count >= rules.minimumMessagesForCleanupProposal {
+            if Double(summary.unreadCount) / Double(count) >= rules.unreadShare {
+                signals.insert(.mostlyUnread)
+            }
 
-        if summary.starredCount == 0, summary.importantCount == 0, evidence.replyLikeSubjectCount == 0 {
-            signals.insert(.noEngagementMarkers)
+            if summary.starredCount == 0, summary.importantCount == 0, evidence.replyLikeSubjectCount == 0 {
+                signals.insert(.noEngagementMarkers)
+            }
         }
 
         if evidence.loadedWindowSpan >= rules.wideWindowSpan {
@@ -324,7 +330,7 @@ nonisolated enum CleanupProposalEngine {
         case .mostlyUnread:
             return ProposalReason(
                 .engagement,
-                "\(summary.unreadCount) of \(summary.messageCount) loaded messages are still unread"
+                "\(summary.unreadCount) of \(ProposalPhrasing.loadedMessages(summary.messageCount)) still unread"
             )
 
         case .noEngagementMarkers:

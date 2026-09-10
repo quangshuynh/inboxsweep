@@ -2,13 +2,20 @@ import SwiftUI
 
 /// The inspector shown for a selected sender.
 ///
-/// Exists because the aggregate row raises an obvious question — "which messages are these?"
-/// — and this screen answers it directly: the counts, the observations behind them, and the
-/// loaded messages themselves. Every line is something the mailbox already said. It offers no
-/// action, in keeping with the app being read-only.
+/// Answers the two questions an aggregate row raises: "what does InboxSweep make of this?" and
+/// "which messages are these?". The proposal and its full reasoning come first, then the
+/// counts and observations behind them, then the messages themselves. It offers no action, in
+/// keeping with the app being read-only.
 struct SenderDetailView: View {
 
     let summary: SenderSummary
+
+    /// The proposal for this sender, when one has been computed.
+    ///
+    /// Passed in rather than derived, for the same reason `messages` is: proposals belong to
+    /// the loaded window the session owns, and a view that computed its own could show
+    /// reasoning that disagreed with the dashboard row the user clicked.
+    let proposal: SenderCleanupProposal?
 
     /// The loaded messages from this sender, newest first.
     ///
@@ -20,6 +27,12 @@ struct SenderDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 identity
+
+                if let proposal {
+                    Divider()
+                    ProposalReasoningView(proposal: proposal)
+                }
+
                 Divider()
                 counts
                 Divider()
@@ -232,10 +245,13 @@ private struct MessageRow: View {
     let messages = SampleMailbox.messages()
         .filter { $0.sender.address == "newsletter@example.com" }
 
-    SenderDetailView(
-        summary: SenderAggregator.aggregate(messages)[0],
+    let summary = SenderAggregator.aggregate(messages)[0]
+
+    return SenderDetailView(
+        summary: summary,
+        proposal: CleanupProposalEngine.evaluate(SenderEvidenceBuilder.build(summary: summary, messages: messages)),
         messages: messages.sorted { $0.receivedAt > $1.receivedAt }
     )
-    .frame(width: 340, height: 620)
+    .frame(width: 360, height: 760)
 }
 #endif

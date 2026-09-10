@@ -187,6 +187,37 @@ final class InboxSessionModel {
             .sorted { $0.receivedAt == $1.receivedAt ? $0.id.rawValue < $1.id.rawValue : $0.receivedAt > $1.receivedAt }
     }
 
+    // MARK: - Cleanup previews
+
+    /// The proposal for a sender in the loaded window, if one has been computed.
+    func proposal(forSenderKey key: SenderSummary.ID) -> SenderCleanupProposal? {
+        state.snapshot?.proposal(for: key)
+    }
+
+    /// Previews what `requests` would reach, without contacting the provider.
+    ///
+    /// Synchronous and local on purpose. Every message this reads is already in memory, so
+    /// there is no request to make, nothing to await, and no code path from here to Gmail —
+    /// which is the property `SafetyBoundaryTests` pins down.
+    func cleanupPlan(for requests: [CleanupPlanRequest]) -> CleanupPlan {
+        guard case .loaded(let snapshot) = state else {
+            return .empty(window: CleanupPlanWindow(loadedMessageCount: 0, hasMoreBeyondWindow: false, scope: fetchRequest.scope))
+        }
+
+        var messagesBySender: [SenderSummary.ID: [MailMessage]] = [:]
+        for message in messages {
+            messagesBySender[message.sender.groupingKey, default: []].append(message)
+        }
+
+        return CleanupPlanner.plan(
+            requests: requests,
+            messagesBySender: messagesBySender,
+            proposals: snapshot.proposals,
+            window: snapshot.planWindow(scope: fetchRequest.scope),
+            referenceDate: now()
+        )
+    }
+
     // MARK: - Internals
 
     /// Serializes operations: starting a new one cancels whatever was running.
@@ -215,6 +246,10 @@ final class InboxSessionModel {
             ? SenderAggregator.sort(cached.senders, by: sortOrder)
             : await aggregate(cached.messages)
 
+        // Proposals are never stored, only recomputed. That is what makes a rules change take
+        // effect on the next launch instead of leaving last week's verdicts on screen.
+        let proposals = await makeProposals(senders: senders, messages: messages)
+
         state = .loaded(
             InboxSnapshot(
                 account: account,
@@ -223,6 +258,7 @@ final class InboxSessionModel {
                 sortOrder: sortOrder,
                 hasMoreMessages: nextPageToken != nil,
                 isLoadingMore: false,
+                proposals: proposals,
                 cachedAt: cached.savedAt
             )
         )
@@ -252,6 +288,7 @@ final class InboxSessionModel {
     /// it grows with every page, so it is kept off the actor that draws the window.
     private func publishSnapshot(for account: MailAccount) async {
         let senders = await aggregate(messages)
+        let proposals = await makeProposals(senders: senders, messages: messages)
 
         guard !Task.isCancelled else { return }
 
@@ -263,6 +300,7 @@ final class InboxSessionModel {
                 sortOrder: sortOrder,
                 hasMoreMessages: nextPageToken != nil,
                 isLoadingMore: false,
+                proposals: proposals,
                 // Sticky: appending a page to a restored window does not make the pages
                 // underneath it fresh, and only a full reload clears this.
                 cachedAt: restoredFromCacheAt
@@ -284,6 +322,19 @@ final class InboxSessionModel {
         let sortOrder = sortOrder
         return await Task.detached(priority: .userInitiated) {
             SenderAggregator.aggregate(messages, sortedBy: sortOrder)
+        }.value
+    }
+
+    /// Evaluates every sender against the proposal rules, off the main actor.
+    ///
+    /// Kept off the actor that draws the window for the same reason aggregation is: it is
+    /// linear in the loaded window, and the window grows with every page.
+    private func makeProposals(
+        senders: [SenderSummary],
+        messages: [MailMessage]
+    ) async -> [SenderSummary.ID: SenderCleanupProposal] {
+        await Task.detached(priority: .userInitiated) {
+            CleanupProposalEngine.evaluate(summaries: senders, messages: messages)
         }.value
     }
 

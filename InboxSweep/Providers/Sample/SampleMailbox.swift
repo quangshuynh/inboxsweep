@@ -15,6 +15,10 @@ nonisolated enum SampleMailbox {
 
     /// Builds a mailbox whose shape resembles a real one: a few high-volume automated senders,
     /// a long tail of quiet ones, and one message with an unparseable `From` header.
+    ///
+    /// The senders are chosen so that every proposal kind and several protection signals turn
+    /// up during development, rather than only against a real mailbox where they cannot be
+    /// inspected or screenshotted.
     static func messages(relativeTo now: Date = Date()) -> [MailMessage] {
         var messages: [MailMessage] = []
         var sequence = 0
@@ -91,6 +95,25 @@ nonisolated enum SampleMailbox {
             hoursApart: 9,
             unreadEvery: 3,
             importantEvery: 4,
+            labels: [.inbox, .categoryUpdates]
+        )
+
+        add(
+            from: "\"Frontend Weekly\" <list@example.org>",
+            subjects: (1...12).map { "Frontend Weekly #\($0 + 60)" },
+            hoursAgoStart: 6,
+            hoursApart: 24,
+            unreadEvery: 3,
+            labels: [.inbox, .categoryUpdates],
+            listUnsubscribe: true
+        )
+
+        add(
+            from: "notifications@example.net",
+            subjects: (1...12).map { "Backup #\(880 + $0) completed" },
+            hoursAgoStart: 4,
+            hoursApart: 26,
+            unreadEvery: 1,
             labels: [.inbox, .categoryUpdates]
         )
 
