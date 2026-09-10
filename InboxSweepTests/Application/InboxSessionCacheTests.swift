@@ -12,8 +12,10 @@ struct InboxSessionCacheTests {
 
     // MARK: - Fixtures
 
-    private static let epoch = Date(timeIntervalSince1970: 1_700_000_000)
-    private static let savedAt = epoch.addingTimeInterval(-7_200)
+    // `nonisolated` because the suite is `@MainActor` but these are read from the
+    // `@Sendable` clock closure handed to the session under test.
+    nonisolated private static let epoch = Date(timeIntervalSince1970: 1_700_000_000)
+    nonisolated private static let savedAt = epoch.addingTimeInterval(-7_200)
 
     private func message(_ id: String, from: String, hours: Double, unread: Bool = false) -> MailMessage {
         MailMessage(
