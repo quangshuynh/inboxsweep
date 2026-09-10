@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The privacy claims the app makes, in one place.
 ///
-/// Deliberately limited to things Interval 1 actually does. There is no claim about
+/// Deliberately limited to things this version actually does. There is no claim about
 /// encryption, anonymity, or auditing, because none of that is implemented — overstating it
 /// here would be the easiest way to mislead someone about their own mail.
 nonisolated enum PrivacyNotice {

@@ -29,8 +29,8 @@ nonisolated enum GmailAPIEndpoint {
 
     /// The headers worth asking for. Anything not listed here is never sent to the app.
     ///
-    /// `List-Unsubscribe` is recorded as an observation for later intervals; Interval 1 takes
-    /// no action on it.
+    /// `List-Unsubscribe` is recorded as an observation; the app takes no action on it and
+    /// never contacts an unsubscribe address.
     static let metadataHeaders = ["From", "Subject", "Date", "List-Unsubscribe"]
 
     /// The signed-in user's own address and mailbox totals.

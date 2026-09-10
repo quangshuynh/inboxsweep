@@ -149,7 +149,7 @@ struct SafetyBoundaryTests {
             recentSubjects: []
         )
 
-        // Interval 1 reports; it does not recommend, score, or classify.
+        // InboxSweep reports; it does not recommend, score, or classify.
         let propertyNames = Set(Mirror(reflecting: summary).children.compactMap(\.label))
         let judgementNames: Set<String> = ["score", "isUseless", "isNewsletter", "category", "recommendation", "cleanupScore"]
 
