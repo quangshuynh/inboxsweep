@@ -86,6 +86,42 @@ struct GmailProviderTests {
         #expect(transport.requestCount == 0, "An unconfigured app must not contact Google at all")
     }
 
+    @MainActor
+    @Test("A sign-in whose redirect arrives off the main queue lands in main-actor view state")
+    func connectsThroughABackgroundCallback() async throws {
+        // The full path the app takes: `InboxSessionModel` (main actor) → `GmailProvider`
+        // (an actor) → the web authenticator, whose redirect comes back from a background
+        // queue the way `ASWebAuthenticationSession`'s does.
+        let (provider, _) = makeProvider(
+            webAuthenticator: FakeWebAuthenticator.granting().offTheMainQueue
+        )
+        let model = InboxSessionModel(provider: provider)
+
+        await model.connect().value
+
+        MainActor.assertIsolated()
+        guard case .loaded(let snapshot) = model.state else {
+            Issue.record("Expected a loaded inbox, got \(model.state).")
+            return
+        }
+        #expect(snapshot.account.emailAddress.address == "sample.user@example.com")
+        #expect(await provider.currentConnection().isConnected)
+    }
+
+    @MainActor
+    @Test("A cancellation that arrives off the main queue returns to the signed-out screen")
+    func cancelsThroughABackgroundCallback() async {
+        let (provider, _) = makeProvider(
+            webAuthenticator: FakeWebAuthenticator.cancelling().offTheMainQueue
+        )
+        let model = InboxSessionModel(provider: provider)
+
+        await model.connect().value
+
+        // Backing out is a decision, not an error to apologise for.
+        #expect(model.state == .signedOut)
+    }
+
     // MARK: - Restoring
 
     @Test("A stored refresh token reconnects without any user interaction")

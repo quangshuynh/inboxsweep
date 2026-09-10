@@ -18,11 +18,15 @@ nonisolated struct WebAuthenticationSessionPresenter: WebAuthenticating {
     }
 }
 
-/// Bridges `ASWebAuthenticationSession`'s completion handler into `async`/`await`.
+/// Drives one `ASWebAuthenticationSession` and bridges its completion handler into `await`.
 ///
-/// Retains the session for the duration of the flow: `ASWebAuthenticationSession` cancels
-/// itself when deallocated, so holding it in a local variable would make sign-in fail
-/// intermittently.
+/// The split of isolation here is the whole point of this type. Creating, presenting and
+/// cancelling the session are main-actor work, because they are AppKit work: the session
+/// shows a window, and it asks this object for the window to show it over. The *callback* is
+/// not main-actor work, and must not be treated as if it were —
+/// ``WebAuthenticationCallback/sessionCompletionHandler()`` explains why. Everything the
+/// callback produces re-enters this class only after `run()` resumes, which is back on the
+/// main actor by construction.
 @MainActor
 private final class WebAuthenticationSessionRunner: NSObject, ASWebAuthenticationPresentationContextProviding {
     private let url: URL
@@ -35,65 +39,56 @@ private final class WebAuthenticationSessionRunner: NSObject, ASWebAuthenticatio
     }
 
     func run() async throws -> URL {
-        try await withTaskCancellationHandler {
+        let callback = WebAuthenticationCallback()
+
+        // Runs on the main actor whichever way `run()` exits — returned, thrown or cancelled —
+        // so the window is always dismissed and the session always released exactly once.
+        defer { tearDown() }
+
+        return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
+                // A task cancelled before it got here has already been answered. Presenting a
+                // sign-in window for it would put UI on screen that nothing is waiting for.
+                guard callback.attach(continuation) else { return }
+
                 let session = ASWebAuthenticationSession(
                     url: url,
-                    callbackURLScheme: callbackScheme
-                ) { callbackURL, error in
-                    if let callbackURL {
-                        continuation.resume(returning: callbackURL)
-                    } else {
-                        continuation.resume(throwing: Self.mapped(error))
-                    }
-                }
+                    callbackURLScheme: callbackScheme,
+                    completionHandler: callback.sessionCompletionHandler()
+                )
 
                 session.presentationContextProvider = self
                 // Do not reuse the browser's existing session: the user chooses an account
                 // explicitly, and this sign-in leaves nothing behind in Safari.
                 session.prefersEphemeralWebBrowserSession = true
+                // Held for the whole attempt: `ASWebAuthenticationSession` cancels itself when
+                // deallocated, and `presentationContextProvider` is a weak reference back here.
                 self.session = session
 
                 guard session.start() else {
-                    self.session = nil
-                    continuation.resume(
-                        throwing: MailProviderError.authenticationFailed(
-                            reason: "InboxSweep couldn't open the Google sign-in window."
-                        )
-                    )
+                    callback.finish(.failure(.authenticationFailed(
+                        reason: "InboxSweep couldn't open the Google sign-in window."
+                    )))
                     return
                 }
             }
-        } onCancel: { [self] in
-            Task { @MainActor in self.cancel() }
+        } onCancel: {
+            // Runs on whatever thread cancelled the task, and may run before the continuation
+            // was attached. Answering the callback is all that is needed: that resumes `run()`,
+            // which tears the session down on the main actor in its `defer`.
+            callback.finish(.failure(.cancelled))
         }
     }
 
-    private func cancel() {
+    private func tearDown() {
         session?.cancel()
         session = nil
     }
 
-    private static func mapped(_ error: Error?) -> Error {
-        guard let error = error as? ASWebAuthenticationSessionError else {
-            return MailProviderError.authenticationFailed(reason: "Sign-in didn't return a result.")
-        }
-
-        switch error.code {
-        case .canceledLogin:
-            return MailProviderError.cancelled
-        case .presentationContextNotProvided, .presentationContextInvalid:
-            return MailProviderError.authenticationFailed(
-                reason: "InboxSweep couldn't present the Google sign-in window."
-            )
-        default:
-            return MailProviderError.authenticationFailed(reason: "Sign-in didn't complete.")
-        }
-    }
-
-    nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated {
-            NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? ASPresentationAnchor()
-        }
+    /// `ASWebAuthenticationPresentationContextProviding` is declared `NS_SWIFT_UI_ACTOR`, so
+    /// this requirement is main-actor-isolated and satisfied by a main-actor method. That is
+    /// what makes reading AppKit's window list here correct rather than merely usual.
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? ASPresentationAnchor()
     }
 }

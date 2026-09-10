@@ -131,6 +131,56 @@ struct GmailOAuthClientTests {
         }
     }
 
+    // MARK: - Callbacks that arrive off the main queue
+    //
+    // `ASWebAuthenticationSession` calls its completion handler from its own XPC queue, not
+    // from the main actor. These run the whole authorize/exchange flow with the redirect
+    // delivered that way, which is the path that used to trap in libdispatch.
+
+    @MainActor
+    @Test("A redirect delivered from a background queue completes the whole sign-in")
+    func exchangesCodeDeliveredOffTheMainQueue() async throws {
+        let transport = tokenTransport(GmailFixtures.tokenJSON(expiresIn: 1_800))
+        let oauth = client(transport: transport, webAuthenticator: FakeWebAuthenticator.granting().offTheMainQueue)
+
+        let grant = try await oauth.authorize()
+
+        #expect(grant.accessToken.value == "access-token")
+        #expect(grant.refreshToken == "refresh-token")
+        // The `state` check still ran, so the redirect really did survive the hop intact.
+        let body = String(decoding: try #require(transport.requests.last?.httpBody), as: UTF8.self)
+        #expect(body.contains("code=auth-code"))
+        MainActor.assertIsolated()
+    }
+
+    @MainActor
+    @Test("Cancellation delivered from a background queue is still cancellation")
+    func propagatesCancellationFromOffTheMainQueue() async {
+        let oauth = client(transport: tokenTransport(GmailFixtures.tokenJSON()),
+                           webAuthenticator: FakeWebAuthenticator.cancelling().offTheMainQueue)
+
+        await #expect(throws: MailProviderError.cancelled) { _ = try await oauth.authorize() }
+    }
+
+    @MainActor
+    @Test("An OAuth error delivered from a background queue still explains what happened")
+    func propagatesDenialFromOffTheMainQueue() async throws {
+        let oauth = client(transport: tokenTransport(GmailFixtures.tokenJSON()),
+                           webAuthenticator: FakeWebAuthenticator.denying().offTheMainQueue)
+
+        let error = await #expect(throws: MailProviderError.self) { _ = try await oauth.authorize() }
+        #expect(try #require(error?.failureReason).contains("declined"))
+    }
+
+    @MainActor
+    @Test("A foreign `state` delivered from a background queue is still rejected")
+    func rejectsForeignStateFromOffTheMainQueue() async {
+        let oauth = client(transport: tokenTransport(GmailFixtures.tokenJSON()),
+                           webAuthenticator: FakeWebAuthenticator.replayingForeignState().offTheMainQueue)
+
+        await #expect(throws: MailProviderError.self) { _ = try await oauth.authorize() }
+    }
+
     // MARK: - Token exchange
 
     @Test("A successful exchange returns an access token, its expiry, and the refresh token")
