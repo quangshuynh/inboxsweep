@@ -69,12 +69,14 @@ nonisolated enum PlannedCleanupAction: Hashable, Sendable, Identifiable {
 
     /// The actions offered in the planner, in the order they are shown.
     ///
-    /// Archive leads, and Trash is the second-to-last option rather than the first, because
-    /// the ordering of a menu is itself a recommendation.
+    /// Archive leads and Trash sits second to last, because the order of a menu is itself a
+    /// recommendation. Both cutoffs are offered because the loaded window's depth decides
+    /// which one has anything to say: a 250-message inbox often reaches back only a few weeks,
+    /// and a 90-day cutoff over it correctly reports that it would touch nothing.
     static let offered: [PlannedCleanupAction] = [
-        .archiveMessagesOlderThan(days: 90),
-        .archiveMessagesOlderThan(days: 30),
         .keepNewest(count: 5),
+        .archiveMessagesOlderThan(days: 30),
+        .archiveMessagesOlderThan(days: 90),
         .trashMessagesOlderThan(days: 90),
         .reviewSubscription,
     ]
@@ -84,14 +86,19 @@ nonisolated extension CleanupProposalKind {
 
     /// The action a preview starts on for this kind of proposal.
     ///
-    /// Chosen to be the least drastic thing that fits: a mailing list starts on *review the
-    /// subscription*, and nothing starts on Trash. The user can pick something else; the
-    /// default should not be the app leaning on them.
+    /// A mailing list starts on *review the subscription*, because unsubscribing is the move
+    /// that actually helps with one; everything else starts on *keep the newest five*, and
+    /// nothing starts on Trash.
+    ///
+    /// Keep-newest rather than an age cutoff because a cutoff's answer depends on how deep the
+    /// loaded window happens to be — over a window reaching back three weeks, "older than 90
+    /// days" correctly reports that it would touch nothing, which is true and tells the user
+    /// nothing. Keep-newest is answerable from any window, and it is still an archive.
     var defaultPlannedAction: PlannedCleanupAction {
         switch self {
         case .likelyNewsletter: .reviewSubscription
-        case .likelyPromotionalClutter, .possibleCleanupCandidate: .archiveMessagesOlderThan(days: 90)
-        case .likelyRecurringNotification: .archiveMessagesOlderThan(days: 30)
+        case .likelyPromotionalClutter, .likelyRecurringNotification, .possibleCleanupCandidate:
+            .keepNewest(count: 5)
         case .keep, .review: .reviewSubscription
         }
     }
