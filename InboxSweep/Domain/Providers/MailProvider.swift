@@ -27,7 +27,7 @@ nonisolated protocol MailAccountAuthorizing: Sendable {
 
 /// Reads bounded windows of message metadata.
 ///
-/// There is no counterpart to this protocol for *writing*. Interval 1 exposes no operation to
+/// There is no counterpart to this protocol for *writing*. The app exposes no operation to
 /// delete, archive, label, mark, move, or send mail, and the absence is structural: no such
 /// method exists to call. See `SafetyBoundaryTests` for the assertions that keep it that way.
 nonisolated protocol MailMessageFetching: Sendable {

@@ -86,8 +86,42 @@ consent screen should ask for read-only access to Gmail metadata and nothing els
 | Client ID | `InboxSweep/Config/GoogleOAuthClient.plist` or an environment variable | No — gitignored |
 | Refresh token | macOS Keychain, item `InboxSweep.Gmail` | No |
 | Access token | Memory only, for the life of the process | No |
-| Message metadata | Memory only, for the life of the process | No |
+| Message metadata | Memory while the app runs, plus one JSON file in the app's sandbox container | No |
 
-Signing out from within the app asks Google to revoke the grant and deletes the Keychain
-item. You can also revoke access at any time from your
+The metadata file lives at
+`~/Library/Containers/quang.InboxSweep/Data/Library/Application Support/InboxSweep/Cache/`
+and holds message headers, dates, and labels — never bodies, and never a token of any kind.
+The README's [Local persistence](../README.md#local-persistence) section lists exactly what it
+contains.
+
+Signing out from within the app asks Google to revoke the grant, deletes the Keychain item,
+and deletes that file. You can also revoke access at any time from your
 [Google Account's third-party apps page](https://myaccount.google.com/connections).
+
+## Checking a live sign-in
+
+Once a client is configured, this is the round trip worth walking through by hand. Each step
+is read-only; nothing in it can change your mailbox.
+
+1. **Sign in.** Launch the app and click **Connect Gmail**. Google's own window opens.
+2. **Read the consent screen.** It should ask for read-only access to Gmail *metadata* and
+   nothing else. An unverified client also warns that the app is in testing — expected while
+   the client stays in Testing mode.
+3. **Token exchange.** Granting consent should land you on the sender dashboard within a few
+   seconds. That means the authorization code was exchanged for tokens successfully.
+4. **Restoration.** Quit and relaunch. The dashboard should come back immediately, labelled
+   as restored from this Mac, without a Gmail request — that is the Keychain refresh token
+   plus the local cache. **Reload** fetches current mail.
+5. **Sign out.** **Disconnect** revokes the grant with Google, removes the Keychain item, and
+   deletes the cache file. Confirm with:
+
+   ```bash
+   security find-generic-password -s "InboxSweep.Gmail" -a default
+   ```
+
+   which should report that the item could not be found, and check that the cache directory
+   above is empty. The app should also disappear from your
+   [Google Account's third-party apps page](https://myaccount.google.com/connections).
+
+If the client ID or the redirect URI is wrong, step 1 fails on Google's side with
+`invalid_client` or `redirect_uri_mismatch` before any sign-in prompt appears.

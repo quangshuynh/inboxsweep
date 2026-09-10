@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The starting screen: what the app does, what it will ask for, and what it will not do.
 ///
-/// This screen is the app's consent conversation. It says plainly that Interval 1 is
+/// This screen is the app's consent conversation. It says plainly that InboxSweep is
 /// read-only and names the exact permission before the user is sent to Google, so nothing
 /// about the Google consent sheet comes as a surprise.
 struct SignedOutView: View {
