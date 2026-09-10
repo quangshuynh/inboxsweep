@@ -135,7 +135,9 @@ final class InboxSessionModel {
             do {
                 let page = try await provider.fetchMessages(fetchRequest.nextPage(after: pageToken))
                 try Task.checkCancellation()
-                messages.append(contentsOf: page.messages)
+                // Merged rather than appended: Gmail can list a message on two consecutive
+                // pages, and counting it twice would overstate the sender it came from.
+                messages = MailMessageWindow.merging(messages, with: page.messages)
                 nextPageToken = page.nextPageToken
                 await publishSnapshot(for: snapshot.account)
             } catch {
@@ -236,7 +238,7 @@ final class InboxSessionModel {
         do {
             let page = try await provider.fetchMessages(fetchRequest)
             try Task.checkCancellation()
-            messages = page.messages
+            messages = MailMessageWindow.deduplicated(page.messages)
             nextPageToken = page.nextPageToken
             await publishSnapshot(for: account)
         } catch {

@@ -13,7 +13,10 @@ nonisolated struct CachedInbox: Equatable, Sendable {
     /// The account this window belongs to. A cache is never read back for a different account.
     let account: MailAccount
 
-    /// The loaded messages, in the order the provider returned them.
+    /// The loaded messages, in the order the provider returned them, one entry per message ID.
+    ///
+    /// Deduplicated on the way in rather than trusted, so no cache file — one written by an
+    /// older build, or edited by hand — can put the same message into the aggregation twice.
     let messages: [MailMessage]
 
     /// The sender summaries derived from ``messages`` at save time.
@@ -36,7 +39,7 @@ nonisolated struct CachedInbox: Equatable, Sendable {
         savedAt: Date
     ) {
         self.account = account
-        self.messages = messages
+        self.messages = MailMessageWindow.deduplicated(messages)
         self.senders = senders
         self.nextPageToken = nextPageToken
         self.savedAt = savedAt
@@ -45,8 +48,9 @@ nonisolated struct CachedInbox: Equatable, Sendable {
     /// Whether the stored summaries still describe the stored messages.
     ///
     /// Summaries are derived data, and derived data kept alongside its source can drift — a
-    /// half-written file, or a build whose aggregation rules have changed. When this is
-    /// `false` the summaries are rebuilt from the messages rather than trusted.
+    /// half-written file, a build whose aggregation rules have changed, or a file whose
+    /// duplicate messages were collapsed on the way in and whose summaries still count them.
+    /// When this is `false` the summaries are rebuilt from the messages rather than trusted.
     var summariesMatchMessages: Bool {
         senders.reduce(0) { $0 + $1.messageCount } == messages.count
     }
