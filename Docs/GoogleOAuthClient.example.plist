@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Template only. Copy this file to InboxSweep/Config/GoogleOAuthClient.plist and replace the
+    placeholder with the client ID of your own Google OAuth client, or download the .plist
+    that the Google Cloud console offers for an iOS/macOS client and rename it.
+
+    InboxSweep/Config/ is gitignored. Do not commit a real client ID, and note that an
+    iOS/macOS OAuth client has no client secret — if you find yourself pasting a secret in
+    here, you have created the wrong client type.
+-->
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>YOUR-CLIENT-ID.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.YOUR-CLIENT-ID</string>
+</dict>
+</plist>

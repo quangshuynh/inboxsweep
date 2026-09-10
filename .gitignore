@@ -60,3 +60,28 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+.claude/
+
+# --- InboxSweep ---
+
+## Local OAuth client configuration. The Google client ID is account-specific and is never
+## committed; see Docs/OAuthSetup.md.
+InboxSweep/Config/
+*.googleusercontent.com.plist
+GoogleOAuthClient.plist
+
+## Anything token-shaped, in case it is ever written next to the project.
+*.token
+*.tokens
+.env
+.env.*
+
+## Build output
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+
+## macOS
+.DS_Store
