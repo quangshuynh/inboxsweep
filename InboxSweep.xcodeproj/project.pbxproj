@@ -404,7 +404,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = InboxSweep/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = InboxSweep;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -439,7 +438,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = InboxSweep/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = InboxSweep;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
