@@ -2,7 +2,7 @@ import Foundation
 
 /// The Gmail OAuth scopes InboxSweep asks for — and the ones it must never ask for.
 ///
-/// Interval 1 requests exactly one scope: `gmail.metadata`. That is narrower than the more
+/// InboxSweep requests exactly one scope: `gmail.metadata`. That is narrower than the more
 /// common `gmail.readonly`, because it does not grant access to message bodies or
 /// attachments at all. The app only needs headers, labels, and dates to group mail by sender,
 /// so asking for message content would be requesting more access than the feature uses.

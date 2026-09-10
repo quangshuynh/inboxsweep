@@ -2,9 +2,9 @@ import SwiftUI
 
 /// The privacy claims the app makes, in one place.
 ///
-/// Deliberately limited to things Interval 1 actually does. There is no claim about
-/// encryption, anonymity, or auditing, because none of that is implemented — overstating it
-/// here would be the easiest way to mislead someone about their own mail.
+/// Deliberately limited to things the app actually does. There is no claim about encryption,
+/// anonymity, or auditing, because none of that is implemented — overstating it here would be
+/// the easiest way to mislead someone about their own mail.
 nonisolated enum PrivacyNotice {
 
     struct Point: Identifiable {
@@ -28,6 +28,13 @@ nonisolated enum PrivacyNotice {
                 Message details stay on this Mac. They are kept in memory while the app is open \
                 and saved to a file inside InboxSweep's own container so relaunching doesn't \
                 re-read your whole inbox. Disconnecting deletes that file.
+                """
+        ),
+        Point(
+            symbol: "wand.and.sparkles",
+            text: """
+                Suggestions are worked out on this Mac from the details already fetched, using \
+                fixed rules you can read. Nothing is sent anywhere to produce one.
                 """
         ),
         Point(
