@@ -94,4 +94,39 @@ nonisolated enum MailMutationHistory {
     ) -> [MailMutationTransaction] {
         pruned(transactions.filter { $0.accountAddress == account.emailAddress.address })
     }
+
+    // MARK: - Unsubscribe entries
+
+    /// How many unsubscribe entries are kept per account.
+    ///
+    /// The same number as ``entryLimit``, and the same reasoning, with one difference worth
+    /// stating: there is no equivalent of "the current undo survives pruning" here, because
+    /// there is no undo. An unsubscribe entry is history from the moment it is written, so the
+    /// policy is the plain one — newest hundred, deterministically ordered.
+    ///
+    /// Counted separately from transactions rather than sharing one budget, so a burst of
+    /// archiving cannot silently evict the record of an unsubscribe, or the other way round.
+    static var unsubscribeEntryLimit: Int { entryLimit }
+
+    /// One account's unsubscribe entries, newest first, bounded by ``unsubscribeEntryLimit``.
+    static func prunedUnsubscribes(_ entries: [UnsubscribeActionRecord]) -> [UnsubscribeActionRecord] {
+        Array(sortedUnsubscribes(entries).prefix(unsubscribeEntryLimit))
+    }
+
+    /// Newest first, with the same identifier tiebreak that makes the transaction ordering total.
+    static func sortedUnsubscribes(_ entries: [UnsubscribeActionRecord]) -> [UnsubscribeActionRecord] {
+        entries.sorted {
+            $0.occurredAt == $1.occurredAt
+                ? $0.id.uuidString > $1.id.uuidString
+                : $0.occurredAt > $1.occurredAt
+        }
+    }
+
+    /// The unsubscribe entries belonging to `account`, pruned and ordered.
+    static func unsubscribeHistory(
+        _ entries: [UnsubscribeActionRecord],
+        for account: MailAccount
+    ) -> [UnsubscribeActionRecord] {
+        prunedUnsubscribes(entries.filter { $0.accountAddress == account.emailAddress.address })
+    }
 }
