@@ -32,7 +32,9 @@ struct SenderMessageReviewView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 720, idealWidth: 860, minHeight: 480, idealHeight: 620)
+        // The sheet takes its minimum width, so that is what has to fit all five columns —
+        // an audit screen whose "under this plan" column is off the right edge audits nothing.
+        .frame(minWidth: 900, idealWidth: 980, minHeight: 480, idealHeight: 620)
         .onAppear {
             // Seeded from the proposal so the screen opens on the plan the app actually
             // suggested, rather than on whichever action happens to be first in a menu.
@@ -137,14 +139,14 @@ struct SenderMessageReviewView: View {
                         .lineLimit(1)
                         .help(row.message.subject ?? "This message had no subject line.")
                 }
-                .width(min: 180, ideal: 300)
+                .width(min: 140, ideal: 230)
 
                 TableColumn("Received") { row in
                     Text(row.message.receivedAt, format: .dateTime.day().month().year().hour().minute())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                .width(min: 130, ideal: 160)
+                .width(min: 115, ideal: 140)
 
                 TableColumn("State") { row in
                     Text(row.stateLabels.isEmpty ? "Read" : row.stateLabels.joined(separator: " · "))
@@ -153,7 +155,7 @@ struct SenderMessageReviewView: View {
                         .lineLimit(1)
                         .help(row.stateLabels.joined(separator: ", "))
                 }
-                .width(min: 120, ideal: 190)
+                .width(min: 105, ideal: 140)
 
                 TableColumn("Protection") { row in
                     if let reason = row.protectionReason, reason.isProtective {
@@ -169,12 +171,12 @@ struct SenderMessageReviewView: View {
                         Text("—").foregroundStyle(.tertiary)
                     }
                 }
-                .width(min: 110, ideal: 150)
+                .width(min: 95, ideal: 110)
 
                 TableColumn(action.map { _ in "Under this plan" } ?? "Plan") { row in
                     membershipCell(for: row)
                 }
-                .width(min: 120, ideal: 170)
+                .width(min: 110, ideal: 140)
             }
             .tableStyle(.inset)
             .accessibilityIdentifier("messageReview.table")
