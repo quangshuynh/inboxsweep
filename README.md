@@ -26,6 +26,9 @@ them. It cannot act on a sender, run a cleanup plan, or delete anything.
 - Groups messages by sender and shows per-sender counts in a native macOS dashboard.
 - Reports **sender observations** — Gmail's own categories, `List-Unsubscribe` presence,
   read/unread counts, the span of loaded mail, and how often the sender arrives.
+- Detects **unsubscribe opportunities** from a sender's own headers, distinguishes one-click,
+  browser, and email mechanisms, shows the exact destination, and acts only on an explicit
+  confirmation.
 - Opens a sender to list the loaded messages behind its row: subject, date, read state,
   starred and important state, categories, and whether the message carried an unsubscribe
   header.
@@ -48,10 +51,11 @@ None of the following is implemented, and the UI does not pretend otherwise:
 | Not implemented | |
 | --- | --- |
 | Delete, trash, or permanently remove | Mark as read, star, or label |
-| Unsubscribe (of any kind) | Archive a sender in one click, or across senders |
-| AI classification of any message | Executing a cleanup plan |
-| Background monitoring or notifications | Automatic or scheduled archiving |
-| Analytics or telemetry | CI, badges, or releases |
+| Automatic or bulk unsubscribe | Archive a sender in one click, or across senders |
+| Sender rules, Gmail filters, or blocking | Executing a cleanup plan |
+| AI classification of any message | Automatic or scheduled archiving |
+| Background monitoring or notifications | CI, badges, or releases |
+| Analytics or telemetry | |
 
 Archiving is the one exception, and it is deliberately narrow: **messages you named individually**,
 frozen into a list you confirm, sent one request at a time, undoable. There is no control anywhere
@@ -59,8 +63,13 @@ that archives a sender, a plan, or anything you did not tick, and no path from a
 saved plan to a mutation. A cleanup preview can *fill in* a selection for you to check and edit;
 it cannot carry itself out.
 
-`List-Unsubscribe` headers are *recorded* as an observation. Nothing in this version reads
-that flag to decide anything, and the app never contacts an unsubscribe URL.
+Unsubscribing is the second exception, and it is a separate capability rather than a wider first
+one. InboxSweep reads the `List-Unsubscribe` and `List-Unsubscribe-Post` headers a sender wrote,
+shows you the exact destination, and — only after you confirm it twice — sends one
+standards-defined request, opens the page in your browser, or opens a prepared message in your
+mail app. It never unsubscribes on its own, never retries, never acts across senders, and never
+creates a rule or a filter. Unlike archiving, it cannot be undone, and the app says so before
+you decide. Full detail in **[Docs/Unsubscribe.md](Docs/Unsubscribe.md)**.
 
 ## Architecture
 
@@ -203,7 +212,8 @@ says so.
 | Unread | How many of those carry Gmail's `UNREAD` label. |
 | Starred / Important | How many carry `STARRED` / `IMPORTANT`. |
 | Gmail categories | The union of Gmail's own category labels (Promotions, Social, Updates, Forums, Personal) seen on the loaded messages. Gmail assigns these; InboxSweep only reports which turned up, which is why a sender can show more than one. |
-| `List-Unsubscribe` | How many loaded messages carried the header. Reported, never acted on. |
+| `List-Unsubscribe` | How many loaded messages carried the header. |
+| Unsubscribe | What the sender's headers amount to: no option, details unclear, one-click, a page, or an email request. A reading, not an action — see [Docs/Unsubscribe.md](Docs/Unsubscribe.md). |
 | First / latest loaded | Oldest and newest received dates in the loaded window. The oldest is a floor on how far back the app has looked, not the sender's first-ever message. |
 | Recent subjects | Up to three subjects, newest first, for recognising the sender. |
 | Frequency | Mean gap between consecutive loaded messages. |
@@ -320,7 +330,7 @@ one file named after a SHA-256 digest of the account address, written atomically
 | Subject line | Access tokens |
 | Received date | Refresh tokens (those stay in the Keychain) |
 | Labels, including Gmail's categories | Raw Gmail API responses |
-| Whether a `List-Unsubscribe` header was present | Anything else the API returned |
+| The parsed unsubscribe destinations from the headers | Anything else the API returned |
 | The derived sender summaries and the next-page cursor | |
 
 **How it behaves:**
@@ -434,10 +444,14 @@ Claims below describe what this version actually does. Nothing more is implied.
   produces a description of what an action *would* reach; building one makes no request of any
   kind, and the only thing that description can do is pre-tick checkboxes you then inspect, edit,
   and confirm yourself.
-- **Metadata only.** Message requests use `format=metadata` with four named headers (`From`,
-  `Subject`, `Date`, `List-Unsubscribe`). Bodies and attachments are never requested — even
-  though `gmail.modify` would now permit them — and there is nowhere in the domain model to put
-  them.
+- **Metadata only.** Message requests use `format=metadata` with five named headers (`From`,
+  `Subject`, `Date`, `List-Unsubscribe`, `List-Unsubscribe-Post`). Bodies and attachments are
+  never requested — even though `gmail.modify` would now permit them — and there is nowhere in
+  the domain model to put them.
+- **No Google token ever leaves Google.** A one-click unsubscribe goes to the sender's own host
+  over a transport that has never held a credential, carries no `Authorization` header, no
+  cookie, and nothing about your mailbox. A test connects a real provider, mints a token, and
+  proves none of it appears in what the unsubscribe request carried.
 - **A local record of what was changed.** One bounded file holds an operation, a message ID, an
   account, a timestamp, and an outcome per mutation. No mail. It is deleted on disconnect.
 - **Local by default.** Message metadata lives in memory while the app runs and in one file
@@ -547,7 +561,7 @@ InboxSweep/               App target
   Config/                 Your local OAuth client plist (gitignored)
 InboxSweepTests/          Unit tests, fixtures, and test doubles
 InboxSweepUITests/        Launch and dashboard UI tests
-Docs/                     OAuth setup, session restore, archiving, activity, release verification
+Docs/                     OAuth setup, session restore, archiving, unsubscribing, activity, release verification
 ```
 
 ## Licence
