@@ -173,8 +173,7 @@ struct SafetyBoundaryTests {
             recentSubjects: []
         )
 
-        // The summary reports. Recommending, scoring, and classifying all live on
-        // `SenderCleanupProposal`, and this asserts they never leak back down into the facts.
+        // InboxSweep reports; it does not recommend, score, or classify.
         let propertyNames = Set(Mirror(reflecting: summary).children.compactMap(\.label))
         let judgementNames: Set<String> = ["score", "isUseless", "isNewsletter", "category", "recommendation", "cleanupScore"]
 

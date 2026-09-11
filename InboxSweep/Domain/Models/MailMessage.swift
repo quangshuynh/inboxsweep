@@ -42,10 +42,8 @@ nonisolated struct MailMessage: Identifiable, Hashable, Sendable {
 
     /// Whether the message carried a `List-Unsubscribe` header.
     ///
-    /// An observation about the message, and one the proposal rules do read: mail carrying
-    /// list metadata is part of what makes a sender read as a mailing list. Reading the header
-    /// is the whole of it — the app has no unsubscribe feature and never contacts the address
-    /// the header names.
+    /// Recorded as an observation only. The app performs no unsubscribe action of any kind,
+    /// and nothing in it reads this flag to decide anything about a sender.
     let hasListUnsubscribeHeader: Bool
 
     init(
