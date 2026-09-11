@@ -39,7 +39,7 @@ final class InboxSessionModel {
         didSet {
             guard scope != oldValue else { return }
             guard let account else { return }
-            run { [self] in await loadFirstPage(for: account) }
+            _ = run { [self] in await loadFirstPage(for: account) }
         }
     }
 
