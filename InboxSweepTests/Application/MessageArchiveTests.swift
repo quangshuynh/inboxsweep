@@ -10,7 +10,7 @@ import Testing
 /// dry-run membership, a cache file, and the next refresh all have to agree afterwards, and
 /// there is no way to check that by inspection.
 @MainActor
-@Suite("Archiving one message")
+@Suite("Archiving messages")
 struct MessageArchiveTests {
 
     nonisolated static let epoch = Date(timeIntervalSince1970: 1_700_000_000)
@@ -195,7 +195,7 @@ struct MessageArchiveTests {
         await second.value
 
         #expect(archiver.allRequests.count == 1, "A double click archived twice")
-        #expect(await records.records(for: .testAccount).count == 1, "A double click wrote two records")
+        #expect(await records.transactions(for: .testAccount).count == 1, "A double click wrote two records")
     }
 
     @Test("A second archive is refused while the first is still in flight")
@@ -499,8 +499,12 @@ struct MessageArchiveTests {
         #expect(after.senders[0].messageCount == 3)
     }
 
-    @Test("The undo offer ends when the window it referred to is thrown away")
-    func undoOfferDoesNotOutliveItsWindow() async throws {
+    @Test("The undo offer survives a reload, because it is backed by the transaction file")
+    func undoOfferSurvivesAReload() async throws {
+        // The behaviour this interval changes deliberately. Previously the offer lived only in
+        // memory and a reload ended it; now it is re-derived from the stored transaction for
+        // whichever account is on screen, so reloading to look at the mailbox is no longer a way
+        // to lose the ability to take an archive back.
         let messages = (1...3).map { message("m-\($0)", hours: Double($0)) }
         let (session, _, _) = await makeSession(messages: messages)
 
@@ -508,22 +512,37 @@ struct MessageArchiveTests {
         #expect(session.undoableArchive != nil)
 
         await session.reload().value
-        #expect(session.undoableArchive == nil, "The undo offer outlived a reload")
+
+        #expect(session.undoableArchive?.messageID == MailMessageID("m-1"), "The undo offer did not survive a reload")
+        // The result banner has no backing store and is not re-derived.
         #expect(session.mutationActivity == nil)
     }
 
-    @Test("Dismissing the result ends the offer, and archiving again replaces it")
-    func undoOfferIsReplacedAndDismissed() async throws {
+    @Test("Dismissing the result keeps the offer, and archiving again supersedes it")
+    func undoOfferIsSupersededNotDismissed() async throws {
         let messages = (1...4).map { message("m-\($0)", hours: Double($0)) }
-        let (session, _, _) = await makeSession(messages: messages)
+        let records = EphemeralMutationRecordStore()
+        let (session, _, _) = await makeSession(messages: messages, records: records)
 
         await session.archiveMessage(MailMessageID("m-1")).value
+        let firstTransactionID = try #require(session.undoableArchive?.id)
+
+        // Closing the sheet is how somebody gets back to their mailbox, not how they say the
+        // archive was what they wanted.
+        session.dismissMutationActivity()
+        #expect(session.mutationActivity == nil)
+        #expect(session.undoableArchive?.messageID == MailMessageID("m-1"), "Dismissing the banner withdrew the undo offer")
+
         await session.archiveMessage(MailMessageID("m-2")).value
         #expect(session.undoableArchive?.messageID == MailMessageID("m-2"), "The offer named the wrong archive")
 
-        session.dismissMutationActivity()
-        #expect(session.undoableArchive == nil)
-        #expect(session.mutationActivity == nil)
+        // One undoable transaction per account: the first is superseded rather than deleted, so
+        // the audit history still says what the app did, and the UI never claims two
+        // independent undos.
+        let history = await records.transactions(for: .testAccount)
+        #expect(history.count == 2)
+        #expect(history.count(where: \.isUndoable) == 1)
+        #expect(history.first { $0.id == firstTransactionID }?.undoState == .superseded)
     }
 
     // MARK: - The local record
@@ -540,7 +559,7 @@ struct MessageArchiveTests {
         let history = await session.mutationHistory()
         #expect(history.count == 2)
         #expect(Set(history.map(\.operation)) == [.archive, .restoreToInbox])
-        #expect(history.allSatisfy { $0.messageID == MailMessageID("m-1") })
+        #expect(history.allSatisfy { $0.succeededMessageIDs == [MailMessageID("m-1")] })
         #expect(history.allSatisfy { $0.isConfirmed })
         #expect(history.allSatisfy { $0.accountAddress == MailAccount.testAccount.emailAddress.address })
     }
@@ -569,9 +588,9 @@ struct MessageArchiveTests {
         let (session, _, _) = await makeSession(messages: [message("m-1")], records: records)
 
         await session.archiveMessage(MailMessageID("m-1")).value
-        #expect(await records.records(for: .testAccount).count == 1)
+        #expect(await records.transactions(for: .testAccount).count == 1)
 
         await session.disconnect().value
-        #expect(await records.records(for: .testAccount).isEmpty)
+        #expect(await records.transactions(for: .testAccount).isEmpty)
     }
 }

@@ -230,29 +230,82 @@ struct SafetyBoundaryTests {
         #expect(Set(MailMutationOperation.allCases.map(\.rawValue)) == ["archive", "restoreToInbox"])
     }
 
-    @Test("A mutation record holds no mail")
-    func mutationRecordsHoldNoMail() {
-        let record = MailMutationRecord(
+    @Test("A mutation transaction holds no mail, however many messages it names")
+    func mutationTransactionsHoldNoMail() {
+        let transaction = MailMutationTransaction(
             id: UUID(),
             operation: .archive,
-            messageID: MailMessageID("m-1"),
             accountAddress: "someone@example.com",
+            succeededMessageIDs: [MailMessageID("m-1"), MailMessageID("m-2")],
+            selectedMessageCount: 3,
             occurredAt: .now,
-            outcome: .confirmed
+            undoState: .undoable
         )
 
-        let propertyNames = Set(Mirror(reflecting: record).children.compactMap(\.label))
-        #expect(propertyNames == ["id", "operation", "messageID", "accountAddress", "occurredAt", "outcome"])
+        let propertyNames = Set(Mirror(reflecting: transaction).children.compactMap(\.label))
+        #expect(propertyNames == [
+            "id", "operation", "accountAddress", "succeededMessageIDs", "selectedMessageCount",
+            "occurredAt", "undoState",
+        ])
+        // Growing from one message to many did not grow what a transaction knows about mail.
         #expect(propertyNames.isDisjoint(with: [
-            "subject", "sender", "from", "body", "snippet", "receivedAt", "labels",
+            "subject", "subjects", "sender", "senders", "from", "body", "snippet", "receivedAt",
+            "labels", "senderKey", "action", "plan",
         ]))
 
         // The file format carries even less: the account address is written once at the top of
         // the file, not copied onto every entry.
         let entryProperties = Set(
-            Mirror(reflecting: MutationRecordDTO.entry(from: record)).children.compactMap(\.label)
+            Mirror(reflecting: MutationTransactionDTO.entry(from: transaction)).children.compactMap(\.label)
         )
-        #expect(entryProperties == ["id", "operation", "messageID", "occurredAt", "outcome"])
+        #expect(entryProperties == ["id", "operation", "messageIDs", "selectedCount", "occurredAt", "undoState"])
+    }
+
+    @Test("A frozen selection names messages and an account, and carries no instruction")
+    func selectionsCarryNothingButIdentifiers() throws {
+        let selection = try #require(MailArchiveSelection(
+            messageIDs: [MailMessageID("m-1"), MailMessageID("m-2"), MailMessageID("m-1")],
+            accountAddress: "someone@example.com"
+        ))
+
+        // Identifiers and an account. No label, no query, no sender, no action, no plan — so the
+        // only thing a set can express is "these exact messages", which is the property that
+        // makes a confirmation checkable.
+        let propertyNames = Set(Mirror(reflecting: selection).children.compactMap(\.label))
+        #expect(propertyNames == ["messageIDs", "accountAddress", "operationID"])
+        #expect(propertyNames.isDisjoint(with: [
+            "labels", "labelIDs", "addLabelIds", "removeLabelIds", "query", "senderKey",
+            "sender", "action", "plan", "scope", "all",
+        ]))
+
+        // Duplicates collapse, so one message can never be asked about twice in one set.
+        #expect(selection.messageIDs == [MailMessageID("m-1"), MailMessageID("m-2")])
+        // And "archive nothing" is not an operation this type can express.
+        #expect(MailArchiveSelection(messageIDs: [], accountAddress: "someone@example.com") == nil)
+
+        // Every message in a set goes out as the same single-message request a lone archive
+        // uses. That is the whole generalization: a set is a sequence of the proven call.
+        let request = selection.request(for: MailMessageID("m-2"))
+        #expect(request.messageID == MailMessageID("m-2"))
+        #expect(request.accountAddress == "someone@example.com")
+        #expect(request.operationID == selection.operationID)
+    }
+
+    @Test("Growing to sets added no new remotely-reachable mutation")
+    func setsAddedNoNewProviderCapability() {
+        // The claim this interval has to keep: `MailMessageArchiving` is *unchanged*. A set
+        // archive is the session calling the same four methods more than once, so there is no
+        // new endpoint, no new body, and no batch request to audit.
+        #expect(GmailMutationEndpoint.allRequestBuilders().count == 2)
+
+        let boundaryMethodNames = ["archiveCapability", "authorizeArchiving", "archive", "restoreToInbox"]
+        #expect(boundaryMethodNames.count == 4, "The mutation boundary gained or lost a method")
+
+        // And the type that executes a set has exactly one thing to execute *with*.
+        let mutatorProperties = Set(
+            Mirror(reflecting: MessageSetMutator(archiver: StubMessageArchiver())).children.compactMap(\.label)
+        )
+        #expect(mutatorProperties == ["archiver"])
     }
 
     @Test("Message requests ask for metadata, never for full or raw content")
@@ -716,6 +769,146 @@ struct SafetyBoundaryTests {
         #expect(archiver.allRequests.isEmpty, "A restored plan reached the mutation boundary")
         #expect(model.mutationActivity == nil)
         #expect(model.undoableArchive == nil)
+    }
+
+    @Test("A set archive sends nothing but the two INBOX modifies, one message at a time")
+    @MainActor
+    func setArchivesCarryOnlyInboxModifies() async throws {
+        // The claim the interval has to keep once archiving can act on many messages: growing
+        // from one to twelve grew the *number* of requests and nothing about what a request is
+        // allowed to say. This drives a real Gmail adapter over a recording transport and reads
+        // every byte that went out.
+        var stub = GmailMailboxStub(messages: GmailFixtures.mailbox(messageCount: 12))
+        stub.grantedScope = GmailScope.requestedScopeParameter
+        let transport = RecordingHTTPTransport(handler: stub.handler())
+        let provider = GmailProvider(
+            configuration: GmailOAuthConfiguration(clientID: "1234567890-abcdef.apps.googleusercontent.com"),
+            transport: transport,
+            webAuthenticator: FakeWebAuthenticator.granting(),
+            credentialStore: InMemoryCredentialStore(),
+            retryPolicy: .immediate
+        )
+        let model = InboxSessionModel(provider: provider, fetchRequest: MailFetchRequest(limit: 12))
+
+        await model.connect().value
+        let snapshot = try #require(model.state.snapshot)
+        let senderKey = try #require(snapshot.senders.first).id
+        let chosen = model.loadedMessages(forSenderKey: senderKey).prefix(4).map(\.id)
+        try #require(chosen.count >= 2)
+
+        let frozen = try #require(model.makeArchiveSelection(forSenderKey: senderKey, messageIDs: chosen))
+        await model.archiveSelection(frozen).value
+        await model.undoLastArchive().value
+
+        let writes = transport.requests.filter {
+            ($0.url?.host ?? "").contains("gmail.googleapis.com") && $0.httpMethod != "GET"
+        }
+        #expect(writes.count == chosen.count * 2, "Expected one archive and one undo per message")
+
+        for write in writes {
+            #expect(write.httpMethod == "POST")
+            // Every write names exactly one message, at the message-level modify endpoint.
+            let path = write.url?.path() ?? ""
+            #expect(path.hasSuffix("/modify"))
+            #expect(!path.contains("/threads/"), "A set reached the thread endpoint")
+            #expect(!path.lowercased().contains("batch"), "A set reached a batch endpoint")
+            let named = chosen.filter { path.hasSuffix("/messages/\($0.rawValue)/modify") }
+            #expect(named.count == 1, "A write named something other than one selected message")
+
+            // And the body is still one of the two literals, byte for byte.
+            let body = String(decoding: write.httpBody ?? Data(), as: UTF8.self)
+            #expect(body == #"{"removeLabelIds":["INBOX"]}"# || body == #"{"addLabelIds":["INBOX"]}"#)
+        }
+
+        // No request mentions a message the user did not select.
+        let selected = Set(chosen.map(\.rawValue))
+        let untouched = model.loadedMessages(forSenderKey: senderKey).map(\.id.rawValue).filter { !selected.contains($0) }
+        for identifier in untouched {
+            #expect(
+                !writes.contains { ($0.url?.path() ?? "").contains("/messages/\(identifier)/modify") },
+                "A set archive wrote to an unselected message"
+            )
+        }
+    }
+
+    @Test("Selecting, previewing, preselecting, and opening a confirmation write nothing")
+    @MainActor
+    func everythingBeforeConfirmationIsInert() async throws {
+        // The single most important property of the selection model: the user can build, edit,
+        // and inspect a set of any size, driven by a cleanup recommendation, and none of it is a
+        // step towards executing anything. Only the confirmation is.
+        let messages = ProposalFixtures.promotionalSender(count: 24) + ProposalFixtures.newsletterSender(count: 14)
+        let archiver = StubMessageArchiver()
+        let provider = StubMailProvider(
+            fetch: .pages([MailMessagePage(messages: messages)]),
+            archiver: archiver
+        )
+        let model = InboxSessionModel(provider: provider, fetchRequest: MailFetchRequest(limit: 40))
+
+        await model.connect().value
+        let snapshot = try #require(model.state.snapshot)
+
+        for sender in snapshot.senders {
+            let loaded = model.loadedMessages(forSenderKey: sender.id).map(\.id)
+
+            for action in PlannedCleanupAction.offered {
+                // The dry run, and the convenience action that turns its result into ticks.
+                _ = model.cleanupPlan(for: [CleanupPlanRequest(senderKey: sender.id, action: action)])
+                let preselectable = model.preselectableMessageIDs(forSenderKey: sender.id, under: action)
+
+                if !preselectable.isEmpty {
+                    // Freezing every one of them into a confirmation — the last step before the
+                    // button, performed here for every sender and every action in the app.
+                    let frozen = model.makeArchiveSelection(forSenderKey: sender.id, messageIDs: preselectable)
+                    _ = frozen.map(model.canArchive)
+                    _ = frozen?.selection()
+                    _ = frozen?.protectedMessages
+                }
+            }
+
+            // And the whole sender at once, which is the largest set this screen can produce.
+            if !loaded.isEmpty {
+                let everything = try #require(model.makeArchiveSelection(forSenderKey: sender.id, messageIDs: loaded))
+                #expect(everything.count == loaded.count)
+                _ = model.canArchive(everything)
+            }
+        }
+
+        #expect(archiver.allRequests.isEmpty, "Something before the confirmation reached the mutation boundary")
+        #expect(model.mutationActivity == nil, "Something before the confirmation started an operation")
+        #expect(model.undoableArchive == nil)
+        #expect(try #require(model.state.snapshot).loadedMessageCount == 38, "The window changed before any confirmation")
+    }
+
+    @Test("A convenience action never picks a message the mailbox marks as worth keeping")
+    @MainActor
+    func preselectionNeverPicksProtectedMail() async throws {
+        // The line between the app choosing and the user choosing. Asserted over every offered
+        // action and every sender, rather than for one case, because this is the guarantee that
+        // makes "fill from preview" safe to offer at all.
+        let messages = ProposalFixtures.promotionalSender(count: 30) + ProposalFixtures.newsletterSender(count: 20)
+        let model = InboxSessionModel(
+            provider: StubMailProvider(
+                fetch: .pages([MailMessagePage(messages: messages)]),
+                archiver: StubMessageArchiver()
+            ),
+            fetchRequest: MailFetchRequest(limit: 50)
+        )
+        await model.connect().value
+        let snapshot = try #require(model.state.snapshot)
+
+        for sender in snapshot.senders {
+            let protectedIDs = Set(
+                model.reviewedMessages(forSenderKey: sender.id).filter(\.isProtected).map(\.id)
+            )
+            for action in PlannedCleanupAction.offered {
+                let preselectable = Set(model.preselectableMessageIDs(forSenderKey: sender.id, under: action))
+                #expect(
+                    preselectable.isDisjoint(with: protectedIDs),
+                    "A convenience action picked a protected message under \(action.displayName)"
+                )
+            }
+        }
     }
 
     @Test("Archiving acts on one message and leaves every other one alone")
