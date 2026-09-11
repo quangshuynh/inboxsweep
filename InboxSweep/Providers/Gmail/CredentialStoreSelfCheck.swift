@@ -1,35 +1,55 @@
-#if DEBUG
 import Foundation
 
-/// A debug-only check that answers one question honestly: **does a credential written by this
-/// app survive being quit and reopened?**
+/// A launch-argument check that answers, about *the binary that is running*, three questions
+/// that cannot be answered any other way:
 ///
-/// It exists because that question cannot otherwise be answered without a Google password. The
-/// unit tests run inside the app process and prove the `SecItem*` calls work, but they run
-/// inside *one* process; only a real quit and a real relaunch proves persistence, and only
-/// running the same `.app` twice — versus rebuilding in between — tells a same-binary relaunch
-/// apart from a development re-sign.
+/// 1. Does a credential written by this app survive being quit and reopened?
+/// 2. Which of the system's two keychains does this build actually get?
+/// 3. Where is the app's real Gmail credential stored right now?
 ///
-/// So the app takes a launch argument that writes a synthetic marker, reports what it found,
-/// and exits. Run it twice against one build and the second run says `restored`. Rebuild and
-/// run again, and it says whether re-signing changed the answer. See `Docs/SessionRestore.md`
-/// for the recorded results.
+/// The first cannot be answered by the unit tests. They run inside the app process and prove
+/// the `SecItem*` calls work, but they run inside *one* process; only a real quit and a real
+/// relaunch proves persistence, and only running the same `.app` twice — versus rebuilding in
+/// between — tells a same-binary relaunch apart from a re-sign.
 ///
-/// The marker is synthetic, lives under its own Keychain service so it can never collide with
-/// the real sign-in, and `--keychain-selfcheck-reset` removes it. Debug builds only: this is
-/// not compiled into a release build, and there is no UI that reaches it.
+/// The second cannot be answered by ``KeychainCredentialStore`` in normal use, because its
+/// fallback is deliberately silent. ``CredentialStoreDiagnostics`` pins each keychain so the
+/// answer is measured rather than inferred from entitlements.
+///
+/// ## Why this is compiled into every configuration
+///
+/// It used to be `#if DEBUG`. That made the one build whose behaviour matters most — the
+/// signed Release app the user actually launches — the one build that could not be asked. A
+/// Debug and a Release build of this app are signed with the same identity and carry the same
+/// entitlements, so the answers *ought* to match; "ought to" is the kind of claim this whole
+/// area of the app exists to stop making.
+///
+/// It stays safe to ship because of what it is, not where it is compiled: every mode is inert
+/// unless an explicit launch argument is passed, no UI reaches any of them, the round trip and
+/// the probes write synthetic markers under their own Keychain services, and the one mode that
+/// touches the real item asks only whether it *exists*. No output below can contain an access
+/// token, a refresh token, an authorization code, or a client secret.
 nonisolated enum CredentialStoreSelfCheck {
 
+    /// Writes a synthetic marker, or reports the one an earlier launch wrote.
     static let launchArgument = "--keychain-selfcheck"
+
+    /// Removes the marker written by ``launchArgument``.
     static let resetArgument = "--keychain-selfcheck-reset"
+
+    /// Round-trips a synthetic credential through each keychain separately, with no fallback.
+    static let probeArgument = "--keychain-probe"
+
+    /// Reports which keychain holds the app's real Gmail credential, without reading it.
+    static let backendArgument = "--keychain-backend"
 
     /// A service name the shipping store never uses.
     private static let service = "InboxSweep.SelfCheck"
 
-    /// Runs the check if asked to, and never returns when it does.
+    /// Runs whichever check was asked for, and never returns when one runs.
     ///
-    /// Called before any window is created, so the check costs one process launch rather than
-    /// a whole app session.
+    /// Called before any window is created, so a check costs one process launch rather than a
+    /// whole app session.
     static func runIfRequested(
         arguments: [String] = ProcessInfo.processInfo.arguments
     ) {
@@ -39,10 +59,22 @@ nonisolated enum CredentialStoreSelfCheck {
             exit(0)
         }
 
+        if arguments.contains(probeArgument) {
+            print(probeReport())
+            exit(0)
+        }
+
+        if arguments.contains(backendArgument) {
+            print(backendReport())
+            exit(0)
+        }
+
         guard arguments.contains(launchArgument) else { return }
         print(report())
         exit(0)
     }
+
+    // MARK: - Cross-launch persistence
 
     /// One line, machine-readable, carrying no secret.
     ///
@@ -79,5 +111,30 @@ nonisolated enum CredentialStoreSelfCheck {
             return "SELFCHECK unwritable reason=\(reason)"
         }
     }
+
+    // MARK: - Which keychain this build gets
+
+    /// One `PROBE` line per keychain, then the one a save would use.
+    ///
+    /// Every keychain is reported, including the ones that refused, which is the difference
+    /// between this and watching a credential succeed: a store that fell back looks exactly
+    /// like a store that got what it wanted.
+    static func probeReport(
+        probes: [CredentialStoreProbe] = CredentialStoreDiagnostics.probeAll()
+    ) -> String {
+        var lines = probes.map { "PROBE \($0.summary)" }
+        let preferred = CredentialStoreDiagnostics.preferredUsableKeychain(probes)
+        lines.append("PROBE preferred=\(preferred?.displayName ?? "none")")
+        lines.append("PROBE \(CredentialStoreDiagnostics.storageDescription(for: preferred))")
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Where the real credential lives
+
+    /// Where the app's stored Gmail credential is, by existence check alone.
+    static func backendReport(
+        backend: KeychainCredentialStore.Keychain? = CredentialStoreDiagnostics.storageBackend()
+    ) -> String {
+        "BACKEND \(CredentialStoreDiagnostics.storageDescription(for: backend))"
+    }
 }
-#endif

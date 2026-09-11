@@ -7,10 +7,12 @@ struct InboxSweepApp: App {
 
     init() {
         // Runs before any window exists and exits the process when it runs at all, so a
-        // credential self-check costs one launch rather than a whole app session.
-        #if DEBUG
+        // credential self-check costs one launch rather than a whole app session. Compiled
+        // into Release as well as Debug, because the signed Release app is the build whose
+        // Keychain behaviour most needs to be measurable rather than assumed; it is inert
+        // without an explicit launch argument, and reaches no UI. See
+        // ``CredentialStoreSelfCheck``.
         CredentialStoreSelfCheck.runIfRequested()
-        #endif
         _appModel = State(initialValue: AppModel())
     }
 
