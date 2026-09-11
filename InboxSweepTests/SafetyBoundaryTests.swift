@@ -1196,7 +1196,7 @@ struct SafetyBoundaryTests {
         // The sentence is asserted because it is a promise the app is making on screen, and the
         // thing that makes it true — there being no rule, filter, or schedule anywhere — is
         // asserted beside it.
-        let note = ArchiveSelectionSheet.senderScopeNote
+        let note = ArchiveSelectionSnapshot.senderScopeNote
         #expect(note.contains("Only the messages listed here will be changed"))
         #expect(note.contains("Future messages from this sender are not affected"))
         #expect(note.contains("creates no rule"))

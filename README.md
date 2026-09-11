@@ -239,6 +239,14 @@ Those two are the complete set of mutating requests the app can build.
 by subject and received date, saying they will be removed from your Inbox and not deleted →
 confirm → one request per message → a per-message result, with **Undo** beside it.
 
+**Sender-level review.** For a sender with forty messages, **Review messages to archive…** — in
+the sender inspector and on a sender's dry-run row — opens that same review with the current
+preview's messages already ticked, minus anything protected. It is not *Archive sender*: it opens
+a screen and changes nothing. You still inspect the list, edit it in both directions, open a
+confirmation, and press the button, and the confirmation says that only the messages listed are
+changed and that future mail from that sender is unaffected. There is no whole-sender operation,
+no rule, and no schedule anywhere behind it.
+
 ## Activity
 
 What InboxSweep has changed in this mailbox, newest first, read from the same local transaction
@@ -255,7 +263,13 @@ into a failed one.
 
 It holds counts and message identifiers — **no subjects, no senders, no mail**. Where the loaded
 window still describes the messages, the detail view resolves them dynamically; where it does
-not, it says so and the counts stand on their own.
+not, it says so and the counts stand on their own. A row reads *"Archived 15 messages from one
+sender"* only when the cache can describe every message it names and they agree — derived at draw
+time, with nothing stored to make it possible, and never a claim that the sender itself was
+archived or that its future mail is affected.
+
+Reachable from the toolbar and from a link in the dashboard footer, so the question does not
+depend on a toolbar being easy to get at.
 
 > **Activity is what InboxSweep changed, not everything that happened in Gmail.** Archive a
 > message in Gmail itself and InboxSweep reconciles its view on the next reload without writing
@@ -267,7 +281,7 @@ not, it says so and the counts stand on their own.
 | **Scope** | The messages you ticked. Not their threads, not their sender, nothing else. |
 | **Effect** | `INBOX` removed. Read state, star, importance, and Gmail category untouched. |
 | **Execution** | One `messages.modify` per message, strictly one at a time. Not `batchModify`, which reports no per-message result and so could not be reconciled against. |
-| **Frozen set** | The confirmation shows an immutable snapshot. If the window stops matching it, the operation is refused whole and re-reviewed — never narrowed. |
+| **Frozen set** | The confirmation shows an immutable snapshot carrying the account, sender, loaded scope, and exact messages. If the account, permission, scope, sender, window, or Inbox membership stops matching — or the confirmation has already run — the operation is refused whole and re-reviewed, never narrowed and never re-derived from fresher planner output. |
 | **Partial failure** | Per-message outcomes: archived, failed, not sent. Successes are never rolled back because something else failed; failures stay in your Inbox locally and remotely. |
 | **Protection** | No convenience action ever ticks a protected message. You can tick one yourself, and the confirmation says so. |
 | **Undo** | A real Gmail request per message, restoring only what that transaction confirmed. Can itself partly fail, and then narrows to what is still archived. |
@@ -283,9 +297,10 @@ persists the widened scope, keeping the refresh token Google does not reissue.
 
 **Recommendations still cannot execute.** Proposals, dry-run previews, and saved plans are
 advisory. A saved plan naming "archive messages older than 30 days" reopens a preview when
-restored, and that is all it can ever do. **Fill from preview** is the only bridge between a
-recommendation and a change, and it writes ticks into a checkbox column — you still read the
-list, edit it, open a confirmation, and press the button yourself.
+restored, and that is all it can ever do. **Fill from preview** and **Review messages to
+archive…** are the only bridges between a recommendation and a change, and both write ticks into
+a checkbox column — you still read the list, edit it, open a confirmation, and press the button
+yourself.
 
 ## Local persistence
 
@@ -479,8 +494,12 @@ not been independently audited and makes no anonymity guarantees.
 - The message review is per sender. There is no way to see every loaded message at once.
 - **Archiving is per sender and explicitly selected, by design.** There is no sender-level
   one-click archive, no cross-sender cleanup, and no way to carry out a previewed plan. A large
-  cleanup means ticking the messages — helped by **Fill from preview** — and confirming the list,
-  which is the point rather than an oversight.
+  cleanup means ticking the messages — helped by **Fill from preview** and by **Review messages
+  to archive…**, both of which only tick boxes — and confirming the list, which is the point
+  rather than an oversight.
+- **Sender-level review preselects from the loaded window only.** A sender with four hundred
+  messages of which 250 are loaded gets candidates from the 250. Loading more and reopening the
+  review is the way to reach the rest, and the screen says which window its counts describe.
 - **A large set takes as long as it takes.** Messages go out one request at a time, so a set of
   several hundred is a visible wait. The alternative, `batchModify`, reports no per-message
   result and was rejected for that reason rather than for performance.
