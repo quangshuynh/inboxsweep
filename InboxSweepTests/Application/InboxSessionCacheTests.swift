@@ -12,10 +12,10 @@ struct InboxSessionCacheTests {
 
     // MARK: - Fixtures
 
-    // `nonisolated` because the suite is `@MainActor` but these are read from the
-    // `@Sendable` clock closure handed to the session under test.
-    nonisolated private static let epoch = Date(timeIntervalSince1970: 1_700_000_000)
-    nonisolated private static let savedAt = epoch.addingTimeInterval(-7_200)
+    // `nonisolated` so the fixed clock below can be read from the session's `now` closure,
+    // which is `Sendable` and therefore cannot reach main-actor state.
+    nonisolated static let epoch = Date(timeIntervalSince1970: 1_700_000_000)
+    nonisolated static let savedAt = epoch.addingTimeInterval(-7_200)
 
     private func message(_ id: String, from: String, hours: Double, unread: Bool = false) -> MailMessage {
         MailMessage(
@@ -62,16 +62,13 @@ struct InboxSessionCacheTests {
         )
     }
 
-    /// A second page of *different* messages.
-    ///
-    /// Distinct identifiers on purpose: the session deduplicates across page boundaries, so a
-    /// second page that repeated the first would correctly add nothing and this fixture would
-    /// be testing the deduplicator rather than the cache.
-    private func secondFreshPage(nextPageToken: String? = nil) -> MailMessagePage {
+    /// A genuinely different page. Distinct IDs matter: the session merges pages by message
+    /// ID, so a "second page" that repeated the first one's IDs would extend nothing.
+    private func laterPage(nextPageToken: String? = nil) -> MailMessagePage {
         MailMessagePage(
             messages: [
                 message("11", from: "alerts@example.org", hours: 7),
-                message("12", from: "alerts@example.org", hours: 6),
+                message("12", from: "digest@example.org", hours: 6),
             ],
             nextPageToken: nextPageToken.map(MailPageToken.init)
         )
@@ -319,6 +316,70 @@ struct InboxSessionCacheTests {
         #expect(await provider.fetchCallCount == 0)
     }
 
+    @Test("A message listed on both the stored window and the next page is counted once")
+    func doesNotDoubleCountAnOverlappingPage() async throws {
+        // Gmail can list a message on two consecutive pages when mail arrives mid-read. The
+        // overlapping page repeats message 4 from the stored window.
+        let overlapping = MailMessagePage(
+            messages: [
+                message("4", from: "Jordan <person@example.net>", hours: 1),
+                message("5", from: "alerts@example.org", hours: 5),
+            ],
+            nextPageToken: nil
+        )
+        let cache = RecordingInboxCache(seeded: storedWindow(nextPageToken: MailPageToken("page-2")))
+        let model = InboxSessionModel(
+            provider: StubMailProvider(fetch: .pages([overlapping]), restorable: .connected(.testAccount)),
+            cache: cache
+        )
+
+        await model.restore().value
+        await model.loadMore().value
+
+        let snapshot = try #require(model.state.snapshot)
+        #expect(snapshot.loadedMessageCount == 5, "Four stored plus one genuinely new message")
+        #expect(model.loadedMessages(forSenderKey: "person@example.net").count == 1)
+    }
+
+    @Test("The overlap is resolved before the window is stored, not only before it is shown")
+    func storesTheMergedWindowWithoutDuplicates() async throws {
+        let page = MailMessagePage(messages: [message("9", from: "alerts@example.org", hours: 9)])
+        let cache = RecordingInboxCache()
+        let model = InboxSessionModel(
+            provider: StubMailProvider(fetch: .pages([
+                MailMessagePage(messages: storedMessages(), nextPageToken: MailPageToken("page-2")),
+                MailMessagePage(
+                    messages: [message("4", from: "Jordan <person@example.net>", hours: 1)] + page.messages
+                ),
+            ])),
+            cache: cache
+        )
+
+        await model.connect().value
+        await model.loadMore().value
+
+        let saved = try #require(await cache.lastSaved)
+        #expect(saved.messages.count == 5)
+        #expect(Set(saved.messages.map(\.id)).count == saved.messages.count)
+        #expect(saved.summariesMatchMessages)
+    }
+
+    @Test("A stored window that somehow holds a message twice is corrected on the way back in")
+    func collapsesDuplicatesFromAStoredWindow() async throws {
+        let duplicated = storedMessages() + [message("2", from: "newsletter@example.com", hours: 3)]
+        let cache = RecordingInboxCache(seeded: storedWindow(messages: duplicated))
+        let model = InboxSessionModel(
+            provider: StubMailProvider(restorable: .connected(.testAccount)),
+            cache: cache
+        )
+
+        await model.restore().value
+
+        let snapshot = try #require(model.state.snapshot)
+        #expect(snapshot.loadedMessageCount == 4)
+        #expect(model.loadedMessages(forSenderKey: "newsletter@example.com").count == 3)
+    }
+
     @Test("Extending a restored window does not present the older pages as freshly read")
     func extendedWindowStaysLabelledAsRestored() async throws {
         let cache = RecordingInboxCache(seeded: storedWindow(nextPageToken: MailPageToken("page-2")))
@@ -359,7 +420,7 @@ struct InboxSessionCacheTests {
     func savesTheExtendedWindow() async throws {
         let cache = RecordingInboxCache()
         let model = InboxSessionModel(
-            provider: StubMailProvider(fetch: .pages([freshPage(nextPageToken: "page-2"), secondFreshPage()])),
+            provider: StubMailProvider(fetch: .pages([freshPage(nextPageToken: "page-2"), laterPage()])),
             cache: cache
         )
 

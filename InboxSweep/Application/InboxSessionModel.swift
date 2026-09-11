@@ -241,45 +241,23 @@ final class InboxSessionModel {
         guard messages.count < target else { return .alreadyFinished }
 
         return run { [self] in
-            let account = startingSnapshot.account
-            state = .loaded(startingSnapshot.settingLoadingMore(true))
-
-            // One more page than the target could possibly need. A provider that returns an
-            // empty page with a cursor is unusual, but "unusual" is not a reason to let a
-            // loop run unbounded against somebody's account.
-            let pageBudget = Int((Double(target) / Double(pageSize)).rounded(.up)) + 1
-
-            for _ in 0..<pageBudget {
-                guard messages.count < target, let pageToken = nextPageToken else { break }
-                guard !Task.isCancelled else { break }
-
-                do {
-                    let page = try await provider.fetchMessages(
-                        MailFetchRequest(limit: pageSize, pageToken: pageToken, scope: scope)
-                    )
-                    try Task.checkCancellation()
-
-                    let added = append(page.messages)
-                    nextPageToken = page.nextPageToken
-                    loadedPageCount += 1
-
-                    // Publish even when a page was entirely duplicates: the cursor moved, and
-                    // a dashboard that froze mid-load would look like a hang.
-                    await publishSnapshot(for: account, isLoadingMore: messages.count < target && nextPageToken != nil, persist: false)
-
-                    if added == 0, page.messages.isEmpty { break }
-                } catch is CancellationError {
-                    break
-                } catch {
-                    // The already-loaded window is still valid and still useful, so a failed
-                    // *additional* page returns to it rather than throwing it away.
-                    let providerError = MailProviderError.wrapping(error)
-                    if providerError.requiresReauthentication {
-                        reset()
-                        state = .failed(providerError, account: account)
-                        return
-                    }
-                    break
+            state = .loaded(snapshot.settingLoadingMore(true))
+            do {
+                let page = try await provider.fetchMessages(fetchRequest.nextPage(after: pageToken))
+                try Task.checkCancellation()
+                // Merged rather than appended: Gmail can list a message on two consecutive
+                // pages, and counting it twice would overstate the sender it came from.
+                messages = MailMessageWindow.merging(messages, with: page.messages)
+                nextPageToken = page.nextPageToken
+                await publishSnapshot(for: snapshot.account)
+            } catch {
+                // The already-loaded window is still valid and still useful, so a failed
+                // *additional* page returns to it rather than throwing it away.
+                state = .loaded(snapshot.settingLoadingMore(false))
+                let providerError = MailProviderError.wrapping(error)
+                if providerError.requiresReauthentication {
+                    reset()
+                    state = .failed(providerError, account: snapshot.account)
                 }
             }
 
@@ -500,7 +478,7 @@ final class InboxSessionModel {
         do {
             let page = try await provider.fetchMessages(currentFirstPageRequest)
             try Task.checkCancellation()
-            _ = append(page.messages)
+            messages = MailMessageWindow.deduplicated(page.messages)
             nextPageToken = page.nextPageToken
             loadedPageCount = 1
             await publishSnapshot(for: account, isLoadingMore: false, persist: true)
