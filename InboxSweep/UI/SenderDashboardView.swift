@@ -19,6 +19,11 @@ struct SenderDashboardView: View {
     var body: some View {
         VStack(spacing: 0) {
             AccountSummaryHeader(snapshot: snapshot)
+            if let notice = session.notice {
+                SessionNoticeView(notice: notice)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+            }
             Divider()
             filterBar
             Divider()

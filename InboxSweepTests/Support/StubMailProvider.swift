@@ -40,30 +40,35 @@ actor StubMailProvider: MailProvider {
     private(set) var disconnectCallCount = 0
     private(set) var restoreCallCount = 0
 
-    /// The connection ``restoreConnection()`` reports.
-    private var restorableConnection: MailConnection
-    private var restoreError: MailProviderError?
+    /// The outcome ``restoreConnection()`` reports.
+    private var restoreOutcome: MailRestoreOutcome
+    /// What ``storedAuthorizationState()`` reports after a connect or restore.
+    private var authorizationState: StoredAuthorizationState
 
     init(
         connect: ConnectBehavior = .succeeds(.testAccount),
         fetch: FetchBehavior = .pages([.empty]),
         restorable: MailConnection = .disconnected,
-        restoreError: MailProviderError? = nil
+        restoreOutcome: MailRestoreOutcome? = nil,
+        authorizationState: StoredAuthorizationState = .unknown
     ) {
         self.connectBehavior = connect
         self.fetchBehavior = fetch
-        self.restorableConnection = restorable
-        self.restoreError = restoreError
+        self.restoreOutcome = restoreOutcome
+            ?? restorable.account.map(MailRestoreOutcome.restored)
+            ?? .noStoredCredentials
+        self.authorizationState = authorizationState
     }
 
     func currentConnection() async -> MailConnection { connection }
 
-    func restoreConnection() async throws -> MailConnection {
+    func restoreConnection() async -> MailRestoreOutcome {
         restoreCallCount += 1
-        if let restoreError { throw restoreError }
-        connection = restorableConnection
-        return connection
+        if let account = restoreOutcome.account { connection = .connected(account) }
+        return restoreOutcome
     }
+
+    func storedAuthorizationState() async -> StoredAuthorizationState { authorizationState }
 
     func connect() async throws -> MailAccount {
         connectCallCount += 1

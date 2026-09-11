@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import InboxSweep
 
@@ -104,16 +105,69 @@ struct GmailProviderTests {
             store: store
         )
 
-        let connection = try await provider.restoreConnection()
-        #expect(connection.account?.emailAddress.address == "sample.user@example.com")
+        let outcome = await provider.restoreConnection()
+        #expect(outcome.account?.emailAddress.address == "sample.user@example.com")
     }
 
     @Test("With nothing stored, restoring lands on signed-out rather than erroring")
     func restoresNothingQuietly() async throws {
         let (provider, transport) = makeProvider()
 
-        #expect(try await provider.restoreConnection() == .disconnected)
+        #expect(await provider.restoreConnection() == .noStoredCredentials)
         #expect(transport.requestCount == 0)
+    }
+
+    @Test("A credential store that refuses is reported as unreadable, never as an empty store")
+    func distinguishesRefusalFromAbsence() async throws {
+        // The defect this interval fixed, expressed as a test: a store that cannot answer must
+        // not produce the same outcome as a store with nothing in it, because the app shows the
+        // same signed-out screen for both and only one of them is normal.
+        let (provider, _) = makeProvider(store: FailingCredentialStore(
+            loadError: .accessDenied(KeychainStatus(errSecInteractionNotAllowed))
+        ))
+
+        let outcome = await provider.restoreConnection()
+
+        guard case .unusable(.credentialStoreUnreadable(let reason)) = outcome else {
+            Issue.record("Expected an unreadable credential store, got \(outcome)")
+            return
+        }
+        #expect(reason.contains("errSecInteractionNotAllowed"))
+        #expect(!reason.lowercased().contains("token"))
+    }
+
+    @Test("A stored blob that cannot be decoded is reported as malformed")
+    func reportsMalformedStoredCredentials() async {
+        let (provider, _) = makeProvider(store: FailingCredentialStore(loadError: .malformedStoredData))
+
+        #expect(await provider.restoreConnection() == .unusable(.storedCredentialsMalformed))
+    }
+
+    @Test("A sign-in that could not be saved says so instead of failing quietly")
+    func reportsCredentialsThatCouldNotBePersisted() async throws {
+        // The original bug in one case: the Keychain rejected every write, sign-in carried on
+        // looking perfect, and the next launch was signed out with nothing saying why.
+        let store = FailingCredentialStore(
+            saveError: .noUsableKeychain(KeychainStatus(errSecMissingEntitlement))
+        )
+        let (provider, _) = makeProvider(store: store)
+
+        _ = try await provider.connect()
+        let state = await provider.storedAuthorizationState()
+
+        let warning = try #require(state.warning)
+        #expect(warning.contains("errSecMissingEntitlement"))
+        #expect(warning.contains("connect again next launch"))
+        #expect(!warning.lowercased().contains("refresh-token"))
+    }
+
+    @Test("A sign-in that was saved reports itself as persisted")
+    func reportsPersistedCredentials() async throws {
+        let (provider, _) = makeProvider(store: InMemoryCredentialStore())
+
+        _ = try await provider.connect()
+
+        #expect(await provider.storedAuthorizationState() == .persisted)
     }
 
     @Test("A stored grant that predates the current scopes is discarded")
@@ -125,7 +179,7 @@ struct GmailProviderTests {
         ))
         let (provider, _) = makeProvider(store: store)
 
-        #expect(try await provider.restoreConnection() == .disconnected)
+        #expect(await provider.restoreConnection() == .unusable(.scopesNoLongerSufficient))
         #expect(try store.load() == nil)
     }
 
@@ -147,9 +201,7 @@ struct GmailProviderTests {
             retryPolicy: .immediate
         )
 
-        await #expect(throws: MailProviderError.authorizationExpired) {
-            _ = try await provider.restoreConnection()
-        }
+        #expect(await provider.restoreConnection() == .unusable(.authorizationRevoked))
         #expect(try store.load() == nil)
     }
 

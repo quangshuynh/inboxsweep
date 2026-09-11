@@ -192,15 +192,23 @@ struct InboxSessionModelTests {
 
     @Test("A stored authorization that no longer works sends the user to sign in, not to an error")
     func restoreFailureIsQuiet() async {
-        let model = InboxSessionModel(provider: StubMailProvider(restoreError: .authorizationExpired))
+        let model = InboxSessionModel(
+            provider: StubMailProvider(restoreOutcome: .unusable(.authorizationRevoked))
+        )
         await model.restore().value
+
         #expect(model.state == .signedOut)
+        // Quiet is not the same as silent: the screen is the signed-out one, but it says why.
+        #expect(model.notice == .authorizationEnded)
     }
 
     @Test("A restore failure that is not about permission is still shown")
     func restoreSurfacesRealFailures() async {
-        let model = InboxSessionModel(provider: StubMailProvider(restoreError: .network(reason: "Offline.")))
+        let model = InboxSessionModel(provider: StubMailProvider(
+            restoreOutcome: .unusable(.providerUnavailable(.network(reason: "Offline.")))
+        ))
         await model.restore().value
+
         #expect(model.state == .failed(.network(reason: "Offline."), account: nil))
     }
 

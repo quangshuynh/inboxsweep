@@ -14,6 +14,13 @@ final class InboxSessionModel {
     /// What the window should currently show.
     private(set) var state: InboxSessionState = .signedOut
 
+    /// Something worth telling the user that is not an error screen — a sign-in that could not
+    /// be restored, or one that could not be saved.
+    ///
+    /// Cleared whenever a new connect or restore begins, so a notice never outlives the
+    /// situation that produced it.
+    private(set) var notice: SessionNotice?
+
     /// How the sender list is ordered. Changing it re-sorts what is already loaded and never
     /// re-fetches, so switching order is instant and costs no quota.
     var sortOrder: SenderSortOrder {
@@ -72,29 +79,41 @@ final class InboxSessionModel {
 
     /// Re-establishes a previously authorized connection, if one was stored.
     ///
-    /// Silent by design: finding nothing stored is the normal first-launch case and lands on
-    /// the signed-out screen rather than an error.
+    /// Finding nothing stored is the normal first-launch case and lands silently on the
+    /// signed-out screen. Finding something that *cannot be used* lands there too — but with a
+    /// ``notice`` saying so, because a Keychain refusal and a first launch produce the same
+    /// screen and are not remotely the same thing.
     ///
     /// When a cached window for the restored account is available it is shown instead of
     /// refetching, so a relaunch costs no Gmail quota and no waiting. **Reload** is how the
-    /// user asks for fresh mail, and the header says how old the shown window is.
+    /// user asks for fresh mail, and the header says how old the shown window is. A restore
+    /// that failed shows no cache at all: mail is only ever displayed alongside the
+    /// authenticated account it belongs to.
     @discardableResult
     func restore() -> Task<Void, Never> {
         run { [self] in
             state = .restoring
-            do {
-                let connection = try await provider.restoreConnection()
-                guard let account = connection.account else {
-                    state = .signedOut
-                    return
-                }
+            notice = nil
+
+            switch await provider.restoreConnection() {
+            case .noStoredCredentials:
+                state = .signedOut
+
+            case .restored(let account):
+                notice = await provider.storedAuthorizationState().warning.map(SessionNotice.notPersisted)
                 if await adoptCachedWindow(for: account) { return }
                 await loadFirstPage(for: account)
-            } catch {
-                let providerError = MailProviderError.wrapping(error)
-                // A stored grant that no longer works is not something to alarm the user
-                // about at launch; it just means they need to connect again.
-                state = providerError.requiresReauthentication ? .signedOut : .failed(providerError, account: nil)
+
+            case .unusable(let failure):
+                reset()
+                if let restoreNotice = SessionNotice.forRestoreFailure(failure) {
+                    notice = restoreNotice
+                    state = .signedOut
+                } else {
+                    // A provider outage is worth an error screen with a retry, not a request
+                    // to sign in again over something that is nobody's authorization problem.
+                    state = .failed(failure.providerError, account: nil)
+                }
             }
         }
     }
@@ -104,8 +123,13 @@ final class InboxSessionModel {
     func connect() -> Task<Void, Never> {
         run { [self] in
             state = .connecting
+            notice = nil
             do {
                 let account = try await provider.connect()
+                // Asked straight after signing in, while it is still actionable: a sign-in
+                // that could not be saved is not a failure, but the user is about to rely on
+                // it surviving a relaunch.
+                notice = await provider.storedAuthorizationState().warning.map(SessionNotice.notPersisted)
                 await loadFirstPage(for: account)
             } catch {
                 let providerError = MailProviderError.wrapping(error)
@@ -169,6 +193,7 @@ final class InboxSessionModel {
             await provider.disconnect()
             if let connectedAccount { await cache.clear(for: connectedAccount) }
             reset()
+            notice = nil
             state = .signedOut
         }
     }

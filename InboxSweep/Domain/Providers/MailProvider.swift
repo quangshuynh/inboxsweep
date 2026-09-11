@@ -11,12 +11,19 @@ nonisolated protocol MailAccountAuthorizing: Sendable {
 
     /// Re-establishes a connection from previously stored credentials, if any.
     ///
-    /// Returns ``MailConnection/disconnected`` when there is nothing stored. Throws only when
-    /// stored credentials exist but can no longer be used.
-    func restoreConnection() async throws -> MailConnection
+    /// Non-throwing, because every way this can end is a case of ``MailRestoreOutcome`` —
+    /// including the failures. An implementation that threw would push callers back towards
+    /// `try?`, which is precisely how a Keychain refusal came to be reported as "no account".
+    func restoreConnection() async -> MailRestoreOutcome
 
     /// Starts an interactive sign-in and returns the connected account.
     func connect() async throws -> MailAccount
+
+    /// Whether the last successful sign-in was persisted for the next launch.
+    ///
+    /// Asked *after* connecting. A provider that cannot persist still returns a usable account
+    /// — the session works — so this is a warning the UI can show, never a failure.
+    func storedAuthorizationState() async -> StoredAuthorizationState
 
     /// Discards stored credentials and returns to a signed-out state.
     ///

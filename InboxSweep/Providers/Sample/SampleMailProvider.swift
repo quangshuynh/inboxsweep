@@ -41,7 +41,12 @@ actor SampleMailProvider: MailProvider {
 
     func currentConnection() async -> MailConnection { connection }
 
-    func restoreConnection() async throws -> MailConnection { connection }
+    func restoreConnection() async -> MailRestoreOutcome {
+        // Synthetic mail is never persisted, so there is never anything to restore.
+        connection.account.map(MailRestoreOutcome.restored) ?? .noStoredCredentials
+    }
+
+    func storedAuthorizationState() async -> StoredAuthorizationState { .unknown }
 
     func connect() async throws -> MailAccount {
         connection = .connected(account)
