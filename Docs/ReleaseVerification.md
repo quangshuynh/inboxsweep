@@ -265,6 +265,100 @@ the limitations below.
   §5 follows from the designated requirement; it was not measured.
 - **One machine, one account, one macOS version.** macOS 26.6.2, Xcode 26.6.
 
+## The UI test harness, and what six full runs measured
+
+Interval 10 left the UI suite green but not reliably green: six of eleven consecutive full runs
+had one failure, spread across unrelated cases. Interval 11 reproduced it on the first run and
+found **five** separate causes. None was in the product. All five are recorded here because each
+one was measured, and because the shape of the mistake repeats.
+
+### 1. Hittable is not the same as clickable
+
+`clickWhenReady` waited for `isHittable`, which is geometric: it asks whether a click would land
+on the element, not whether the element would do anything with it. A disabled SwiftUI button
+exists and is hittable. `dashboard.previewCleanupButton` is disabled until a sender is selected,
+and the runner's own log shows the consequence:
+
+```
+t =  8.53s Click "The Daily Digest" StaticText
+t = 11.31s Checking `isHittable == 1` for "dashboard.previewCleanupButton"
+t = 11.52s Click "dashboard.previewCleanupButton" Button
+t = 12.21s Waiting 20.0s for "cleanupPlan.screen" Any to exist   <- never appears
+```
+
+The click was swallowed and the case failed twenty seconds later on an assertion about a sheet
+that was never going to open. The wait is now `isHittable && isEnabled`, which is a **stronger**
+assertion, and every click in the file goes through it.
+
+### 2. The window placement was not idempotent, and nobody checked it
+
+Interval 9 issued one `toggleFullScreen` on the first `onAppear` and assumed it worked.
+Terminating an app that owns a full-screen Space destroys that Space, and a request issued during
+that teardown is dropped with no error. Measured: a case found the sender table at t=6.7s, waited
+twenty seconds for a sender's name, then polled `isHittable` for twenty more and failed naming
+the sender row. The sender row was never the problem.
+
+`UITestWindow` now re-asserts the request until the window's own `styleMask` says it is full
+screen, holds that state for the rest of the launch, and publishes how far it got as a hidden
+accessibility element that every case waits on before touching anything. A harness failure now
+reads as one.
+
+### 3. A saved full-screen frame poisoned every later launch
+
+The worst of the five, and the one that looked least like a test problem. SwiftUI autosaves the
+window frame into the app's own `NSUserDefaults`, and a window that was full screen when the
+process ended saves a full-screen frame. The Space it belonged to is gone by the next launch, and
+macOS then brings the app up with **no window at all**.
+
+Every case in the suite failed this way for an afternoon. The app process was alive, its
+accessibility tree held a menu bar and nothing else, and `System Events` agreed there were zero
+windows. It reproduced with the whole harness disabled, which is what ruled the harness out, and
+`defaults delete quang.InboxSweep` fixed it instantly. `UITestWindow` now clears the autosave
+name, so a launch under the test argument neither reads a saved frame nor writes one. An ordinary
+launch is untouched.
+
+### 4. The placement was re-configuring the app's sheets
+
+A sheet is an `NSWindow` that `canBecomeMain`, so it matched the placement filter. Harmless while
+the placement ran once at launch; not harmless once it became a loop holding the state for the
+life of the process. Every half second it was calling `setContentSize`, `center()`, and
+`toggleFullScreen` on whatever sheet was up, and `raise()` was ordering sheets front independently
+of their parent, which separates a sheet from its window and makes it go away.
+
+Measured: three cases failed on a footer button, and the accessibility tree in the failure showed
+the app back on the dashboard with no sheet at all.
+
+### 5. Activating an already-frontmost app switches Spaces
+
+`XCUIApplication.activate()` before each click was added to stop XCUITest's built-in interruption
+handlers running, which cost **seventy-five seconds** on one measured click while it asked four
+other applications' windows whether they were a Bluetooth setup assistant. It fixed that and
+created a smaller problem on every other click: activating an app that owns a full-screen Space
+makes macOS switch Spaces, and during the switch its accessibility tree is briefly unavailable.
+Three cases failed reading "appeared but never became clickable: it is no longer in the app's
+accessibility tree". It is now conditional on the app having actually lost the foreground.
+
+### What none of this is
+
+No sleep, no retry of a failed assertion, no retried click, no raised timeout, no skip, no
+disabled test, no swallowed assertion, and no test-order dependency. Two of the five changes make
+the suite assert *more* than it did. The one timeout that changed is
+`windowReadyTimeout`, which is new, and it is sized against the app's own bounded retry budget
+rather than against a hope.
+
+### Two product defects the harness work found
+
+Both were found by running the app by hand, because the suite could not run at the time, and both
+would have been caught by a case asserting that `dashboard.coverageHeadline` is still present
+after a rule pass:
+
+- the rule-run banner broke the dashboard outright. Wrapping `Text` laid out against whatever
+  width two buttons leave over reports an enormous intrinsic height, and the header, the filter
+  bar, and the load bar were pushed off the top of the window.
+- an accessibility identifier on a screen's **root container** let SwiftUI merge the container
+  into one element, which swallowed two screens' footers while leaving their scrolling content
+  addressable. The identifier belongs on the title, which is what the older screens already did.
+
 ## Remaining build output
 
 One line appears in every build and is not a project warning:

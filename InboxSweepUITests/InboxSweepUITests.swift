@@ -129,14 +129,14 @@ final class InboxSweepUITests: XCTestCase {
     /// assertion timeout. The state it waits for is the window's own `styleMask`, key status, and
     /// its application's active status, reported by the app under test.
     @MainActor
-    private func waitForDeterministicWindow(_ app: XCUIApplication) {
+    private func waitForDeterministicWindow(_ app: XCUIApplication, timeout: TimeInterval? = nil) {
         front(app)
         let probe = app.descendants(matching: .any)[UITestLaunchArgument.windowStateIdentifier]
         let ready = expectation(
             for: NSPredicate(format: "label == %@", UITestLaunchArgument.windowIsReady),
             evaluatedWith: probe
         )
-        guard XCTWaiter.wait(for: [ready], timeout: Self.windowReadyTimeout) == .completed else {
+        guard XCTWaiter.wait(for: [ready], timeout: timeout ?? Self.windowReadyTimeout) == .completed else {
             XCTFail(
                 "The window never became deterministic. \(windowStateReport(app)) "
                 + "'\(UITestLaunchArgument.windowIsUnavailable)' means macOS refused the "
@@ -250,10 +250,28 @@ final class InboxSweepUITests: XCTestCase {
             return false
         }
 
-        front(app)
+        // Immediately before the click, not only before the wait. The app can be occluded in
+        // between: measured once in four consecutive full runs, the runner reported the Interval
+        // 9 symptom, `Unable to find hit point for ScrollView`, on a control it had just found
+        // hittable and enabled.
+        //
+        // This asks the app itself rather than guessing, and it is the same signal every launch
+        // already waits on. A window that has drifted out of its deterministic state says so, and
+        // ``UITestWindow`` puts it back within half a second of noticing. On a run where nothing
+        // drifts, this is one property read per click and nothing else.
+        waitForDeterministicWindow(app, timeout: Self.driftRecoveryTimeout)
         element.click()
         return true
     }
+
+    /// How long a click waits for a drifted window to come back.
+    ///
+    /// Short on purpose, and short is what makes it honest. ``UITestWindow`` notices drift within
+    /// ``maintenanceInterval`` and re-asserts immediately, so a window that is coming back is back
+    /// in well under a second. Five seconds is generous for that and far too short to paper over a
+    /// window that is genuinely stuck, which fails the case with the same message the launch wait
+    /// would have given.
+    private static let driftRecoveryTimeout: TimeInterval = 5
 
     /// Puts the app under test in front, immediately before something is done to it.
     ///
@@ -291,6 +309,18 @@ final class InboxSweepUITests: XCTestCase {
     /// loop, and does not wait. It makes the state the click is synthesized in deterministic.
     @MainActor
     private func front(_ app: XCUIApplication) {
+        // **Only when it is not already there.** Activating an app that owns a full-screen Space
+        // makes macOS switch Spaces, and during that switch its accessibility tree is briefly
+        // unavailable: an element resolved a moment earlier reports itself as gone. Measured,
+        // that is what the last three failures in this suite were, all of them reading "appeared
+        // but never became clickable: it is no longer in the app's accessibility tree", on three
+        // unrelated controls.
+        //
+        // Calling this unconditionally was the first version, and it fixed the problem it was
+        // written for (see the interruption-monitor note above) by creating a smaller one on
+        // every other click. The guard keeps the recovery and drops the churn: on a run where the
+        // app never loses the foreground, this now does nothing at all.
+        guard app.state != .runningForeground else { return }
         app.activate()
     }
 
@@ -1040,6 +1070,21 @@ final class InboxSweepUITests: XCTestCase {
 
         // Backing out of the confirmation, and then out of the sheet, leaves nothing behind.
         clickWhenReady(app.buttons["ruleReview.cancelButton"], in: app, "The Not now button")
+
+        // Waited for, not assumed, and it is a real assertion rather than a pause: backing out of
+        // the confirmation must actually close it. It also removes a race the second press
+        // otherwise has, because these two presses are the *same* control with two labels. SwiftUI
+        // rebuilds it when `isConfirming` flips, so a second click resolved before the rebuild
+        // finishes lands on an element that no longer exists, which is exactly how this case
+        // failed: "The review's Cancel button appeared but never became clickable".
+        let confirmPrompt = app.descendants(matching: .any)["ruleReview.confirmPrompt"]
+        let backedOut = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: confirmPrompt)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [backedOut], timeout: Self.elementTimeout),
+            .completed,
+            "Not now must close the confirmation"
+        )
+
         clickWhenReady(app.buttons["ruleReview.cancelButton"], in: app, "The review's Cancel button")
         XCTAssertTrue(app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: Self.elementTimeout))
 
