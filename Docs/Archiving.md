@@ -337,6 +337,18 @@ the app did to your mailbox, and the audit history is why the file exists. But o
 transaction is ever in the `undoable` state, so the UI never claims two independent undos are
 available. There is no unlimited undo history and no undo stack.
 
+### Narrowing the offer does not rewrite the history
+
+Both "narrowed" rows above shrink a transaction's list of message identifiers, because that list
+means *the messages this archive still has out of your Inbox* — a second undo must not ask Gmail
+about messages that already came back.
+
+What it does **not** touch is what the archive did. The count it confirmed is fixed at the moment
+Gmail answered, so an archive of ten that had four put back still reads "Archived 10 messages"
+rather than "Archived 6 of 10", which would describe a partial archive that never happened. That
+distinction is what lets one set of records serve both the undo and the
+**[Activity](Activity.md)** screen without the two disagreeing.
+
 Undoing an undo is not offered. Its inverse is archiving, and archiving is something you ask for
 explicitly.
 

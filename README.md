@@ -239,6 +239,29 @@ Those two are the complete set of mutating requests the app can build.
 by subject and received date, saying they will be removed from your Inbox and not deleted →
 confirm → one request per message → a per-message result, with **Undo** beside it.
 
+## Activity
+
+What InboxSweep has changed in this mailbox, newest first, read from the same local transaction
+records that make undo survive a relaunch. Full detail in **[Docs/Activity.md](Docs/Activity.md)**.
+
+It is a reader: opening it, listing it, and opening a row send nothing to Gmail. The only control
+on it that can reach a mailbox is the existing **Undo**, offered on the one transaction the app
+already considers undoable — being listed never makes an older change actionable.
+
+Each entry says what was attempted, what Gmail confirmed, what did not go through, and where its
+undo stands. Partial operations stay partial: *"Archived 8 of 10 messages"* does not become
+*"Archived 8 messages"* later, and putting some of them back does not turn a complete archive
+into a failed one.
+
+It holds counts and message identifiers — **no subjects, no senders, no mail**. Where the loaded
+window still describes the messages, the detail view resolves them dynamically; where it does
+not, it says so and the counts stand on their own.
+
+> **Activity is what InboxSweep changed, not everything that happened in Gmail.** Archive a
+> message in Gmail itself and InboxSweep reconciles its view on the next reload without writing
+> an entry claiming it did so. The history keeps the 100 most recent changes per account, and
+> signing out deletes them.
+
 | | |
 | --- | --- |
 | **Scope** | The messages you ticked. Not their threads, not their sender, nothing else. |
@@ -505,7 +528,7 @@ InboxSweep/               App target
   Config/                 Your local OAuth client plist (gitignored)
 InboxSweepTests/          Unit tests, fixtures, and test doubles
 InboxSweepUITests/        Launch and dashboard UI tests
-Docs/                     OAuth setup, session restore, archiving, release verification
+Docs/                     OAuth setup, session restore, archiving, activity, release verification
 ```
 
 ## Licence

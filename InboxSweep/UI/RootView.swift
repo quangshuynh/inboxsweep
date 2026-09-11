@@ -12,6 +12,14 @@ struct RootView: View {
         content
             .animation(.default, value: appModel.session.state)
             .task { await restoreIfNeeded() }
+        #if DEBUG
+            // Debug-only, and inert unless the UI test launch argument was given. See
+            // ``UITestWindow``.
+            .onAppear(perform: UITestWindow.applyIfRequested)
+            .onChange(of: appModel.session.state) { _, _ in
+                UITestWindow.keepFrontmostIfRequested()
+            }
+        #endif
     }
 
     @ViewBuilder

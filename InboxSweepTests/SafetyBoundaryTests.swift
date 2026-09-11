@@ -242,12 +242,18 @@ struct SafetyBoundaryTests {
             undoState: .undoable
         )
 
+        // `confirmedMessageCount` arrived with the Activity history. It is a *count*, and the
+        // reason it exists is that the alternative was worse: a history row that stayed
+        // descriptive after a partial undo otherwise needed the subjects copied in beside it.
+        // The point of this case is that the record became one integer richer and no closer to
+        // holding somebody's mail.
         let propertyNames = Set(Mirror(reflecting: transaction).children.compactMap(\.label))
         #expect(propertyNames == [
             "id", "operation", "accountAddress", "succeededMessageIDs", "selectedMessageCount",
-            "occurredAt", "undoState",
+            "confirmedMessageCount", "occurredAt", "undoState",
         ])
-        // Growing from one message to many did not grow what a transaction knows about mail.
+        // Growing from one message to many, and then to a browsable history, did not grow what a
+        // transaction knows about mail.
         #expect(propertyNames.isDisjoint(with: [
             "subject", "subjects", "sender", "senders", "from", "body", "snippet", "receivedAt",
             "labels", "senderKey", "action", "plan",
@@ -258,7 +264,13 @@ struct SafetyBoundaryTests {
         let entryProperties = Set(
             Mirror(reflecting: MutationTransactionDTO.entry(from: transaction)).children.compactMap(\.label)
         )
-        #expect(entryProperties == ["id", "operation", "messageIDs", "selectedCount", "occurredAt", "undoState"])
+        #expect(entryProperties == [
+            "id", "operation", "messageIDs", "selectedCount", "occurredAt", "undoState",
+            "confirmedCount",
+        ])
+        #expect(entryProperties.isDisjoint(with: [
+            "subject", "sender", "from", "body", "snippet", "labels", "query",
+        ]))
     }
 
     @Test("A frozen selection names messages and an account, and carries no instruction")
@@ -976,6 +988,117 @@ struct SafetyBoundaryTests {
             let body = String(decoding: write.httpBody ?? Data(), as: UTF8.self)
             #expect(body == #"{"removeLabelIds":["INBOX"]}"# || body == #"{"addLabelIds":["INBOX"]}"#)
         }
+    }
+
+    // MARK: - Activity
+
+    @Test("Making the history visible added no way to reach a mailbox")
+    func activityAddsNoProviderCapability() async {
+        // The claim this interval has to keep. Activity is a *reader* over records the app was
+        // already writing, so there is no new endpoint to audit, no new scope to justify, and no
+        // new verb on the one boundary that can write.
+        #expect(GmailScope.requested == [
+            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.modify",
+        ])
+        #expect(GmailMutationEndpoint.allRequestBuilders().count == 2)
+
+        let boundaryMethodNames = ["archiveCapability", "authorizeArchiving", "archive", "restoreToInbox"]
+        #expect(boundaryMethodNames.count == 4, "The mutation boundary gained or lost a method")
+        for name in boundaryMethodNames {
+            for verb in ["history", "activity", "audit", "log", "list", "prune", "purge"] {
+                #expect(
+                    !name.lowercased().contains(verb),
+                    "The mutation boundary gained something for the history: \(name)"
+                )
+            }
+        }
+
+        // And an entry carries no way to carry anything out — no provider, no request, no
+        // endpoint, and no action. It is a transaction, whatever the cache could say about it,
+        // and a flag saying whether the *existing* undo happens to name it.
+        let entry = ActivityEntry(
+            transaction: MailMutationTransaction(
+                id: UUID(),
+                operation: .archive,
+                accountAddress: "someone@example.com",
+                succeededMessageIDs: [MailMessageID("m-1")],
+                selectedMessageCount: 1,
+                occurredAt: .now,
+                undoState: .undoable
+            )
+        )
+        let propertyNames = Set(Mirror(reflecting: entry).children.compactMap(\.label))
+        #expect(propertyNames == ["transaction", "resolvedMessages", "isUndoable"])
+        #expect(propertyNames.isDisjoint(with: [
+            "provider", "archiver", "request", "endpoint", "action", "session", "perform", "execute",
+        ]))
+    }
+
+    @Test("Reading, resolving, and pruning the history send nothing to Gmail")
+    @MainActor
+    func activityIsReadOnlyOverALiveTransport() async throws {
+        // Driven over a recording transport against the real Gmail adapter, so this counts bytes
+        // rather than stub calls. Everything the Activity screen does is exercised: opening it,
+        // listing it, opening every row, resolving every row's cached metadata, asking whether
+        // each row is undoable, and writing enough transactions to force the retention policy to
+        // prune.
+        var stub = GmailMailboxStub(messages: GmailFixtures.mailbox(messageCount: 8))
+        stub.grantedScope = GmailScope.requestedScopeParameter
+        let transport = RecordingHTTPTransport(handler: stub.handler())
+        let records = EphemeralMutationRecordStore()
+        let provider = GmailProvider(
+            configuration: GmailOAuthConfiguration(clientID: "1234567890-abcdef.apps.googleusercontent.com"),
+            transport: transport,
+            webAuthenticator: FakeWebAuthenticator.granting(),
+            credentialStore: InMemoryCredentialStore(),
+            retryPolicy: .immediate
+        )
+        let model = InboxSessionModel(
+            provider: provider,
+            mutationRecords: records,
+            fetchRequest: MailFetchRequest(limit: 8)
+        )
+
+        await model.connect().value
+        let account = try #require(model.account)
+
+        // More transactions than the policy keeps, so the prune runs for real.
+        for index in 0..<(MailMutationHistory.entryLimit + 20) {
+            _ = await records.record(MailMutationTransaction(
+                id: UUID(),
+                operation: .archive,
+                accountAddress: account.emailAddress.address,
+                succeededMessageIDs: [MailMessageID("m-\(index)")],
+                selectedMessageCount: 1,
+                occurredAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(index)),
+                undoState: .superseded
+            ))
+        }
+
+        let requestsBeforeActivity = transport.requests.count
+
+        for _ in 0..<3 {
+            let history = await model.activityHistory()
+            #expect(history.count == MailMutationHistory.entryLimit, "The prune did not run")
+            for entry in history {
+                _ = entry.title
+                _ = entry.statusSummary
+                _ = entry.unchangedSummary
+                _ = entry.explanation
+                _ = entry.metadataFallback
+                _ = model.resolvedMessages(for: entry.transaction)
+                _ = model.canUndo(entry.transaction)
+            }
+        }
+
+        #expect(
+            transport.requests.count == requestsBeforeActivity,
+            "Activity sent \(transport.requests.count - requestsBeforeActivity) request(s) to Gmail"
+        )
+        // Not one of them could be undone from Activity either: every entry is superseded, so
+        // being visible offered nothing.
+        #expect(model.undoableArchive == nil)
     }
 
     @Test("Every mailbox scope reads a label Gmail already applies, and none is a search")

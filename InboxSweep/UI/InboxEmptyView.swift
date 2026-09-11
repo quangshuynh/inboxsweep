@@ -9,6 +9,8 @@ struct InboxEmptyView: View {
     let snapshot: InboxSnapshot
     let session: InboxSessionModel
 
+    @State private var isActivityPresented = false
+
     var body: some View {
         VStack(spacing: 20) {
             ContentUnavailableView {
@@ -23,11 +25,23 @@ struct InboxEmptyView: View {
                     .accessibilityIdentifier("empty.reloadButton")
             }
 
-            Button("Disconnect") { session.disconnect() }
-                .buttonStyle(.link)
+            HStack(spacing: 16) {
+                // Reachable from here too, because an empty inbox is one of the states somebody
+                // is most likely to be asking "what did this app do?" about — and the dashboard
+                // that carries the usual Activity button is not on screen.
+                Button("Activity") { isActivityPresented = true }
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier("empty.activityButton")
+
+                Button("Disconnect") { session.disconnect() }
+                    .buttonStyle(.link)
+            }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $isActivityPresented) {
+            ActivityView(session: session)
+        }
         .accessibilityIdentifier("empty.screen")
     }
 }
