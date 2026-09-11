@@ -13,6 +13,11 @@ final class InboxSweepUITests: XCTestCase {
     @MainActor
     func testSignedOutScreenExplainsWhatTheAppWillDo() {
         let app = XCUIApplication()
+        // Without this the case asserts on the developer's Keychain rather than on the app: a
+        // Mac with a saved Gmail sign-in restores it and lands on the dashboard, and the run
+        // goes through somebody's real mailbox. The argument swaps the credential store for an
+        // empty one and changes nothing else about the screen under test.
+        app.launchArguments += ["--ignore-stored-credentials"]
         app.launch()
 
         XCTAssertTrue(

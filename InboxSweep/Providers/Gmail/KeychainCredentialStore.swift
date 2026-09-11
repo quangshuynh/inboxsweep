@@ -54,6 +54,19 @@ nonisolated struct KeychainCredentialStore: GmailCredentialStoring {
             case .file: "login keychain"
             }
         }
+
+        /// How a diagnostic surface names this backend.
+        ///
+        /// Says "fallback" for the login keychain because that is what it is here: the store
+        /// reaches it only when the preferred one cannot be used, and a developer reading
+        /// `Credential storage: Login Keychain fallback` should not have to look up whether
+        /// that means the build got the keychain it wanted.
+        var diagnosticLabel: String {
+            switch self {
+            case .dataProtection: "Data Protection Keychain"
+            case .file: "Login Keychain fallback"
+            }
+        }
     }
 
     private let service: String

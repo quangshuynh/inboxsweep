@@ -44,6 +44,9 @@ actor StubMailProvider: MailProvider {
     private var restoreOutcome: MailRestoreOutcome
     /// What ``storedAuthorizationState()`` reports after a connect or restore.
     private var authorizationState: StoredAuthorizationState
+    /// What ``disconnect()`` reports, so a test can drive the sign-out notices without needing
+    /// a Keychain that refuses.
+    private var disconnectOutcome: MailDisconnectOutcome = .complete
 
     init(
         connect: ConnectBehavior = .succeeds(.testAccount),
@@ -84,9 +87,10 @@ actor StubMailProvider: MailProvider {
         }
     }
 
-    func disconnect() async {
+    func disconnect() async -> MailDisconnectOutcome {
         disconnectCallCount += 1
         connection = .disconnected
+        return disconnectOutcome
     }
 
     func fetchMessages(_ request: MailFetchRequest) async throws -> MailMessagePage {
@@ -105,6 +109,12 @@ actor StubMailProvider: MailProvider {
             try await Task.sleep(for: .seconds(60))
             throw MailProviderError.cancelled
         }
+    }
+
+    /// Changes what a sign-out reports, so the notices for a retained credential and an
+    /// unrevoked grant can be exercised.
+    func setDisconnectOutcome(_ outcome: MailDisconnectOutcome) {
+        disconnectOutcome = outcome
     }
 
     /// Changes behaviour mid-test, e.g. to make a retry succeed after a failure.

@@ -68,6 +68,41 @@ nonisolated struct SessionNotice: Equatable, Sendable, Identifiable {
         )
     }
 
+    // MARK: - Disconnect
+
+    /// The stored credential survived a sign-out.
+    ///
+    /// The most serious thing this type says. The user asked to be disconnected, the window
+    /// says they are, and a refresh token is still on the Mac — so the notice tells them where
+    /// to go and remove it themselves rather than leaving them to assume it is gone.
+    static func credentialNotRemoved(reason: String) -> SessionNotice {
+        SessionNotice(
+            symbolName: "key.slash",
+            title: "InboxSweep couldn't remove your saved sign-in",
+            message: """
+                \(reason) InboxSweep is signed out and your mailbox was not changed, but the saved                 sign-in is still on this Mac. You can delete the "InboxSweep — Gmail sign-in" item                 in Keychain Access, and withdraw the access at myaccount.google.com.
+                """
+        )
+    }
+
+    /// Signing out worked locally; Google was not told.
+    static let grantNotRevoked = SessionNotice(
+        symbolName: "person.badge.shield.exclamationmark",
+        title: "InboxSweep signed out, but Google wasn't told",
+        message: """
+            The saved sign-in has been removed from this Mac. InboxSweep couldn't reach Google to             withdraw the access itself, so the permission is still listed on your account until you             remove it at myaccount.google.com. Your mailbox was not changed.
+            """
+    )
+
+    /// The notice for a disconnect, or `nil` when it went cleanly.
+    static func forDisconnectOutcome(_ outcome: MailDisconnectOutcome) -> SessionNotice? {
+        switch outcome {
+        case .complete: nil
+        case .grantNotRevoked: grantNotRevoked
+        case .storedCredentialRetained(let reason): credentialNotRemoved(reason: reason)
+        }
+    }
+
     // MARK: - Mapping
 
     /// The notice for a restore failure, or `nil` when the failure deserves an error screen

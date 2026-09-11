@@ -53,8 +53,11 @@ actor SampleMailProvider: MailProvider {
         return account
     }
 
-    func disconnect() async {
+    func disconnect() async -> MailDisconnectOutcome {
         connection = .disconnected
+        // Nothing was ever stored and nothing was ever granted, so there is nothing that
+        // could have failed to be removed.
+        return .complete
     }
 
     func fetchMessages(_ request: MailFetchRequest) async throws -> MailMessagePage {

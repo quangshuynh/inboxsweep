@@ -13,6 +13,7 @@ nonisolated final class FailingCredentialStore: GmailCredentialStoring, @uncheck
     private var credentials: GmailStoredCredentials?
     private let loadError: CredentialStoreError?
     private let saveError: CredentialStoreError?
+    private let clearError: CredentialStoreError?
 
     private(set) var saveCallCount = 0
     private(set) var clearCallCount = 0
@@ -20,11 +21,13 @@ nonisolated final class FailingCredentialStore: GmailCredentialStoring, @uncheck
     init(
         credentials: GmailStoredCredentials? = nil,
         loadError: CredentialStoreError? = nil,
-        saveError: CredentialStoreError? = nil
+        saveError: CredentialStoreError? = nil,
+        clearError: CredentialStoreError? = nil
     ) {
         self.credentials = credentials
         self.loadError = loadError
         self.saveError = saveError
+        self.clearError = clearError
     }
 
     func load() throws -> GmailStoredCredentials? {
@@ -39,9 +42,10 @@ nonisolated final class FailingCredentialStore: GmailCredentialStoring, @uncheck
     }
 
     func clear() throws {
-        lock.withLock {
-            clearCallCount += 1
-            credentials = nil
-        }
+        lock.withLock { clearCallCount += 1 }
+        // A store that refuses to delete keeps what it holds. That is the point: the provider
+        // must not be able to report a sign-out as complete over a credential still in place.
+        if let clearError { throw clearError }
+        lock.withLock { credentials = nil }
     }
 }

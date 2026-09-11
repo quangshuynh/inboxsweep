@@ -250,15 +250,28 @@ synthetic credentials under a test-only service name and deletes them afterwards
 
 ### Check that a sign-in survives a relaunch
 
-A debug-only launch argument writes a synthetic Keychain marker, reports what it found, and
-exits — so cross-launch persistence can be checked without a Google password:
+A launch argument writes a synthetic Keychain marker, reports what it found, and exits — so
+cross-launch persistence can be checked without a Google password:
 
 ```bash
 InboxSweep.app/Contents/MacOS/InboxSweep --keychain-selfcheck
 ```
 
 Run it twice against one build; the second run should say `restored`.
-`--keychain-selfcheck-reset` removes the marker. See
+`--keychain-selfcheck-reset` removes the marker.
+
+macOS has two keychains and the app falls back between them silently, so a successful save does
+not say which one it used. Two more arguments answer that:
+
+```bash
+InboxSweep.app/Contents/MacOS/InboxSweep --keychain-probe     # each keychain, no fallback
+InboxSweep.app/Contents/MacOS/InboxSweep --keychain-backend   # where the real credential is
+```
+
+All four work in Release as well as Debug — the signed Release app is the build whose Keychain
+behaviour most needs measuring — and all four are inert without their launch argument, reach no
+UI, and print no token. Measured results and the signing configuration behind them are in
+[Docs/ReleaseVerification.md](Docs/ReleaseVerification.md); the design is in
 [Docs/SessionRestore.md](Docs/SessionRestore.md).
 
 No test requires a Google account, a network connection, or real mailbox data. Fixtures use
@@ -338,10 +351,17 @@ not been independently audited and makes no anonymity guarantees.
 - A saved plan holds sender addresses on disk in the app's container. It is deleted on
   disconnect, but it is the one place a list of who writes to you is written unencrypted beyond
   the metadata cache.
-- Keychain behaviour is verified on a development build. A distribution build would use the
-  data protection keychain instead, and that path has not been exercised.
-- The Copy Bundle Resources build phase still contains the target's `Info.plist`, which
-  produces one project-level build warning. It predates this interval and is untouched.
+- Keychain behaviour is verified on Apple Development-signed Debug **and** Release builds, both
+  of which use the login keychain. The data protection keychain is preferred and refuses this
+  app with `errSecMissingEntitlement (-34018)`, because a macOS app with these capabilities is
+  signed without a provisioning profile and so has no keychain access group. No Developer ID
+  certificate is installed on the development machine, so a distribution build — which is where
+  that path would be exercised — has not been produced. See
+  [Docs/ReleaseVerification.md](Docs/ReleaseVerification.md).
+- A clean build prints one `appintentsmetadataprocessor` note about there being no
+  `AppIntents.framework` dependency. It is stdout from a build phase Xcode runs for every app
+  target, not a project warning, and silencing it would mean adding an App Intent the app has no
+  use for.
 
 ## Repository layout
 
@@ -359,7 +379,7 @@ InboxSweep/               App target
   Config/                 Your local OAuth client plist (gitignored)
 InboxSweepTests/          Unit tests, fixtures, and test doubles
 InboxSweepUITests/        Launch and dashboard UI tests
-Docs/                     OAuth setup guide and plist template
+Docs/                     OAuth setup, session restore, release verification
 ```
 
 ## Licence

@@ -106,8 +106,23 @@ failed restore:
 **saved** now shows a notice immediately, while the user is still there to read it, instead of
 being discovered as an unexplained signed-out screen next launch.
 
+`MailDisconnectOutcome` covers the third: signing *out*. `disconnect()` used to return nothing,
+with a `try?` around both the revoke and the delete. The serious half of that was the delete —
+a Keychain that refuses to remove this app's item leaves the refresh token exactly where it
+was, and the window says "signed out" either way. Three outcomes now:
+
+- `.complete` — the credential is gone and the grant was revoked, or there was none to revoke.
+  No notice.
+- `.grantNotRevoked` — gone from this Mac; Google was not reached. A notice says the permission
+  is still listed on the account.
+- `.storedCredentialRetained(reason:)` — **the credential is still on this Mac.** A notice names
+  the Keychain Access item to delete and the Google page to withdraw the access on.
+
+Signing out still always succeeds from the user's side: the session ends and the window clears
+in every case. What changed is that two of the three say what did not happen.
+
 No error message, notice, or log line contains a refresh token, an access token, or any part of
-one. `KeychainCredentialStoreTests` asserts this.
+one. `KeychainCredentialStoreTests` and `CredentialStoreDiagnosticsTests` assert this.
 
 ---
 
@@ -115,14 +130,25 @@ one. `KeychainCredentialStoreTests` asserts this.
 
 Two different things, tested separately, because they are not the same test.
 
-Reproduce either with the debug-only self-check, which writes a synthetic marker under its own
-Keychain service, reports what it found, and exits:
+Reproduce either with the self-check, which writes a synthetic marker under its own Keychain
+service, reports what it found, and exits:
 
 ```bash
 InboxSweep.app/Contents/MacOS/InboxSweep --keychain-selfcheck
 ```
 
-`--keychain-selfcheck-reset` removes the marker. Debug builds only; no UI reaches it.
+`--keychain-selfcheck-reset` removes the marker. Two more modes answer the question a
+successful save cannot — *which* keychain it went to, given that the fallback is silent:
+
+```bash
+InboxSweep.app/Contents/MacOS/InboxSweep --keychain-probe     # per keychain, no fallback
+InboxSweep.app/Contents/MacOS/InboxSweep --keychain-backend   # where the real credential is
+```
+
+All four are compiled into Release as well as Debug, because the signed Release app is the
+build whose Keychain behaviour most needs measuring; each is inert without its launch argument,
+none is reachable from any UI, and none can print a token. See
+[Docs/ReleaseVerification.md](ReleaseVerification.md).
 
 ### A. Same binary, quit and reopened
 
@@ -165,13 +191,25 @@ What *would* break it: signing with a different certificate or team, or changing
 item becomes another app's as far as the Keychain is concerned. That is correct behaviour, and
 the app reports it as `.credentialStoreUnreadable` rather than as a silent sign-out.
 
+### C. The same two, on a signed Release build
+
+Both of the above were measured on a **Debug** build. Interval 5 repeated them on a signed,
+sandboxed, hardened-runtime **Release** build, added a per-keychain probe so the backend is
+measured rather than inferred, and recorded the signing state that produces it. Results, the
+exact commands, and the `errSecMissingEntitlement (-34018)` that keeps the data protection
+keychain out of reach on this machine are in
+[Docs/ReleaseVerification.md](ReleaseVerification.md).
+
 ### What has *not* been verified
 
-- **Distribution builds.** Everything above was measured on a locally signed development build
-  with an Apple Development certificate. A Developer ID or App Store build carries a
-  provisioning profile, would use the **data protection keychain** instead, and has not been
-  built or tested here. The fallback exists precisely so that the code path is the same either
-  way, but "production Keychain persistence is proven" is not a claim this document makes.
+- **Distribution builds.** Everything above was measured on locally signed builds with an Apple
+  Development certificate. A Developer ID or App Store build is signed by a different
+  certificate, and one carrying a provisioning profile would use the **data protection
+  keychain** instead. No such certificate is installed on this machine, so that has not been
+  built or tested. The fallback exists precisely so that the code path is the same either way,
+  but "production Keychain persistence is proven" is not a claim this document makes.
+- **The data protection keychain itself.** Preferred, reached, and refused with a measured
+  status code — never exercised end to end on this app.
 - **Keychain prompts under a changed signing identity.** Not exercised; re-signing with a
   *different* certificate was not tested.
 
