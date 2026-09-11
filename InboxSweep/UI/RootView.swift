@@ -30,7 +30,7 @@ struct RootView: View {
         case .connecting:
             InboxProgressView(
                 title: "Waiting for \(appModel.session.providerDisplayName)…",
-                message: "Finish signing in and granting read-only access in the window that opened.",
+                message: "Finish signing in and granting the permissions in the window that opened.",
                 onCancel: appModel.session.cancel
             )
 

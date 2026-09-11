@@ -185,7 +185,7 @@ nonisolated struct GmailOAuthClient: Sendable {
             return .authenticationFailed(reason: "Access was declined.")
         case "invalid_scope":
             return .insufficientPermissions(
-                reason: "Google rejected the read-only permission InboxSweep asked for."
+                reason: "Google rejected the permissions InboxSweep asked for."
             )
         default:
             return .authenticationFailed(reason: describe(oauthError: code ?? "unknown_error"))
@@ -199,7 +199,7 @@ nonisolated struct GmailOAuthClient: Sendable {
         case "invalid_client", "unauthorized_client":
             "Google rejected this app's OAuth client. Check the client ID in Docs/OAuthSetup.md."
         case "invalid_scope":
-            "Google rejected the read-only permission InboxSweep asked for."
+            "Google rejected the permissions InboxSweep asked for."
         default:
             "Google reported \"\(code)\"."
         }

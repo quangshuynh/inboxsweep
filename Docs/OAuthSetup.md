@@ -77,7 +77,8 @@ INBOXSWEEP_GOOGLE_CLIENT_ID = YOUR-CLIENT-ID.apps.googleusercontent.com
 
 Launch the app. The signed-out screen should show a **Connect Gmail** button rather than the
 "Google sign-in isn't set up yet" notice. Clicking it opens Google's own sign-in window; the
-consent screen should ask for read-only access to Gmail metadata and nothing else.
+consent screen should ask for the two permissions in [Docs/Archiving.md](Archiving.md) and
+nothing else.
 
 ## What gets stored where
 
@@ -100,13 +101,17 @@ and deletes that file. You can also revoke access at any time from your
 
 ## Checking a live sign-in
 
-Once a client is configured, this is the round trip worth walking through by hand. Each step
-is read-only; nothing in it can change your mailbox.
+Once a client is configured, this is the round trip worth walking through by hand. No step
+below changes your mailbox: archiving is a separate, explicitly confirmed action, described in
+[Docs/Archiving.md](Archiving.md).
 
 1. **Sign in.** Launch the app and click **Connect Gmail**. Google's own window opens.
-2. **Read the consent screen.** It should ask for read-only access to Gmail *metadata* and
-   nothing else. An unverified client also warns that the app is in testing — expected while
-   the client stays in Testing mode.
+2. **Read the consent screen.** It should ask for two things and nothing else: read access to
+   Gmail *metadata*, and permission to change which labels a message carries. Google describes
+   the second one far more broadly than what InboxSweep does with it — the app's signed-out
+   screen explains that before sending you here, and the only labels it can change are `INBOX`
+   on one message you confirm. An unverified client also warns that the app is in testing,
+   which is expected while the client stays in Testing mode.
 3. **Token exchange.** Granting consent should land you on the sender dashboard within a few
    seconds. That means the authorization code was exchanged for tokens successfully.
 4. **Restoration.** Quit and relaunch. The dashboard should come back immediately, labelled

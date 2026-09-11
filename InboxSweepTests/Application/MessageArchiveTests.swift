@@ -238,8 +238,10 @@ struct MessageArchiveTests {
 
         for error in errors {
             #expect(!error.changedTheMailbox)
-            let reason = try? #require(error.failureReason)
-            #expect(reason?.contains("Nothing was changed") == true, "\(error) didn't say the mailbox was untouched")
+            #expect(
+                error.failureReason?.contains("Nothing was changed") == true,
+                "\(error) didn't say the mailbox was untouched"
+            )
             #expect(error.errorDescription?.isEmpty == false)
             #expect(error.recoverySuggestion?.isEmpty == false)
         }

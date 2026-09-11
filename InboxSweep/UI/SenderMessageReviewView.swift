@@ -86,6 +86,24 @@ struct SenderMessageReviewView: View {
     private var affectedCount: Int { reviewed.count(where: \.isAffectedByPlan) }
     private var protectedCount: Int { reviewed.count { $0.membership?.isProtected == true } }
 
+    /// What this screen can and cannot do, said before anything else on it.
+    ///
+    /// Conditional because the old sentence — "no message is opened, moved, or changed" —
+    /// stopped being true on this exact screen the moment archiving arrived. It is still true
+    /// where the app genuinely cannot write, and saying so there is worth doing; saying it
+    /// beside a working Archive button would be worse than saying nothing.
+    private var disclaimer: String {
+        let preamble = "These are the \(reviewed.count) messages InboxSweep has loaded from this sender."
+        guard session.canOfferArchiving else {
+            return "\(preamble) Nothing on this screen is sent to Gmail, and no message is opened, moved, or changed."
+        }
+        return """
+            \(preamble) No message is opened — there is no message body to show. The only thing \
+            that changes your mailbox is Archive, which acts on one message you select and \
+            confirm, and can be undone.
+            """
+    }
+
     /// The selected row, when exactly one is selected and it is still in the window.
     private var selectedMessage: MailMessage? {
         guard let selectedMessageID else { return nil }
@@ -102,11 +120,11 @@ struct SenderMessageReviewView: View {
                 .accessibilityIdentifier("messageReview.screen")
 
             Label {
-                Text("These are the \(reviewed.count) messages InboxSweep has loaded from this sender. Nothing on this screen is sent to Gmail, and no message is opened, moved, or changed.")
+                Text(disclaimer)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("messageReview.disclaimer")
             } icon: {
-                Image(systemName: "eye")
+                Image(systemName: session.canOfferArchiving ? "archivebox" : "eye")
             }
             .font(.callout)
             .foregroundStyle(.secondary)

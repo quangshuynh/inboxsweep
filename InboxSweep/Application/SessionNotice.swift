@@ -37,8 +37,8 @@ nonisolated struct SessionNotice: Equatable, Sendable, Identifiable {
         symbolName: "lock.rotation",
         title: "InboxSweep needs to ask for its permission again",
         message: """
-            The saved sign-in doesn't cover the read-only permission this version asks for, so it \
-            was discarded. Connecting again will request it.
+            The saved sign-in doesn't cover the permission this version needs to read your mail, \
+            so it was discarded. Connecting again will request it.
             """
     )
 

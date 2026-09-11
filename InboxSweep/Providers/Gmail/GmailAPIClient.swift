@@ -167,7 +167,7 @@ nonisolated struct GmailAPIClient: Sendable {
                 return .providerFailure(statusCode: 403, reason: "Gmail is rate-limiting this account.")
             }
             return .insufficientPermissions(
-                reason: "Gmail declined the request. InboxSweep may need to be reconnected with read-only access."
+                reason: "Gmail declined the request. InboxSweep may need to be connected again to refresh its permissions."
             )
 
         case 429:

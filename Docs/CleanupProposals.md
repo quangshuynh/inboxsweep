@@ -7,9 +7,11 @@ Everything here is computed from message *metadata* — sender addresses, subjec
 Gmail's own labels, and the presence of a `List-Unsubscribe` header. No message body is ever
 requested, no AI is involved, and nothing leaves the Mac.
 
-> **Still read-only.** InboxSweep can recommend, preview, and let you inspect the messages
-> behind either. It cannot archive, trash, label, mark, or unsubscribe, and it holds no Gmail
-> permission that would let it. See [Why this is still read-only](#why-this-is-still-read-only).
+> **Still advisory.** A proposal and a preview describe; neither can carry itself out. The app
+> can archive a **single message you open and confirm** — see [Archiving](Archiving.md) — and
+> that is reached by looking at individual messages, never by acting on a proposal. It cannot
+> archive a sender, run a plan, trash, label, mark, or unsubscribe.
+> See [Why proposals are not executable](#why-proposals-are-not-executable).
 
 For how a sign-in is stored and restored between launches, see
 [Session restore](SessionRestore.md).
@@ -183,7 +185,7 @@ Message-level protection is necessarily narrower than sender-level: a message is
 *it* is starred, *it* is marked Important, *its* subject mentions a protective topic, or *its*
 subject reads as a reply.
 
-You can preview an action for a sender InboxSweep said to Keep. It is a read-only preview and
+You can preview an action for a sender InboxSweep said to Keep. Previewing changes nothing and
 you are allowed to look. The plan says so, and still excludes that sender's protected messages.
 
 ## Reviewing the messages behind a proposal
@@ -309,20 +311,27 @@ The window tolerance is a fifth so that a page of new mail is not an interruptio
 load, which changes what every action reaches, always is. Staleness is re-evaluated after every
 page, so a plan becomes visibly stale as a deep load runs.
 
-## Why this is still read-only
+## Why proposals are not executable
 
-InboxSweep requests exactly one Gmail scope, `gmail.metadata`, which cannot modify a mailbox.
-This interval adds no scope, no endpoint, and no code path that writes. The dry-run planner
-operates entirely on local data.
+The app can now change one thing about a mailbox: whether a single message you selected and
+confirmed is in your Inbox. Nothing on this page can reach that.
 
-`SafetyBoundaryTests` asserts all of it: that no mutating scope is requested, that every Gmail
-request the app can build is a `GET` whose path reaches none of Gmail's mutating operations,
-that every mailbox scope resolves to a read-only Gmail label and smuggles in no search query,
-that building a preview issues no provider call and sends no HTTP request, that reviewing a
-sender's messages issues none either, that a plan and a saved plan are both inert data with
-nowhere for a schedule or an execution to hide, that restoring a saved plan performs nothing,
-that a deeper load is still nothing but `GET`s, and that no proposal describes a sender in terms
-the evidence cannot support.
+A proposal is a sentence about a sender. A plan is counts and sentences: `CleanupPlan` carries
+no message identifiers, no provider, no schedule, and nothing that could stand in for one, and
+neither does a saved plan. The dry-run planner runs entirely on the loaded window and makes no
+request of any kind. The route from here to an actual change runs through **Review…** and then
+through one message, one confirmation, and one press — a person, not a rule.
 
-The order is deliberate. Recommending well is a harder problem than deleting, and it is the one
-worth getting right before anything is allowed to touch a mailbox.
+`SafetyBoundaryTests` asserts the whole of it: that the only two mutating requests the app can
+build are `messages.modify` calls adding or removing `INBOX` on one named message; that neither
+reaches a trash, delete, send, settings, batch, or thread path; that every read request is a
+`GET`; that building a preview or reviewing a sender's messages issues no provider call at all;
+that a plan and a saved plan are both inert data with nowhere for a schedule or an execution to
+hide; that **restoring a saved plan whose action is literally called "archive" performs
+nothing**; that loading, previewing, saving, restoring, re-sorting and reloading reach the
+mutation boundary zero times; and that no proposal describes a sender in terms the evidence
+cannot support.
+
+The order was deliberate. Recommending well is a harder problem than deleting, and it was worth
+getting right before anything was allowed to touch a mailbox — which is also why the first thing
+allowed to is one message at a time, with an undo.
