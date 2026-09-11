@@ -289,6 +289,41 @@ struct InboxSessionModelTests {
         #expect(model.state == .signedOut)
         #expect(model.account == nil)
         #expect(await provider.disconnectCallCount == 1)
+        #expect(model.notice == nil, "A clean sign-out interrupted the user for nothing")
+    }
+
+    @Test("A sign-out that left the saved credential behind tells the user where it still is")
+    func noticesACredentialThatSurvivedSignOut() async throws {
+        let provider = StubMailProvider(fetch: .pages([firstPage()]))
+        await provider.setDisconnectOutcome(
+            .storedCredentialRetained(reason: "The Keychain declined access to the saved sign-in (errSecInteractionNotAllowed (-25293)).")
+        )
+        let model = InboxSessionModel(provider: provider)
+        await model.connect().value
+
+        await model.disconnect().value
+
+        // Signed out either way — the whole point is that the screen cannot distinguish these,
+        // so the notice has to.
+        #expect(model.state == .signedOut)
+        let notice = try #require(model.notice)
+        #expect(notice.title == "InboxSweep couldn't remove your saved sign-in")
+        #expect(notice.message.contains("errSecInteractionNotAllowed"))
+        #expect(notice.message.contains("Keychain Access"))
+    }
+
+    @Test("A sign-out Google was never told about says the permission is still listed there")
+    func noticesAnUnrevokedGrant() async throws {
+        let provider = StubMailProvider(fetch: .pages([firstPage()]))
+        await provider.setDisconnectOutcome(.grantNotRevoked)
+        let model = InboxSessionModel(provider: provider)
+        await model.connect().value
+
+        await model.disconnect().value
+
+        #expect(model.state == .signedOut)
+        #expect(model.notice == .grantNotRevoked)
+        #expect(try #require(model.notice).message.contains("myaccount.google.com"))
     }
 
     @Test("Connecting again after signing out starts from a clean window")

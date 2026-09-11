@@ -273,8 +273,9 @@ struct GmailProviderTests {
         let (provider, transport) = makeProvider(store: store)
         _ = try await provider.connect()
 
-        await provider.disconnect()
+        let outcome = await provider.disconnect()
 
+        #expect(outcome == .complete)
         #expect(await provider.currentConnection() == .disconnected)
         #expect(try store.load() == nil)
         #expect(transport.requests(matching: "revoke").count == 1)
@@ -299,9 +300,65 @@ struct GmailProviderTests {
         )
         _ = try await provider.connect()
 
-        await provider.disconnect()
+        let outcome = await provider.disconnect()
 
+        // Signed out locally, and honest about the half that did not happen: the grant is
+        // still listed on the account until the user removes it.
+        #expect(outcome == .grantNotRevoked)
         #expect(await provider.currentConnection() == .disconnected)
         #expect(try store.load() == nil)
+    }
+
+    @Test("A sign-out that could not delete the stored credential says so rather than looking clean")
+    func reportsACredentialThatSurvivedSignOut() async throws {
+        // The failure this case exists for: the window says signed out, and a refresh token is
+        // still on the Mac. Before this interval `disconnect()` returned nothing and the
+        // Keychain's refusal went into a `try?`.
+        let store = FailingCredentialStore(
+            clearError: .accessDenied(KeychainStatus(errSecInteractionNotAllowed))
+        )
+        let (provider, _) = makeProvider(store: store)
+        _ = try await provider.connect()
+
+        let outcome = await provider.disconnect()
+
+        #expect(
+            outcome == .storedCredentialRetained(
+                reason: CredentialStoreError
+                    .accessDenied(KeychainStatus(errSecInteractionNotAllowed))
+                    .diagnosticDescription
+            )
+        )
+        // The session is still ended: signing out must always work from the user's side.
+        #expect(await provider.currentConnection() == .disconnected)
+        #expect(try store.load() != nil, "The store kept the credential, which is what is being reported")
+    }
+
+    @Test("A stale grant the store will not discard is reported as a store failure, not just changed scopes")
+    func reportsAStoreThatWillNotDiscardAnOutdatedGrant() async throws {
+        // Scopes that no longer cover what the app reads are discarded and the user is asked to
+        // connect again. When the discard itself fails, the more useful fact is the second one:
+        // a Keychain refusing to delete this app's item will refuse to write its replacement,
+        // so a reconnect would appear to work and silently fail to stick.
+        let stale = GmailStoredCredentials(
+            refreshToken: "synthetic-refresh-token",
+            grantedScopes: ["https://www.googleapis.com/auth/userinfo.email"],
+            accountEmailAddress: "sample.user@example.com"
+        )
+        let store = FailingCredentialStore(
+            credentials: stale,
+            clearError: .accessDenied(KeychainStatus(errSecInteractionNotAllowed))
+        )
+        let (provider, transport) = makeProvider(store: store)
+
+        let outcome = await provider.restoreConnection()
+
+        guard case .unusable(.credentialStoreUnreadable(let reason)) = outcome else {
+            Issue.record("Expected a credential-store failure, got \(outcome)")
+            return
+        }
+        #expect(reason.contains("errSecInteractionNotAllowed"))
+        #expect(!reason.contains("synthetic-refresh-token"))
+        #expect(transport.requestCount == 0, "A grant that cannot be used was still taken to Google")
     }
 }

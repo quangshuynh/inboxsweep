@@ -301,7 +301,7 @@ final class InboxSessionModel {
         let connectedAccount = account
         activeTask?.cancel()
         return run { [self] in
-            await provider.disconnect()
+            let outcome = await provider.disconnect()
             if let connectedAccount {
                 await cache.clear(for: connectedAccount)
                 // Disconnecting is the user saying they are done. Leaving a list of their
@@ -309,8 +309,11 @@ final class InboxSessionModel {
                 await planStore.clear(for: connectedAccount)
             }
             reset()
-            notice = nil
             state = .signedOut
+            // A sign-out that did not fully take is the one thing about disconnecting worth
+            // interrupting the user for: the window says signed out either way, and only this
+            // says whether the saved sign-in actually went with it.
+            notice = SessionNotice.forDisconnectOutcome(outcome)
         }
     }
 

@@ -27,9 +27,12 @@ nonisolated protocol MailAccountAuthorizing: Sendable {
 
     /// Discards stored credentials and returns to a signed-out state.
     ///
-    /// Best-effort and non-throwing: signing out must always succeed from the user's point of
-    /// view, even if revoking remotely fails.
-    func disconnect() async
+    /// Non-throwing: signing out must always succeed from the user's point of view, even if
+    /// revoking remotely fails. Not *silent*, though — the returned
+    /// ``MailDisconnectOutcome`` says whether the stored credential was really removed, because
+    /// "we told you that you were signed out and left the refresh token where it was" is not a
+    /// thing this app should be able to do without saying so.
+    func disconnect() async -> MailDisconnectOutcome
 }
 
 /// Reads bounded windows of message metadata.

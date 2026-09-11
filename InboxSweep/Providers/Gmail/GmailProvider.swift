@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// The Gmail implementation of the app's provider boundary.
 ///
@@ -69,7 +70,13 @@ actor GmailProvider: MailProvider {
         // If the scopes the app needs have changed since the grant was stored, the stored
         // grant is not the one we want. Discard it and ask the user to connect again.
         guard stored.coversRequestedScopes else {
-            try? credentialStore.clear()
+            if let failure = clearStoredCredentials() {
+                // The grant is unusable *and* the store will not let go of it. The second half
+                // is the one worth saying out loud: a Keychain that refuses to delete this
+                // app's own item will refuse to write the replacement too, and the user would
+                // otherwise meet that as a reconnect that silently fails to stick.
+                return .unusable(.credentialStoreUnreadable(reason: failure.diagnosticDescription))
+            }
             return .unusable(.scopesNoLongerSufficient)
         }
 
@@ -139,13 +146,27 @@ actor GmailProvider: MailProvider {
         }
     }
 
-    func disconnect() async {
+    func disconnect() async -> MailDisconnectOutcome {
         // Revoking tells Google to drop the grant, so signing out actually gives the access
-        // back rather than just forgetting the token locally.
-        if let token = accessToken, let oauth = try? makeOAuthClient() {
-            try? await oauth.revoke(token: token.value)
+        // back rather than just forgetting the token locally. There is nothing to revoke when
+        // no token was ever obtained, and that is not a failure.
+        var revoked = true
+        if let token = accessToken {
+            do {
+                try await makeOAuthClient().revoke(token: token.value)
+            } catch {
+                revoked = false
+            }
         }
-        forgetCredentials()
+
+        let removalFailure = forgetCredentials()
+
+        // Ranked, because one notice is shown and a credential still on this Mac is the worse
+        // of the two.
+        if let removalFailure {
+            return .storedCredentialRetained(reason: removalFailure.diagnosticDescription)
+        }
+        return revoked ? .complete : .grantNotRevoked
     }
 
     // MARK: - MailMessageFetching
@@ -241,13 +262,34 @@ actor GmailProvider: MailProvider {
         }
     }
 
-    private func forgetCredentials() {
+    /// Drops every trace of the current authorization and reports whether the *stored* copy
+    /// really went with it.
+    ///
+    /// The in-memory half always succeeds. The Keychain half can refuse, and the result is a
+    /// refresh token that outlives the sign-out it was supposed to end — so the failure is
+    /// returned rather than discarded. Callers that have somewhere to put it (``disconnect()``)
+    /// say so; callers reacting to a revoked grant already have a more specific thing to
+    /// report, and the stale item they leave behind is one the provider has already rejected.
+    @discardableResult
+    private func forgetCredentials() -> CredentialStoreError? {
         refreshTask?.cancel()
         refreshTask = nil
         accessToken = nil
         storedCredentials = nil
         connection = .disconnected
         persistenceState = .unknown
-        try? credentialStore.clear()
+        return clearStoredCredentials()
+    }
+
+    /// Deletes the stored credential, returning the error when the store refused.
+    private func clearStoredCredentials() -> CredentialStoreError? {
+        do {
+            try credentialStore.clear()
+            return nil
+        } catch let error as CredentialStoreError {
+            return error
+        } catch {
+            return .unhandled(KeychainStatus(errSecInternalError))
+        }
     }
 }

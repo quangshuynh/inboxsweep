@@ -103,7 +103,7 @@ struct SafetyBoundaryTests {
 
         _ = try await provider.connect()
         _ = try await provider.fetchMessages(MailFetchRequest(limit: 8))
-        await provider.disconnect()
+        _ = await provider.disconnect()
 
         let gmailRequests = transport.requests.filter {
             ($0.url?.host ?? "").contains("gmail.googleapis.com")
@@ -129,7 +129,7 @@ struct SafetyBoundaryTests {
 
         _ = try await provider.connect()
         _ = try await provider.fetchMessages(MailFetchRequest(limit: 4))
-        await provider.disconnect()
+        _ = await provider.disconnect()
 
         let writes = transport.requests.filter { $0.httpMethod != "GET" }
         let allowed = ["https://oauth2.googleapis.com/token", "https://oauth2.googleapis.com/revoke"]
