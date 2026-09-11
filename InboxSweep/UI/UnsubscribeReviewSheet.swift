@@ -63,7 +63,6 @@ struct UnsubscribeReviewSheet: View {
             footer
         }
         .frame(minWidth: 560, idealWidth: 640, minHeight: 480, idealHeight: 600)
-        .accessibilityIdentifier("unsubscribeSheet.screen")
     }
 
     // MARK: - Derived state
@@ -86,8 +85,12 @@ struct UnsubscribeReviewSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label {
+                // Carries the screen's identifier as well as its own, for the reason
+                // ``UnsubscribeOptionsSheet`` records: an identifier on the root stack would be
+                // pushed down onto every descendant and make the destination, the evidence, and
+                // both buttons unfindable.
                 Text(headline)
-                    .accessibilityIdentifier("unsubscribeSheet.headline")
+                    .accessibilityIdentifier("unsubscribeSheet.screen")
             } icon: {
                 Image(systemName: headlineSymbol)
             }
@@ -327,12 +330,15 @@ struct UnsubscribeReviewSheet: View {
                 }
             }
 
+            // Carries the section's identifier, rather than the stack doing so: a stack-wide
+            // identifier is pushed down onto every descendant and would take the two caveats
+            // above with it. This line is present in every outcome, so it is the one to mark.
             Text(UnsubscribeReviewSnapshot.boundaryNote)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("unsubscribeSheet.outcome")
         }
-        .accessibilityIdentifier("unsubscribeSheet.outcome")
     }
 
     private func point(_ symbol: String, _ text: String) -> some View {

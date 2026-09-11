@@ -44,7 +44,6 @@ struct UnsubscribeOptionsSheet: View {
         .sheet(item: $pendingReview) { review in
             UnsubscribeReviewSheet(session: session, review: review)
         }
-        .accessibilityIdentifier("unsubscribeOptions.screen")
     }
 
     // MARK: - Derived state
@@ -61,10 +60,14 @@ struct UnsubscribeOptionsSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // The screen's identifier sits on the title rather than on the root stack. SwiftUI
+            // pushes an identifier down onto every descendant, so a stack-wide one makes every
+            // control and every sentence below it unfindable — which is the same lesson
+            // `ActivityView` records, learnt again here.
             Text("Unsubscribe options for \(summary.sender.displayValue)")
                 .font(.title3.weight(.semibold))
                 .lineLimit(2)
-                .accessibilityIdentifier("unsubscribeOptions.title")
+                .accessibilityIdentifier("unsubscribeOptions.screen")
 
             Label {
                 Text(Self.scopeNote)
@@ -140,10 +143,11 @@ struct UnsubscribeOptionsSheet: View {
                 systemImage: opportunity.availability == .ambiguousMetadata ? "questionmark.circle" : "envelope.badge.shield.half.filled"
             )
         } description: {
+            // One identifier, on the sentence, for the reason the header records: putting it on
+            // the `ContentUnavailableView` would push it down over the explanation inside.
             Text(opportunity.unavailableExplanation ?? "")
-                .accessibilityIdentifier("unsubscribeOptions.unavailableExplanation")
+                .accessibilityIdentifier("unsubscribeOptions.unavailable")
         }
-        .accessibilityIdentifier("unsubscribeOptions.unavailable")
     }
 
     private var evidenceSection: some View {

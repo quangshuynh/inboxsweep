@@ -33,11 +33,75 @@ final class InboxSweepUITests: XCTestCase {
 
     /// The app on synthetic data, in a window whose geometry the test controls.
     @MainActor
-    private func launchSampleApp() -> XCUIApplication {
+    private func launchSampleApp(extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [UITestLaunchArgument.sampleData, UITestLaunchArgument.deterministicWindow]
+        app.launchArguments += extraArguments
         app.launch()
         return app
+    }
+
+    /// Opens Activity through the in-content link, which is the route Interval 9 made reliable.
+    @MainActor
+    private func openActivity(in app: XCUIApplication) {
+        let link = app.descendants(matching: .any)["dashboard.activityLink"]
+        XCTAssertTrue(link.waitForExistence(timeout: 10), "The dashboard should offer a way into Activity")
+        link.click()
+        XCTAssertTrue(app.descendants(matching: .any)["activity.screen"].waitForExistence(timeout: 5))
+    }
+
+    /// Opens one sender's message review, which is where every clickable entry point lives.
+    ///
+    /// Reached through the dry-run preview rather than through the inspector, for the reason
+    /// `testSenderMessagesCanBeReviewed` already records: the inspector's own entry points sit
+    /// below a long reasoning list inside a scroll view and are not reliably on screen at the
+    /// window size the runner picks. Both routes open the same screens.
+    @MainActor
+    private func openMessageReview(for sender: String, in app: XCUIApplication) {
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+
+        let row = senderRow(named: sender, in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+
+        let previewButton = app.buttons["dashboard.previewCleanupButton"]
+        XCTAssertTrue(previewButton.waitForExistence(timeout: 5))
+        previewButton.click()
+        XCTAssertTrue(app.descendants(matching: .any)["cleanupPlan.screen"].waitForExistence(timeout: 5))
+
+        // Queried across all element types: a link-styled button reports itself as a link.
+        let reviewButton = app.descendants(matching: .any)["cleanupPlan.reviewButton"]
+        XCTAssertTrue(reviewButton.waitForExistence(timeout: 5))
+        reviewButton.firstMatch.click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: 5))
+    }
+
+    /// Opens one sender's unsubscribe options from the message review.
+    @MainActor
+    private func openUnsubscribeOptions(for sender: String, in app: XCUIApplication) {
+        openMessageReview(for: sender, in: app)
+
+        let button = app.buttons["messageReview.unsubscribeButton"]
+        XCTAssertTrue(
+            button.waitForExistence(timeout: 5),
+            "A sender whose headers mention unsubscribing should offer to show the options"
+        )
+        button.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["unsubscribeOptions.screen"].waitForExistence(timeout: 5),
+            "The unsubscribe options should open"
+        )
+    }
+
+    /// Closes the unsubscribe options and the message review behind it.
+    @MainActor
+    private func closeUnsubscribeOptions(in app: XCUIApplication) {
+        app.descendants(matching: .any)["unsubscribeOptions.doneButton"].firstMatch.click()
+        XCTAssertTrue(app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
     }
 
     /// The clickable element for a sender in the dashboard table.
@@ -408,7 +472,243 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
         XCTAssertFalse(app.buttons["Archive"].exists)
         XCTAssertFalse(app.buttons["Delete"].exists)
-        XCTAssertFalse(app.buttons["Unsubscribe"].exists)
+
+        // Interval 10 added an unsubscribe entry point to this screen, so the blanket assertion
+        // that used to live here — no button called "Unsubscribe" — became the wrong claim. The
+        // right one is narrower and stronger: the control that *opens a reading* may be here,
+        // and nothing that acts is. No confirmation sheet, and no verb that would perform one.
+        XCTAssertFalse(app.descendants(matching: .any)["unsubscribeSheet.screen"].exists)
+        XCTAssertFalse(app.buttons["Send the request"].exists)
+        XCTAssertFalse(app.buttons["Stop all mail"].exists)
+        XCTAssertFalse(app.buttons["Block sender"].exists)
+        XCTAssertFalse(app.buttons["Unsubscribe from sender"].exists)
+
         app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
+    }
+
+    // MARK: - Unsubscribe
+
+    /// A sender whose mail says nothing about unsubscribing offers nothing, and says why.
+    @MainActor
+    func testSenderWithNoUnsubscribeOptionSaysSo() {
+        let app = launchSampleApp()
+
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+
+        // `alerts@example.org` carries no List-Unsubscribe header at all in the synthetic
+        // mailbox, which is the "no evidence" state.
+        openMessageReview(for: "alerts@example.org", in: app)
+
+        XCTAssertFalse(
+            app.buttons["messageReview.unsubscribeButton"].exists,
+            "A sender with no unsubscribe metadata should offer no unsubscribe entry point at all"
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["messageReview.unsubscribeDistinctionNote"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["unsubscribeOptions.screen"].exists)
+
+        app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
+    }
+
+    /// The one-click journey as far as the confirmation, and no further.
+    @MainActor
+    func testOneClickUnsubscribeShowsItsDestinationBeforeConfirming() {
+        let app = launchSampleApp(extraArguments: [UITestLaunchArgument.sampleUnsubscribe])
+
+        openUnsubscribeOptions(for: "The Daily Digest", in: app)
+
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeOptions.scopeNote"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["unsubscribeOptions.futureMailNote"].exists,
+            "The options screen must say this is about future mail before offering anything"
+        )
+
+        let reviewButton = app.descendants(matching: .any)["unsubscribeOptions.reviewButton"]
+        XCTAssertTrue(reviewButton.waitForExistence(timeout: 5))
+        reviewButton.click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: 5))
+
+        // The three things this screen exists to say, before anything can happen.
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.destination"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.destinationHost"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.futureMailNote"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.evidence"].exists)
+
+        // The first press opens a second, dedicated confirmation rather than acting.
+        let actionButton = app.buttons["unsubscribeSheet.actionButton"]
+        XCTAssertTrue(actionButton.waitForExistence(timeout: 5))
+        actionButton.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["unsubscribeSheet.confirmPrompt"].waitForExistence(timeout: 5),
+            "Acting must be gated behind a dedicated confirmation immediately before the request"
+        )
+        XCTAssertTrue(app.buttons["unsubscribeSheet.confirmButton"].exists)
+        XCTAssertFalse(
+            app.descendants(matching: .any)["unsubscribeSheet.outcome"].exists,
+            "Nothing may have happened yet"
+        )
+    }
+
+    /// Cancelling at the confirmation step leaves nothing behind.
+    @MainActor
+    func testCancellingAConfirmationPerformsNothing() {
+        let app = launchSampleApp(extraArguments: [UITestLaunchArgument.sampleUnsubscribe])
+
+        openUnsubscribeOptions(for: "The Daily Digest", in: app)
+        app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch.click()
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: 5))
+
+        app.buttons["unsubscribeSheet.actionButton"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.confirmPrompt"].waitForExistence(timeout: 5))
+
+        // "Not now" backs out of the confirmation without acting.
+        app.buttons["unsubscribeSheet.cancelButton"].click()
+        XCTAssertFalse(app.descendants(matching: .any)["unsubscribeSheet.outcome"].exists)
+
+        // And "Cancel" closes the sheet.
+        app.buttons["unsubscribeSheet.cancelButton"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeOptions.screen"].waitForExistence(timeout: 5))
+        closeUnsubscribeOptions(in: app)
+
+        // Nothing reached Activity, because nothing was performed.
+        openActivity(in: app)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.empty"].waitForExistence(timeout: 5),
+            "Opening and cancelling a review must leave no Activity entry"
+        )
+    }
+
+    /// A confirmed one-click, against the in-process endpoint, and the Activity row it leaves.
+    @MainActor
+    func testConfirmedOneClickUnsubscribeIsRecordedCautiously() {
+        let app = launchSampleApp(extraArguments: [UITestLaunchArgument.sampleUnsubscribe])
+
+        openUnsubscribeOptions(for: "The Daily Digest", in: app)
+        app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch.click()
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: 5))
+
+        app.buttons["unsubscribeSheet.actionButton"].click()
+        let confirm = app.buttons["unsubscribeSheet.confirmButton"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["unsubscribeSheet.outcome"].waitForExistence(timeout: 10),
+            "The result should appear once the endpoint has answered"
+        )
+        // The wording the whole interval turns on, and the absence of an undo offer.
+        XCTAssertTrue(app.staticTexts["Unsubscribe request sent"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["unsubscribeSheet.cannotConfirmNote"].exists,
+            "The result must say InboxSweep cannot see whether the sender acted on it"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["unsubscribeSheet.noUndoNote"].exists,
+            "The result must say there is no undo, rather than quietly not offering one"
+        )
+        XCTAssertFalse(app.staticTexts["You are unsubscribed"].exists)
+        XCTAssertFalse(app.buttons["Undo"].exists)
+
+        app.buttons["unsubscribeSheet.doneButton"].click()
+        closeUnsubscribeOptions(in: app)
+
+        openActivity(in: app)
+        let row = app.descendants(matching: .any)["activity.unsubscribeRow"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "The unsubscribe should appear in Activity")
+        row.click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["activity.unsubscribeDetail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["activity.unsubscribeDetail.host"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.unsubscribeDetail.noUndo"].exists,
+            "An unsubscribe row must say why there is no undo rather than silently offering none"
+        )
+        XCTAssertFalse(app.buttons["activity.undoButton"].exists)
+    }
+
+    /// A sender whose only mechanisms are a web page and a mail address.
+    @MainActor
+    func testBrowserAndMailHandoffsAreLabelledAsHandoffs() {
+        let app = launchSampleApp(extraArguments: [UITestLaunchArgument.sampleUnsubscribe])
+
+        // Storefront Deals offers an https page and a mailto, and declares no one-click.
+        openUnsubscribeOptions(for: "Storefront Deals", in: app)
+        app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch.click()
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: 5))
+
+        XCTAssertTrue(app.staticTexts["Unsubscribe page"].exists, "A plain https URL is a page, not a one-click endpoint")
+        XCTAssertTrue(app.staticTexts["Your browser opens the page"].exists)
+        XCTAssertTrue(app.buttons["unsubscribeSheet.actionButton"].exists)
+
+        // The alternatives sit at the bottom of a scrolling sheet, below the evidence, so the
+        // case scrolls to them rather than asserting they happen to be on screen at whatever
+        // height the runner picked.
+        app.scrollViews.firstMatch.swipeUp()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["unsubscribeSheet.alternatives"].waitForExistence(timeout: 5),
+            "A sender offering more than one mechanism must show the others rather than choosing silently"
+        )
+        app.buttons["unsubscribeSheet.cancelButton"].click()
+        closeUnsubscribeOptions(in: app)
+    }
+
+    /// A mail-only sender says the message is prepared, not sent.
+    @MainActor
+    func testMailHandoffSaysItWillNotSend() {
+        let app = launchSampleApp(extraArguments: [UITestLaunchArgument.sampleUnsubscribe])
+
+        openUnsubscribeOptions(for: "Frontend Weekly", in: app)
+        app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch.click()
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: 5))
+
+        XCTAssertTrue(app.staticTexts["Email unsubscribe"].exists)
+        XCTAssertTrue(app.staticTexts["Your mail app opens a message"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.whatHappens"].exists)
+        app.buttons["unsubscribeSheet.cancelButton"].click()
+        closeUnsubscribeOptions(in: app)
+    }
+
+    /// Metadata the parser refused explains itself and offers nothing to press.
+    @MainActor
+    func testMalformedMetadataCannotBeActedOn() {
+        let app = launchSampleApp(extraArguments: [UITestLaunchArgument.sampleUnsubscribe])
+
+        // The Café Bulletin's synthetic header holds an http link and an unbracketed value.
+        openUnsubscribeOptions(for: "Café Bulletin", in: app)
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["unsubscribeOptions.unavailable"].waitForExistence(timeout: 5),
+            "Refused metadata must be explained rather than shown as an empty screen"
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].exists,
+            "Metadata InboxSweep refused must not be reviewable, let alone actionable"
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["unsubscribeSheet.screen"].exists)
+        closeUnsubscribeOptions(in: app)
+    }
+
+    /// Without the sample unsubscribe boundary, detection still works and execution is absent.
+    @MainActor
+    func testWithoutABoundaryDetectionStillWorksAndNothingCanBeSent() {
+        let app = launchSampleApp()
+
+        openUnsubscribeOptions(for: "The Daily Digest", in: app)
+
+        // The reading is there: detection needs no boundary.
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeOptions.availability"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeOptions.evidence"].exists)
+
+        // The review can be opened — it performs nothing — but the request cannot be sent.
+        app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch.click()
+        XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: 5))
+        XCTAssertFalse(
+            app.buttons["unsubscribeSheet.actionButton"].isEnabled,
+            "A session with no unsubscribe boundary must not be able to send a one-click request"
+        )
+        app.buttons["unsubscribeSheet.cancelButton"].click()
+        closeUnsubscribeOptions(in: app)
     }
 }
