@@ -196,6 +196,9 @@ struct SenderDetailView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            // The identifier sits on the list itself rather than on the section: SwiftUI
+            // pushes an identifier down onto its descendants, so a section-wide one would
+            // erase the Review button's and make it unfindable.
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(messages) { message in
                     MessageRow(message: message)
@@ -204,8 +207,8 @@ struct SenderDetailView: View {
                     }
                 }
             }
+            .accessibilityIdentifier("senderDetail.messages")
         }
-        .accessibilityIdentifier("senderDetail.messages")
     }
 }
 

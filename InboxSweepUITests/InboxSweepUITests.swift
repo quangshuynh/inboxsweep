@@ -99,4 +99,82 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Trash now"].exists)
         app.buttons["cleanupPlan.doneButton"].click()
     }
+
+    /// The Interval 4 path: the dashboard states how much mail it has analysed, and offers the
+    /// controls that change it.
+    ///
+    /// Driven through the real UI because coverage is the claim most easily overstated — a
+    /// dashboard that quietly implied it had read the whole mailbox would mislead the user at
+    /// exactly the moment they are weighing a suggestion.
+    @MainActor
+    func testDashboardStatesHowMuchMailHasBeenAnalysed() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--sample-data"]
+        app.launch()
+
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15), "The dashboard should load from sample data")
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.coverageHeadline"].exists,
+            "The dashboard must say how many messages it has actually loaded"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.coverageDetail"].exists,
+            "…and whether there is more it has not read"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.scopePicker"].exists,
+            "The dashboard should let the user choose which part of the mailbox to read"
+        )
+    }
+
+    /// Opening the messages behind a sender's proposal, which is what makes a count checkable.
+    @MainActor
+    func testSenderMessagesCanBeReviewed() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--sample-data"]
+        app.launch()
+
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+
+        let sender = app.staticTexts["Storefront Deals"]
+        XCTAssertTrue(sender.waitForExistence(timeout: 5))
+        sender.click()
+
+        // Reached from the preview rather than from the inspector: the inspector's own entry
+        // point sits below a long reasoning list and is not reliably on screen at the window
+        // size the runner picks. Both open the same review.
+        let previewButton = app.buttons["dashboard.previewCleanupButton"]
+        XCTAssertTrue(previewButton.waitForExistence(timeout: 5))
+        previewButton.click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["cleanupPlan.screen"].waitForExistence(timeout: 5))
+
+        // Queried across all element types: a link-styled button reports itself as a link.
+        let reviewButton = app.descendants(matching: .any)["cleanupPlan.reviewButton"]
+        XCTAssertTrue(reviewButton.waitForExistence(timeout: 5), "The preview should offer a message review")
+        reviewButton.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: 5),
+            "The message review should open"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["messageReview.disclaimer"].exists,
+            "The review must say it changes nothing before it shows anything"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["messageReview.table"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["messageReview.sortPicker"].exists,
+            "The review should be sortable"
+        )
+
+        // Reviewing is looking. There is nothing here that acts on a message.
+        XCTAssertFalse(app.buttons["Archive"].exists)
+        XCTAssertFalse(app.buttons["Delete"].exists)
+        XCTAssertFalse(app.buttons["Unsubscribe"].exists)
+        app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
+    }
 }

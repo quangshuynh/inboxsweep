@@ -162,6 +162,94 @@ struct InboxSessionCacheTests {
         #expect(try #require(model.state.snapshot).loadedMessageCount == 2)
     }
 
+    @Test("A restore that failed shows no cached mail at all")
+    func failedRestoreShowsNoCachedMail() async throws {
+        // The rule this pins down: cached personal mail is only ever shown alongside the
+        // authenticated account it belongs to. A Keychain that refused is not an account, so
+        // the previous window stays on disk and off the screen.
+        for failure: MailRestoreFailure in [
+            .credentialStoreUnreadable(reason: "The Keychain declined access."),
+            .storedCredentialsMalformed,
+            .authorizationRevoked,
+            .scopesNoLongerSufficient,
+        ] {
+            let cache = RecordingInboxCache(seeded: storedWindow())
+            let model = InboxSessionModel(
+                provider: StubMailProvider(restoreOutcome: .unusable(failure)),
+                cache: cache
+            )
+
+            await model.restore().value
+
+            #expect(model.state == .signedOut, "\(failure) did not land on the signed-out screen")
+            #expect(model.state.snapshot == nil, "\(failure) put cached mail on screen without an account")
+            #expect(model.notice != nil, "\(failure) was silent")
+            // The window itself is untouched: the user may well succeed at connecting again,
+            // and deleting their cache over a Keychain hiccup would cost a full refetch.
+            #expect(await cache.storedWindow(for: .testAccount) != nil)
+        }
+    }
+
+    @Test("A provider outage during restore shows an error rather than someone's cached mail")
+    func providerOutageDuringRestoreShowsNoCache() async throws {
+        let cache = RecordingInboxCache(seeded: storedWindow())
+        let model = InboxSessionModel(
+            provider: StubMailProvider(
+                restoreOutcome: .unusable(.providerUnavailable(.network(reason: "Offline.")))
+            ),
+            cache: cache
+        )
+
+        await model.restore().value
+
+        #expect(model.state == .failed(.network(reason: "Offline."), account: nil))
+        #expect(model.state.snapshot == nil)
+    }
+
+    @Test("A restored window belongs to the restored account, never to the one before it")
+    func restoredWindowBelongsToTheRestoredAccount() async throws {
+        let otherAccount = MailAccount(
+            emailAddress: EmailAddressParser.parse("someone.else@example.net"),
+            providerDisplayName: "Stub"
+        )
+        // The cache holds the *previous* account's window; the restore produces a different
+        // account. Showing the stored window here would put one person's mail under another
+        // person's address.
+        let cache = RecordingInboxCache(seeded: storedWindow())
+        let provider = StubMailProvider(
+            fetch: .pages([freshPage()]),
+            restoreOutcome: .restored(otherAccount)
+        )
+        let model = InboxSessionModel(provider: provider, cache: cache)
+
+        await model.restore().value
+
+        let snapshot = try #require(model.state.snapshot)
+        #expect(snapshot.account == otherAccount)
+        #expect(!snapshot.isRestoredFromCache)
+        #expect(snapshot.loadedMessageCount == 2, "Another account's cached window was shown")
+        #expect(await provider.fetchCallCount == 1)
+    }
+
+    @Test("A restore that succeeds but could not be persisted says so and still shows the cache")
+    func persistenceWarningDoesNotBlockTheCache() async throws {
+        let cache = RecordingInboxCache(seeded: storedWindow())
+        let model = InboxSessionModel(
+            provider: StubMailProvider(
+                restorable: .connected(.testAccount),
+                authorizationState: .notPersisted(reason: "InboxSweep couldn't save this sign-in to the Keychain.")
+            ),
+            cache: cache
+        )
+
+        await model.restore().value
+
+        // The account is authenticated, so the window is theirs to see; the warning is about
+        // the *next* launch, not this one.
+        #expect(try #require(model.state.snapshot).loadedMessageCount == 4)
+        #expect(model.notice?.title == "This sign-in won't survive a relaunch")
+    }
+
     @Test("Stored summaries that disagree with their messages are rebuilt, not shown")
     func rebuildsDivergedSummaries() async throws {
         // A file whose summaries describe only part of its messages — a half-written save, or

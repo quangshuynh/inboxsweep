@@ -266,9 +266,13 @@ private struct CleanupPlanEntryView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
+                    // The entry's identifier sits on its title rather than on the containing
+                    // stack: SwiftUI pushes an identifier down onto its descendants and erases
+                    // theirs, which would take the disclosure and the review link with it.
                     Text(entry.sender.displayValue)
                         .font(.headline)
                         .lineLimit(1)
+                        .accessibilityIdentifier("cleanupPlan.entry")
                     Text(entry.proposalKind.displayName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -299,7 +303,6 @@ private struct CleanupPlanEntryView: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .accessibilityIdentifier("cleanupPlan.entry")
     }
 
     private var outcome: some View {
