@@ -31,6 +31,12 @@ final class AppModel {
     /// rather than leaving a second behind.
     private let planStore = FileCleanupPlanStore()
 
+    /// The local record of what the app has actually changed.
+    ///
+    /// Held here alongside the other stores for the same reason: one file, reused across a
+    /// sign-out and back in, rather than a second one left behind.
+    private let mutationRecords = FileMutationRecordStore()
+
     init() {
         let configuration = GmailOAuthConfiguration.load()
         isProviderConfigured = configuration != nil
@@ -40,7 +46,8 @@ final class AppModel {
                 credentialStore: Self.credentialStore()
             ),
             cache: cache,
-            planStore: planStore
+            planStore: planStore,
+            mutationRecords: mutationRecords
         )
 
         #if DEBUG
@@ -81,6 +88,10 @@ final class AppModel {
     ///
     /// Runs without a cache: invented mail has no business being written to disk, and a
     /// sample run must not disturb the real account's stored window.
+    ///
+    /// It also runs without any way to archive. ``SampleMailProvider`` vends no mutation
+    /// boundary, so the sample session has no archiver at all — the Archive control is absent
+    /// rather than disabled, because there is no mailbox behind it to change.
     func useSampleData() {
         isUsingSampleData = true
         session = InboxSessionModel(
@@ -99,7 +110,8 @@ final class AppModel {
                 credentialStore: Self.credentialStore()
             ),
             cache: cache,
-            planStore: planStore
+            planStore: planStore,
+            mutationRecords: mutationRecords
         )
     }
     #endif

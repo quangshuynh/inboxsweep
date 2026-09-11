@@ -143,8 +143,17 @@ nonisolated struct CleanupPlan: Hashable, Sendable {
     var entriesContradictingProtection: [CleanupPlanEntry] { entries.filter(\.contradictsProtection) }
 
     /// The sentence the preview leads with, so the read-only boundary is never inferred.
+    /// What a preview is, said next to every preview.
+    ///
+    /// Reworded once the app gained a single-message archive, because the old sentence — "no
+    /// permission to archive … any message" — stopped being true, and a disclaimer that
+    /// overstates a limit is worse than none: the moment the user finds one thing it got wrong,
+    /// the rest of it stops being believable. What is claimed now is the part that is still
+    /// exactly true, and it is the part that matters here: **nothing on a preview can be
+    /// carried out.**
     static let disclaimer = """
-        This is a preview. InboxSweep has no permission to archive, trash, label, or change \
-        any message, and nothing here is sent to Gmail.
+        This is a preview. Nothing here can be carried out: InboxSweep cannot archive a sender, \
+        run a plan, or trash, label, or delete anything, and building this sent nothing to \
+        Gmail. Archiving is one message at a time, chosen and confirmed by you.
         """
 }
