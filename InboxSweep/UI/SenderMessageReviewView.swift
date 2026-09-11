@@ -8,11 +8,22 @@ import SwiftUI
 /// the way they would have.
 ///
 /// This screen is also the **only** place in the app that can change a mailbox, and it is
-/// deliberately the one that already makes the user look at an individual message. Selecting a
-/// row and pressing **Archive message…** opens a confirmation; nothing else does. A proposal, a
-/// dry-run preview, a saved plan, and a sender row can all lead the user *here*, and every one
-/// of them stops at this boundary — there is no control anywhere that archives a sender, a
-/// selection, or a plan.
+/// deliberately the one that already makes the user look at individual messages. Ticking rows
+/// and pressing **Archive…** opens a confirmation; nothing else does. A proposal, a dry-run
+/// preview, a saved plan, and a sender row can all lead the user *here*, and every one of them
+/// stops at this boundary — there is no control anywhere that archives a sender or carries out a
+/// plan.
+///
+/// ### How the preview and the selection are connected, and how they are not
+///
+/// **Fill from preview** exists because "38 messages would be affected" is only useful if the
+/// user can get at those 38. It writes them into the checkbox column and does nothing else: no
+/// request, no confirmation, no countdown. The user then reads the list, unticks what they want
+/// to keep, ticks anything the rules missed, and takes it to a confirmation themselves. It never
+/// fills in a protected message — see ``InboxSessionModel/preselectableMessageIDs(forSenderKey:under:)``
+/// — though the user is free to tick one, and the confirmation says so plainly when they have.
+///
+/// The preview itself remains inert. There is no Execute, no Apply, and no sender-level archive.
 ///
 /// Everything else here still changes nothing. There is no message body to show —
 /// ``MailMessage`` has nowhere to hold one — and the plan picker only changes which rows are
@@ -29,23 +40,34 @@ struct SenderMessageReviewView: View {
     @State private var action: PlannedCleanupAction?
     @State private var showsOnlyAffected = false
 
-    /// The row the user has picked out, if any.
+    /// The rows the user has ticked.
     ///
-    /// Single-selection: the archive action acts on one message, so a multi-selection would
-    /// invite exactly the bulk operation this interval does not implement.
-    @State private var selectedMessageID: MailMessage.ID?
+    /// Owned by the view rather than the session on purpose. A selection is a thought in
+    /// progress, not app state: it performs no write, survives nothing, and the session never
+    /// learns about it until the user asks for a confirmation. That is what makes "selection
+    /// alone performs zero writes" true by construction rather than by discipline.
+    ///
+    /// Scoped to this sender by construction too — every identifier in here came from this
+    /// screen's own rows — and re-checked against the sender when a set is frozen, so nothing
+    /// left over from a re-sort or a reload can smuggle another sender's mail into a set.
+    @State private var selectedMessageIDs: Set<MailMessage.ID> = []
 
-    /// The message a confirmation is open for.
+    /// The frozen set a confirmation is open for.
     ///
-    /// Separate from ``selectedMessageID`` so that selecting a row never, by itself, puts the
-    /// app one keystroke away from a mutation. Pressing the button is what fills this in.
-    @State private var messagePendingArchive: MailMessage?
+    /// Separate from ``selectedMessageIDs`` so that ticking rows never, by itself, puts the app
+    /// one keystroke away from a mutation. Pressing the button is what fills this in, and what
+    /// goes in is a copy that the table underneath can no longer change.
+    @State private var pendingArchive: ArchiveSelectionSnapshot?
+
+    /// Said when a frozen set could not be built because the window moved under the selection.
+    @State private var selectionIsStale = false
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
             controls
+            selectionControls
             Divider()
             messageTable
             Divider()
@@ -54,12 +76,8 @@ struct SenderMessageReviewView: View {
         // The sheet takes its minimum width, so that is what has to fit all five columns —
         // an audit screen whose "under this plan" column is off the right edge audits nothing.
         .frame(minWidth: 900, idealWidth: 980, minHeight: 480, idealHeight: 620)
-        .sheet(item: $messagePendingArchive) { message in
-            MessageArchiveSheet(
-                session: session,
-                message: message,
-                senderDisplayValue: summary.sender.displayValue
-            )
+        .sheet(item: $pendingArchive) { frozen in
+            ArchiveSelectionSheet(session: session, selection: frozen)
         }
         .onAppear {
             // Seeded from the proposal so the screen opens on the plan the app actually
@@ -99,15 +117,38 @@ struct SenderMessageReviewView: View {
         }
         return """
             \(preamble) No message is opened — there is no message body to show. The only thing \
-            that changes your mailbox is Archive, which acts on one message you select and \
-            confirm, and can be undone.
+            that changes your mailbox is Archive, which acts on exactly the messages you tick and \
+            then confirm as a list, and can be undone.
             """
     }
 
-    /// The selected row, when exactly one is selected and it is still in the window.
-    private var selectedMessage: MailMessage? {
-        guard let selectedMessageID else { return nil }
-        return reviewed.first { $0.id == selectedMessageID }?.message
+    /// The ticked rows that are still in the window, in the order the table lists them.
+    ///
+    /// Recomputed from ``reviewed`` rather than trusted, so a selection that outlived a reload
+    /// shrinks visibly instead of silently naming messages that are no longer there.
+    private var selectedRows: [ReviewedMessage] {
+        reviewed.filter { selectedMessageIDs.contains($0.id) }
+    }
+
+    private var selectedCount: Int { selectedRows.count }
+
+    private var selectedProtectedCount: Int { selectedRows.count(where: \.isProtected) }
+
+    /// The eligible rows a **Select all** would tick: everything currently visible.
+    ///
+    /// Visible rather than loaded, because "all" has to mean what is on screen. With the
+    /// **Only affected** filter on, that is the affected rows; with it off, it is every loaded
+    /// message from this sender.
+    private var selectableVisibleIDs: [MailMessage.ID] { visible.map(\.id) }
+
+    /// The rows the preview would reach, minus anything protected.
+    ///
+    /// Asked of the session rather than computed here, so the one rule that matters — a
+    /// convenience action never picks a protected message — lives beside the archive path it
+    /// protects rather than in a view.
+    private var preselectableIDs: [MailMessageID] {
+        guard let action else { return [] }
+        return session.preselectableMessageIDs(forSenderKey: summary.id, under: action)
     }
 
     // MARK: - Sections
@@ -168,6 +209,75 @@ struct SenderMessageReviewView: View {
         .padding(.vertical, 8)
     }
 
+    /// The selection row: what is ticked, and the three ways to change it in bulk.
+    ///
+    /// Every control here writes to a `Set` of identifiers and nothing else. None of them
+    /// contacts a provider, opens a confirmation, or starts a countdown — which is why they can
+    /// be offered freely even though one of them is driven by a cleanup recommendation.
+    @ViewBuilder
+    private var selectionControls: some View {
+        if session.canOfferArchiving, session.archiveCapability.isGranted, !reviewed.isEmpty {
+            HStack(spacing: 12) {
+                Text(selectionSummary)
+                    .font(.callout)
+                    .foregroundStyle(selectedCount == 0 ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .monospacedDigit()
+                    .accessibilityIdentifier("messageReview.selectionSummary")
+
+                Button("Select all shown") {
+                    selectedMessageIDs.formUnion(selectableVisibleIDs)
+                }
+                .disabled(selectableVisibleIDs.allSatisfy(selectedMessageIDs.contains))
+                .help("Ticks every message currently listed. Nothing is archived until you confirm.")
+                .accessibilityIdentifier("messageReview.selectAllButton")
+
+                Button("Deselect all") {
+                    selectedMessageIDs.removeAll()
+                }
+                .disabled(selectedMessageIDs.isEmpty)
+                .accessibilityIdentifier("messageReview.deselectAllButton")
+
+                if action != nil {
+                    Button("Fill from preview") {
+                        // Writes identifiers into the checkbox column. That is the whole of it:
+                        // the user still has to read the list, edit it, open a confirmation, and
+                        // press a button. The preview cannot execute, and this does not make it
+                        // executable — it makes its result editable.
+                        selectedMessageIDs.formUnion(preselectableIDs)
+                    }
+                    .disabled(preselectableIDs.isEmpty || preselectableIDs.allSatisfy(selectedMessageIDs.contains))
+                    .help("Ticks the messages this preview would affect so you can check and edit them. It archives nothing, and never ticks a protected message.")
+                    .accessibilityIdentifier("messageReview.fillFromPreviewButton")
+                }
+
+                Spacer()
+
+                if selectedProtectedCount > 0 {
+                    Label(
+                        selectedProtectedCount == 1
+                            ? "1 protected message selected"
+                            : "\(selectedProtectedCount) protected messages selected",
+                        systemImage: "shield.lefthalf.filled"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .help("InboxSweep never picks these for you. You can archive them anyway — the confirmation will say so.")
+                    .accessibilityIdentifier("messageReview.protectedSelectionWarning")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private var selectionSummary: String {
+        switch selectedCount {
+        case 0: "No messages selected"
+        case 1: "1 of \(reviewed.count) selected"
+        default: "\(selectedCount) of \(reviewed.count) selected"
+        }
+    }
+
     /// The app's only route to changing a mailbox.
     ///
     /// Shown at all only when the provider can write — the synthetic mailbox gets nothing, not
@@ -179,18 +289,33 @@ struct SenderMessageReviewView: View {
         if session.canOfferArchiving {
             if session.archiveCapability.isGranted {
                 Button {
-                    // Read from the table, not from a proposal, a plan, or a recommendation.
-                    // This assignment is the only thing in the app that opens a confirmation,
-                    // and only a person pressing this button performs it.
-                    messagePendingArchive = selectedMessage
+                    // Read from the table's own ticked rows — not from a proposal, a plan, or a
+                    // recommendation. This is the only thing in the app that opens a
+                    // confirmation, and only a person pressing this button performs it.
+                    //
+                    // The set is *frozen* here rather than passed live: from this line onwards
+                    // the confirmation describes a fixed list, and the session refuses it if the
+                    // window stops agreeing rather than acting on whatever is selected by then.
+                    let frozen = session.makeArchiveSelection(
+                        forSenderKey: summary.id,
+                        messageIDs: selectedMessageIDs
+                    )
+                    if let frozen {
+                        selectionIsStale = false
+                        pendingArchive = frozen
+                    } else {
+                        // Refused rather than narrowed. A confirmation for "the ones that are
+                        // still there" would be a confirmation of a set nobody approved.
+                        selectionIsStale = true
+                    }
                 } label: {
-                    Label("Archive message…", systemImage: "archivebox")
+                    Label(archiveButtonTitle, systemImage: "archivebox")
                 }
-                .disabled(selectedMessage == nil || session.isMutating)
+                .disabled(selectedCount == 0 || session.isMutating)
                 .help(
-                    selectedMessage == nil
-                        ? "Select one message to archive it. Archiving removes it from your Inbox; it does not delete it."
-                        : "Asks you to confirm, then removes this one message from your Inbox. It is not deleted, and you can undo it."
+                    selectedCount == 0
+                        ? "Tick the messages you want archived. Archiving removes them from your Inbox; it does not delete them."
+                        : "Asks you to confirm the exact list, then removes those messages from your Inbox. They are not deleted, and you can undo it."
                 )
                 .accessibilityIdentifier("messageReview.archiveButton")
             } else {
@@ -203,6 +328,14 @@ struct SenderMessageReviewView: View {
                 .help("InboxSweep needs one more Gmail permission before it can archive a message you pick. Nothing is archived by granting it.")
                 .accessibilityIdentifier("messageReview.enableArchivingButton")
             }
+        }
+    }
+
+    private var archiveButtonTitle: String {
+        switch selectedCount {
+        case 0: "Archive…"
+        case 1: "Archive 1 message…"
+        default: "Archive \(selectedCount) messages…"
         }
     }
 
@@ -221,7 +354,7 @@ struct SenderMessageReviewView: View {
             .frame(maxHeight: .infinity)
             .accessibilityIdentifier("messageReview.empty")
         } else {
-            Table(visible, selection: $selectedMessageID) {
+            Table(visible, selection: $selectedMessageIDs) {
                 TableColumn("Subject") { row in
                     Text(row.message.subject ?? "No subject")
                         .foregroundStyle(row.message.subject == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
@@ -294,6 +427,18 @@ struct SenderMessageReviewView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if selectionIsStale {
+                Label(
+                    "The mailbox changed since you ticked those messages, so InboxSweep didn't open a confirmation. Reload and choose again.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("messageReview.staleSelectionNotice")
+            }
+
+            undoOffer
+
             if let action {
                 Text("\(affectedCount) of ^[\(reviewed.count) loaded message](inflect: true) \(action.previewVerbPhrase); \(reviewed.count - affectedCount) would stay put, \(protectedCount) of them held back as protected.")
                     .font(.callout)
@@ -311,9 +456,9 @@ struct SenderMessageReviewView: View {
                     if session.canOfferArchiving {
                         // Said here because this screen shows both things at once: a preview of
                         // what a whole-sender cleanup *would* do, and a button that really
-                        // archives one message. Leaving the difference implicit would be the
-                        // easiest way for someone to believe the preview was about to run.
-                        Text("Archiving one selected message is the only change InboxSweep can make, and it asks first. The preview above is not something it can carry out.")
+                        // archives the ticked messages. Leaving the difference implicit would be
+                        // the easiest way for someone to believe the preview was about to run.
+                        Text("Archiving the messages you tick is the only change InboxSweep can make, and it asks first. The preview above is not something it can carry out — Fill from preview only ticks boxes for you to check.")
                             .font(.footnote)
                             .foregroundStyle(.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -329,6 +474,41 @@ struct SenderMessageReviewView: View {
             }
         }
         .padding(16)
+    }
+
+    /// The standing offer to put back the last archive, wherever it came from.
+    ///
+    /// Shown here — on the screen the user is most likely to be looking at — because the offer
+    /// now outlives the sheet that created it and a relaunch of the app. An offer that existed
+    /// only inside a dismissed sheet would be an offer nobody could find.
+    ///
+    /// It names a count and never re-derives a set: the messages it restores are the ones the
+    /// stored transaction confirmed, and nothing on this screen can widen that.
+    @ViewBuilder
+    private var undoOffer: some View {
+        if let undoable = session.undoableArchive, undoable.isUndoable, session.mutationActivity == nil {
+            HStack(spacing: 10) {
+                Label {
+                    Text(
+                        undoable.succeededCount == 1
+                            ? "1 message was archived. You can still put it back."
+                            : "\(undoable.succeededCount) messages were archived. You can still put them back."
+                    )
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                }
+
+                Button("Undo") { session.undoLastArchive() }
+                    .disabled(session.isMutating)
+                    .help("Sends a real request to Gmail putting those messages back in your Inbox.")
+                    .accessibilityIdentifier("messageReview.undoButton")
+
+                Spacer()
+            }
+            .accessibilityIdentifier("messageReview.undoOffer")
+        }
     }
 
     /// A couple of words for a narrow column; the full sentence is the tooltip.
