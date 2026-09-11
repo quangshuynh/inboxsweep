@@ -4,10 +4,86 @@ import XCTest
 ///
 /// The dashboard case runs against the app's synthetic mailbox, so the whole path — launch,
 /// connect, fetch, aggregate, render — is exercised without a Google account.
+///
+/// ### Every case launches through ``launchSampleApp()``, and two of them still fail here
+///
+/// Two cases in this file — ``testProposalsAndDryRunPreviewAreReachable()`` and
+/// ``testSenderMessagesCanBeReviewed()`` — fail with `Unable to find hit point for ScrollView`.
+/// The cause is **not** InboxSweep, and the evidence for that is unusually clean.
+///
+/// The split is exact: every case that only *asserts* passes, and every case that *clicks*
+/// fails. The runner names the reason itself:
+///
+/// ```
+/// Found 2 interrupting elements:
+///     Window at {{839.0, 30.0}, {841.0, 927.0}} from Application 'com.brave.Browser'
+///     Window at {{0.0, 30.0}, {940.0, 920.0}} from Application 'com.anthropic.claudefordesktop'
+///     Window at {{360.0, 220.0}, {960.0, 640.0}} from Application 'com.apple.ActivityMonitor'
+/// ```
+///
+/// Those three cover x ∈ [0, 1680] of the display. The window under test sits at
+/// `{{240, 283}, {1200, 512}}`, entirely inside that union, so there is no point in the sender
+/// table that belongs to InboxSweep when the system is asked whose window is on top. A target
+/// that is not hittable sends XCUITest down its "scroll it into view" fallback, and that scroll
+/// needs a hit point on the table's own backing scroll view — covered by the same windows. The
+/// error names the scroll view, which is why it read for an interval like a layout bug in this
+/// app. It is not one.
+///
+/// ### What was done about it, and what was not
+///
+/// ``UITestWindow`` removes the half of the problem that *is* controllable: a debug-only launch
+/// argument that pins the window to a fixed size, centres it, and asks for the foreground at
+/// launch and on every state change. Before it, the window came up wherever it had last been
+/// dragged — 1,680 points wide across two displays — so the geometry under test was a
+/// measurement of somebody's desktop. It is deterministic now.
+///
+/// What it cannot do is win an argument with three other applications about which window is in
+/// front. Tried, in order, and none of it made the suite reliably green:
+///
+/// - `NSApplication.activate()`, the polite form;
+/// - `NSRunningApplication.activate(options:)`, the form that does not ask;
+/// - `orderFrontRegardless()` on every window, repeated on every state change;
+/// - `NSWindow.Level.floating`, which made it *worse* — XCUITest's occlusion check is about
+///   which application is frontmost, not about which window is drawn on top;
+/// - `XCUIApplication.activate()` from the runner immediately before each click, which also
+///   made it worse;
+/// - clicking the table row rather than the sender's name, which XCUITest refuses outright:
+///   `No unoccluded regions for Cell … Try to interact with a descendant instead.`
+///
+/// So the two cases are left failing, with this note, rather than made green by a sleep, a
+/// retry, a raised timeout, a skip, or a swallowed assertion. On a machine with nothing else on
+/// screen — a CI runner, most of all — there is no occluding window and the hit point resolves.
+/// That is the next interval's to confirm, and it inherits a red it can explain rather than a
+/// green it cannot trust.
 final class InboxSweepUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+    }
+
+    // MARK: - Launching
+
+    /// The app on synthetic data, in a window whose geometry the test controls.
+    @MainActor
+    private func launchSampleApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += [UITestLaunchArgument.sampleData, UITestLaunchArgument.deterministicWindow]
+        app.launch()
+        return app
+    }
+
+    /// The clickable element for a sender in the dashboard table.
+    ///
+    /// Scoped to the table rather than searched for across the whole app, so a sender's name
+    /// appearing somewhere else on screen cannot become the thing a test clicks.
+    ///
+    /// It is the sender's *name* and not the row. Clicking the row was tried, because a row is
+    /// the thing that carries selection and looks like the more honest target; XCUITest refuses
+    /// it, and says why: `No unoccluded regions for Cell … all the space is taken up by
+    /// subviews. Try to interact with a descendant instead.` The name is that descendant.
+    @MainActor
+    private func senderRow(named name: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)["dashboard.senderTable"].staticTexts[name]
     }
 
     @MainActor
@@ -17,7 +93,10 @@ final class InboxSweepUITests: XCTestCase {
         // Mac with a saved Gmail sign-in restores it and lands on the dashboard, and the run
         // goes through somebody's real mailbox. The argument swaps the credential store for an
         // empty one and changes nothing else about the screen under test.
-        app.launchArguments += ["--ignore-stored-credentials"]
+        app.launchArguments += [
+            UITestLaunchArgument.ignoreStoredCredentials,
+            UITestLaunchArgument.deterministicWindow,
+        ]
         app.launch()
 
         XCTAssertTrue(
@@ -36,9 +115,7 @@ final class InboxSweepUITests: XCTestCase {
 
     @MainActor
     func testSampleDataDrivesTheSenderDashboard() {
-        let app = XCUIApplication()
-        app.launchArguments += ["--sample-data"]
-        app.launch()
+        let app = launchSampleApp()
 
         let table = app.descendants(matching: .any)["dashboard.senderTable"]
         XCTAssertTrue(table.waitForExistence(timeout: 15), "The dashboard should load from sample data")
@@ -61,9 +138,7 @@ final class InboxSweepUITests: XCTestCase {
     /// has to be able to trust, and a unit test cannot show that they actually reach the screen.
     @MainActor
     func testProposalsAndDryRunPreviewAreReachable() {
-        let app = XCUIApplication()
-        app.launchArguments += ["--sample-data"]
-        app.launch()
+        let app = launchSampleApp()
 
         let table = app.descendants(matching: .any)["dashboard.senderTable"]
         XCTAssertTrue(table.waitForExistence(timeout: 15), "The dashboard should load from sample data")
@@ -77,7 +152,7 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertTrue(previewButton.exists)
         XCTAssertFalse(previewButton.isEnabled, "Previewing needs a selection first")
 
-        let sender = app.staticTexts["Storefront Deals"]
+        let sender = senderRow(named: "Storefront Deals", in: app)
         XCTAssertTrue(sender.waitForExistence(timeout: 5))
         sender.click()
 
@@ -117,9 +192,7 @@ final class InboxSweepUITests: XCTestCase {
     /// exactly the moment they are weighing a suggestion.
     @MainActor
     func testDashboardStatesHowMuchMailHasBeenAnalysed() {
-        let app = XCUIApplication()
-        app.launchArguments += ["--sample-data"]
-        app.launch()
+        let app = launchSampleApp()
 
         let table = app.descendants(matching: .any)["dashboard.senderTable"]
         XCTAssertTrue(table.waitForExistence(timeout: 15), "The dashboard should load from sample data")
@@ -141,14 +214,12 @@ final class InboxSweepUITests: XCTestCase {
     /// Opening the messages behind a sender's proposal, which is what makes a count checkable.
     @MainActor
     func testSenderMessagesCanBeReviewed() {
-        let app = XCUIApplication()
-        app.launchArguments += ["--sample-data"]
-        app.launch()
+        let app = launchSampleApp()
 
         let table = app.descendants(matching: .any)["dashboard.senderTable"]
         XCTAssertTrue(table.waitForExistence(timeout: 15))
 
-        let sender = app.staticTexts["Storefront Deals"]
+        let sender = senderRow(named: "Storefront Deals", in: app)
         XCTAssertTrue(sender.waitForExistence(timeout: 5))
         sender.click()
 
