@@ -13,6 +13,9 @@ struct CleanupPlanSheet: View {
     /// The senders to preview, in the order they appear on the dashboard.
     let senderKeys: [SenderSummary.ID]
 
+    /// Opens the full message review for one sender.
+    var onReviewSender: ((SenderSummary.ID) -> Void)?
+
     @Environment(\.dismiss) private var dismiss
 
     /// The action chosen per sender. Seeded from each proposal's default and then owned here,
@@ -104,7 +107,14 @@ struct CleanupPlanSheet: View {
                         action: Binding(
                             get: { actions[entry.sender.groupingKey] ?? entry.action },
                             set: { actions[entry.sender.groupingKey] = $0 }
-                        )
+                        ),
+                        membership: session.reviewedMessages(
+                            forSenderKey: entry.sender.groupingKey,
+                            under: entry.action
+                        ),
+                        onReview: onReviewSender.map { review in
+                            { review(entry.sender.groupingKey) }
+                        }
                     )
                     .padding(16)
 
@@ -169,6 +179,18 @@ private struct CleanupPlanEntryView: View {
     let entry: CleanupPlanEntry
     @Binding var action: PlannedCleanupAction
 
+    /// The sender's loaded messages, already classified under ``entry``'s action.
+    let membership: [ReviewedMessage]
+
+    /// Opens the full review for this sender.
+    var onReview: (() -> Void)?
+
+    /// Whether the named messages are expanded.
+    ///
+    /// Collapsed by default: the counts are the summary, and a preview of ten senders that
+    /// opened with every message listed would bury them.
+    @State private var showsMessages = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
@@ -193,6 +215,7 @@ private struct CleanupPlanEntryView: View {
             }
 
             outcome
+            messageMembership
 
             if entry.contradictsProtection {
                 Label {
@@ -227,6 +250,96 @@ private struct CleanupPlanEntryView: View {
                 }
             }
         }
+    }
+
+    /// Names the individual messages behind the counts above.
+    ///
+    /// "43 would be archived, 7 would stay put" is not a claim anyone can check. This is where
+    /// the 43 and the 7 become a list — which is the difference between a preview the user is
+    /// asked to trust and one they can audit.
+    @ViewBuilder
+    private var messageMembership: some View {
+        if !membership.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    DisclosureGroup("Which messages?", isExpanded: $showsMessages) { EmptyView() }
+                        .font(.callout)
+                        .fixedSize()
+                        .accessibilityIdentifier("cleanupPlan.membershipDisclosure")
+
+                    if let onReview {
+                        Button("Review all…", action: onReview)
+                            .buttonStyle(.link)
+                            .font(.callout)
+                            .accessibilityIdentifier("cleanupPlan.reviewButton")
+                    }
+                    Spacer()
+                }
+
+                if showsMessages {
+                    VStack(alignment: .leading, spacing: 10) {
+                        membershipList(
+                            "Would affect",
+                            symbol: "arrow.right.circle",
+                            rows: membership.filter(\.isAffectedByPlan),
+                            emptyText: "No loaded message from this sender \(entry.action.previewVerbPhrase)."
+                        )
+                        membershipList(
+                            "Protected / retained",
+                            symbol: "shield",
+                            rows: membership.filter { !$0.isAffectedByPlan },
+                            emptyText: "Every loaded message from this sender would be affected."
+                        )
+                    }
+                    .padding(.leading, 18)
+                    .accessibilityIdentifier("cleanupPlan.membershipLists")
+                }
+            }
+        }
+    }
+
+    /// One named group, capped so a sender with four hundred messages does not become the
+    /// whole sheet. The review screen is where the full list lives.
+    @ViewBuilder
+    private func membershipList(
+        _ title: String,
+        symbol: String,
+        rows: [ReviewedMessage],
+        emptyText: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label("\(title) (\(rows.count))", systemImage: symbol)
+                .font(.caption.weight(.semibold))
+
+            if rows.isEmpty {
+                Text(emptyText)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(rows.prefix(Self.namedMessageLimit)) { row in
+                    Text(messageLine(for: row))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(messageLine(for: row))
+                }
+                if rows.count > Self.namedMessageLimit {
+                    Text("…and \(rows.count - Self.namedMessageLimit) more. Open the review to see them all.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private static let namedMessageLimit = 6
+
+    /// Subject, date, and — for a retained message — why it was retained.
+    private func messageLine(for row: ReviewedMessage) -> String {
+        let subject = row.message.subject ?? "No subject"
+        let date = row.message.receivedAt.formatted(.dateTime.day().month().year())
+        guard let reason = row.membership?.reason else { return "\(subject) · \(date)" }
+        return "\(subject) · \(date) — \(reason.explanation(count: 1))"
     }
 
     /// The one sentence a reader should take away, phrased conditionally throughout.

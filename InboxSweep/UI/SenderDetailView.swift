@@ -23,6 +23,13 @@ struct SenderDetailView: View {
     /// went looking for it would be the first place in the app where a screen owned mail.
     let messages: [MailMessage]
 
+    /// Opens the full message review for this sender.
+    ///
+    /// The inspector lists the messages; the review screen is where they can be sorted and
+    /// checked against a planned action. Kept as a callback rather than a sheet presented from
+    /// here, so the inspector stays a view of a sender rather than an owner of navigation.
+    var onReviewMessages: (() -> Void)?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -173,8 +180,17 @@ struct SenderDetailView: View {
     /// The messages themselves — the direct answer to "which messages are these?".
     private var messageList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Loaded messages")
-                .font(.headline)
+            HStack {
+                Text("Loaded messages")
+                    .font(.headline)
+                Spacer()
+                if let onReviewMessages {
+                    Button("Review…", action: onReviewMessages)
+                        .buttonStyle(.link)
+                        .help("Sort these messages and see which a cleanup would reach. Nothing is changed.")
+                        .accessibilityIdentifier("senderDetail.reviewButton")
+                }
+            }
 
             Text("^[\(messages.count) message](inflect: true) from this sender in the loaded window.")
                 .font(.caption)

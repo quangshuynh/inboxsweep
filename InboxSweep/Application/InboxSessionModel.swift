@@ -309,6 +309,42 @@ final class InboxSessionModel {
             .sorted { $0.receivedAt == $1.receivedAt ? $0.id.rawValue < $1.id.rawValue : $0.receivedAt > $1.receivedAt }
     }
 
+    // MARK: - Message review
+
+    /// The loaded messages from one sender, as the review screen shows them.
+    ///
+    /// Answers three questions at once: which messages are these, which of them are protected
+    /// on their own merits, and — when `action` is given — which a previewed cleanup would
+    /// reach. All three from the window already in memory, so opening a review costs no
+    /// request and cannot fetch a body there is no field to hold.
+    ///
+    /// - Parameters:
+    ///   - key: The sender's grouping key.
+    ///   - action: The action to show membership for, or `nil` for no plan at all.
+    ///   - sortOrder: How to order the result.
+    func reviewedMessages(
+        forSenderKey key: SenderSummary.ID,
+        under action: PlannedCleanupAction? = nil,
+        sortedBy sortOrder: MessageReviewSortOrder = .newestFirst
+    ) -> [ReviewedMessage] {
+        let senderMessages = messages.filter { $0.sender.groupingKey == key }
+        guard !senderMessages.isEmpty else { return [] }
+
+        let membership = action.map {
+            CleanupPlanner.membership(for: senderMessages, action: $0, referenceDate: now())
+        }
+
+        return sortOrder.sort(
+            senderMessages.map { message in
+                ReviewedMessage(
+                    message: message,
+                    protectionReason: SenderProtection.protectionReason(for: message),
+                    membership: membership?[message.id]
+                )
+            }
+        )
+    }
+
     // MARK: - Cleanup previews
 
     /// The proposal for a sender in the loaded window, if one has been computed.

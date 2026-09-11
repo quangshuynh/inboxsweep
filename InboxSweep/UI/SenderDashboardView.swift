@@ -16,6 +16,9 @@ struct SenderDashboardView: View {
     @State private var isInspectorPresented = false
     @State private var isPlanPresented = false
 
+    /// The sender whose loaded messages are being reviewed, if any.
+    @State private var reviewedSender: SenderSummary?
+
     var body: some View {
         VStack(spacing: 0) {
             AccountSummaryHeader(snapshot: snapshot)
@@ -40,7 +43,8 @@ struct SenderDashboardView: View {
                     SenderDetailView(
                         summary: sender,
                         proposal: snapshot.proposal(for: sender.id),
-                        messages: session.loadedMessages(forSenderKey: sender.id)
+                        messages: session.loadedMessages(forSenderKey: sender.id),
+                        onReviewMessages: { reviewedSender = sender }
                     )
                 } else {
                     ContentUnavailableView(
@@ -57,7 +61,21 @@ struct SenderDashboardView: View {
             .inspectorColumnWidth(min: 260, ideal: 340, max: 460)
         }
         .sheet(isPresented: $isPlanPresented) {
-            CleanupPlanSheet(session: session, senderKeys: selectedSenderKeysInDisplayOrder)
+            CleanupPlanSheet(
+                session: session,
+                senderKeys: selectedSenderKeysInDisplayOrder,
+                onReviewSender: { key in
+                    isPlanPresented = false
+                    reviewedSender = snapshot.senders.first { $0.id == key }
+                }
+            )
+        }
+        .sheet(item: $reviewedSender) { sender in
+            SenderMessageReviewView(
+                session: session,
+                summary: sender,
+                proposal: snapshot.proposal(for: sender.id)
+            )
         }
         .accessibilityIdentifier("dashboard.screen")
     }

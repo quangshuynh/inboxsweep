@@ -79,21 +79,17 @@ nonisolated enum CleanupPlanner {
         protection: SenderProtectionAssessment,
         referenceDate: Date
     ) -> CleanupPlanEntry {
+        // Counted from the same per-message classification the review screen renders, so a
+        // total and the list behind it cannot drift apart. Two passes computing the same thing
+        // twice is exactly how "43 would be archived" ends up above a list of 41.
+        let classified = classify(messages, action: request.action, referenceDate: referenceDate)
+
         var affected = 0
         var exclusionCounts: [CleanupExclusionReason: Int] = [:]
-
-        for (index, message) in newestFirst(messages).enumerated() {
-            if let outOfScope = scopeExclusion(
-                for: request.action,
-                message: message,
-                positionFromNewest: index,
-                referenceDate: referenceDate
-            ) {
-                exclusionCounts[outOfScope, default: 0] += 1
-            } else if let protected = SenderProtection.protectionReason(for: message) {
-                exclusionCounts[protected, default: 0] += 1
-            } else {
-                affected += 1
+        for (_, membership) in classified {
+            switch membership {
+            case .affected: affected += 1
+            case .retained(let reason): exclusionCounts[reason, default: 0] += 1
             }
         }
 
@@ -110,6 +106,55 @@ nonisolated enum CleanupPlanner {
             affectedMessageCount: affected,
             exclusions: exclusions
         )
+    }
+
+    // MARK: - Per-message membership
+
+    /// What `action` would do to each of `messages`, keyed by message.
+    ///
+    /// The public form of the classification the counts are built from. Pure, synchronous, and
+    /// as inert as the rest of the planner: it reads metadata already in memory and returns
+    /// enum cases. Nothing here can reach a provider, and there is no identifier list handed
+    /// out that something could act on — the caller already has the messages.
+    static func membership(
+        for messages: [MailMessage],
+        action: PlannedCleanupAction,
+        referenceDate: Date
+    ) -> [MailMessageID: MessagePlanMembership] {
+        Dictionary(
+            classify(messages, action: action, referenceDate: referenceDate)
+                .map { ($0.0.id, $0.1) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Classifies every message, newest first.
+    ///
+    /// The order of the two filters is the rule that matters, and it is the same one the
+    /// counting has always used: an action's *scope* is applied first (older than a cutoff,
+    /// outside the newest N), and only what survives is tested for protection. The other way
+    /// round would report a starred message from yesterday as "protected from a 90-day
+    /// archive", which sounds like the app saved it when the action was never going to reach
+    /// it.
+    private static func classify(
+        _ messages: [MailMessage],
+        action: PlannedCleanupAction,
+        referenceDate: Date
+    ) -> [(MailMessage, MessagePlanMembership)] {
+        newestFirst(messages).enumerated().map { index, message in
+            if let outOfScope = scopeExclusion(
+                for: action,
+                message: message,
+                positionFromNewest: index,
+                referenceDate: referenceDate
+            ) {
+                return (message, .retained(outOfScope))
+            }
+            if let protected = SenderProtection.protectionReason(for: message) {
+                return (message, .retained(protected))
+            }
+            return (message, .affected)
+        }
     }
 
     /// Whether the action's own scope leaves this message alone, and why.
