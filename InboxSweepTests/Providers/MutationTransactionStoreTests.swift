@@ -32,6 +32,7 @@ struct MutationTransactionStoreTests {
         operation: MailMutationOperation = .archive,
         messageIDs: [String] = ["m-1"],
         selectedCount: Int? = nil,
+        confirmedCount: Int? = nil,
         account address: String = "sample.user@example.com",
         secondsAfterEpoch: TimeInterval = 0,
         undoState: MailMutationTransaction.UndoState = .undoable
@@ -41,9 +42,10 @@ struct MutationTransactionStoreTests {
             operation: operation,
             accountAddress: address,
             succeededMessageIDs: messageIDs.map { MailMessageID($0) },
-            selectedMessageCount: selectedCount ?? messageIDs.count,
+            selectedMessageCount: selectedCount ?? confirmedCount ?? messageIDs.count,
             occurredAt: Self.epoch.addingTimeInterval(secondsAfterEpoch),
-            undoState: undoState
+            undoState: undoState,
+            confirmedMessageCount: confirmedCount
         )
     }
 
@@ -296,7 +298,7 @@ struct MutationTransactionStoreTests {
         ]
 
         for entry in unusableEntries {
-            let contents = #"{"v":2,"account":"sample.user@example.com","transactions":[\#(entry)]}"#
+            let contents = #"{"v":3,"account":"sample.user@example.com","transactions":[\#(entry)]}"#
             try Data(contents.utf8).write(to: file)
             #expect(
                 await store.transactions(for: account()).isEmpty,
@@ -306,7 +308,7 @@ struct MutationTransactionStoreTests {
         }
 
         // A file mixing one unusable entry with one good one keeps the good one and only it.
-        let mixed = #"{"v":2,"account":"sample.user@example.com","transactions":[\#(unusableEntries[0]),{"id":"\#(UUID().uuidString)","op":"archive","message_ids":["kept"],"selected":1,"at":0,"undo":"undoable"}]}"#
+        let mixed = #"{"v":3,"account":"sample.user@example.com","transactions":[\#(unusableEntries[0]),{"id":"\#(UUID().uuidString)","op":"archive","message_ids":["kept"],"selected":1,"at":0,"undo":"undoable"}]}"#
         try Data(mixed.utf8).write(to: file)
         let survivors = await store.transactions(for: account())
         #expect(survivors.count == 1)
@@ -335,6 +337,167 @@ struct MutationTransactionStoreTests {
 
         #expect(await store.transactions(for: account()).isEmpty)
         #expect(await store.latestUndoableTransaction(for: account()) == nil)
+    }
+
+    // MARK: - History and retention
+
+    @Test("The confirmed count round-trips, so a narrowed record keeps its history")
+    func confirmedCountRoundTrips() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FileMutationTransactionStore(directory: directory)
+
+        // Ten archived out of ten selected, four since put back. What has to survive the file is
+        // the *ten*: without it the six remaining identifiers read as an archive that only
+        // managed six of ten, which never happened.
+        let written = transaction(
+            messageIDs: (1...6).map { "m-\($0)" },
+            selectedCount: 10,
+            confirmedCount: 10
+        )
+        #expect(await store.record(written) == .stored)
+
+        let readBack = try #require(await store.transactions(for: account()).first)
+        #expect(readBack == written)
+        #expect(readBack.confirmedMessageCount == 10)
+        #expect(readBack.restoredMessageCount == 4)
+        #expect(readBack.outcome == .confirmed)
+        #expect(readBack.activityStatus == .undoPartiallyCompleted)
+    }
+
+    @Test("A file from the previous schema is read, not discarded, so a live undo survives an update")
+    func previousSchemaIsMigrated() async throws {
+        // The opposite of what happens to version 1, and for a reason that did not apply then: a
+        // version-2 file can hold an undo somebody is still relying on. Dropping it would mean
+        // updating InboxSweep quietly took away the ability to put back what they archived ten
+        // minutes earlier.
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FileMutationTransactionStore(directory: directory)
+        _ = await store.record(transaction())
+
+        let file = try #require(
+            try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                .first { $0.pathExtension == "json" }
+        )
+
+        let identifier = UUID()
+        let version2 = #"""
+            {"v":2,"account":"sample.user@example.com","transactions":[\#
+            {"id":"\#(identifier.uuidString)","op":"archive","message_ids":["a","b","c"],\#
+            "selected":3,"at":0,"undo":"undoable"}]}
+            """#
+        try Data(version2.utf8).write(to: file)
+
+        let migrated = try #require(await store.transactions(for: account()).first)
+        #expect(migrated.id == identifier)
+        #expect(migrated.succeededCount == 3)
+        // No confirmed count in version 2, so the identifier count is what it means — exact for
+        // every entry that has not been narrowed by a partial undo.
+        #expect(migrated.confirmedMessageCount == 3)
+        #expect(migrated.outcome == .confirmed)
+        #expect(await store.latestUndoableTransaction(for: account())?.id == identifier)
+    }
+
+    @Test("A confirmed count outside the range any run could produce is dropped")
+    func implausibleConfirmedCountsAreDropped() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FileMutationTransactionStore(directory: directory)
+        _ = await store.record(transaction())
+
+        let file = try #require(
+            try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                .first { $0.pathExtension == "json" }
+        )
+
+        let unusable = [
+            // Fewer confirmed than are still undoable — the record contradicts itself.
+            #"{"id":"\#(UUID().uuidString)","op":"archive","message_ids":["a","b"],"selected":4,"at":0,"undo":"undoable","confirmed":1}"#,
+            // More confirmed than were ever selected.
+            #"{"id":"\#(UUID().uuidString)","op":"archive","message_ids":["a"],"selected":2,"at":0,"undo":"undoable","confirmed":5}"#,
+            // A count no run in this app could have produced.
+            #"{"id":"\#(UUID().uuidString)","op":"archive","message_ids":["a"],"selected":2,"at":0,"undo":"undoable","confirmed":9999999}"#,
+        ]
+
+        for entry in unusable {
+            let contents = #"{"v":3,"account":"sample.user@example.com","transactions":[\#(entry)]}"#
+            try Data(contents.utf8).write(to: file)
+            #expect(
+                await store.transactions(for: account()).isEmpty,
+                "A self-contradicting entry survived the reader: \(entry)"
+            )
+        }
+    }
+
+    @Test("Pruning never withdraws an undo the user could still be offered")
+    func pruningKeepsTheLiveUndo() async throws {
+        // Written first and never touched again, so every later entry is newer than it. A plain
+        // newest-first prefix would eventually drop it, and dropping it is not a cosmetic loss:
+        // the messages stay archived and the app silently stops being able to put them back.
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FileMutationTransactionStore(directory: directory)
+
+        let undoable = transaction(messageIDs: ["still-archived"], secondsAfterEpoch: 0, undoState: .undoable)
+        _ = await store.record(undoable)
+
+        let limit = FileMutationTransactionStore.retainedTransactionLimit
+        for index in 1...(limit + 15) {
+            _ = await store.record(transaction(
+                operation: .restoreToInbox,
+                messageIDs: ["m-\(index)"],
+                secondsAfterEpoch: Double(index),
+                undoState: .notUndoable
+            ))
+        }
+
+        let stored = await store.transactions(for: account())
+        #expect(stored.count == limit, "The file grew past its bound")
+        #expect(
+            stored.contains { $0.id == undoable.id },
+            "Retention pruned the transaction the undo offer names"
+        )
+        #expect(await store.latestUndoableTransaction(for: account())?.id == undoable.id)
+    }
+
+    @Test("A file that somehow grew past the bound is still read back bounded")
+    func oversizedFilesArePrunedOnRead() async throws {
+        // Pruning happens on the way out as well as on the way in, so a file written by another
+        // build — or edited by hand — cannot put an unbounded history in front of the user.
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FileMutationTransactionStore(directory: directory)
+        _ = await store.record(transaction())
+
+        let file = try #require(
+            try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                .first { $0.pathExtension == "json" }
+        )
+
+        let overflow = MailMutationHistory.entryLimit + 40
+        let entries = (0..<overflow).map { index in
+            #"{"id":"\#(UUID().uuidString)","op":"archive","message_ids":["m-\#(index)"],"selected":1,"at":\#(index),"undo":"superseded","confirmed":1}"#
+        }
+        let contents = #"{"v":3,"account":"sample.user@example.com","transactions":[\#(entries.joined(separator: ","))]}"#
+        try Data(contents.utf8).write(to: file)
+
+        #expect(await store.transactions(for: account()).count == MailMutationHistory.entryLimit)
+    }
+
+    @Test("A file whose entries name another account is read for neither")
+    func fileHeaderDecidesTheAccount() async throws {
+        // Entries carry no address of their own — the header names the account once — so the
+        // property that matters is that reading for a *different* account returns nothing at all
+        // rather than the header's entries relabelled.
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FileMutationTransactionStore(directory: directory)
+        _ = await store.record(transaction(messageIDs: ["private"], account: "first@example.com"))
+
+        #expect(await store.transactions(for: account("second@example.net")).isEmpty)
+        #expect(await store.latestUndoableTransaction(for: account("second@example.net")) == nil)
+        #expect(await store.transactions(for: account("first@example.com")).count == 1)
     }
 
     @Test("A store with nowhere to write says so instead of failing silently")

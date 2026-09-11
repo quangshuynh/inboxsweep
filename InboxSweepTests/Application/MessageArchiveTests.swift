@@ -559,9 +559,20 @@ struct MessageArchiveTests {
         let history = await session.mutationHistory()
         #expect(history.count == 2)
         #expect(Set(history.map(\.operation)) == [.archive, .restoreToInbox])
-        #expect(history.allSatisfy { $0.succeededMessageIDs == [MailMessageID("m-1")] })
         #expect(history.allSatisfy { $0.isConfirmed })
         #expect(history.allSatisfy { $0.accountAddress == MailAccount.testAccount.emailAddress.address })
+        #expect(history.allSatisfy { $0.confirmedMessageCount == 1 })
+
+        // Both records say they confirmed one message. Only one of them still *names* it:
+        // `succeededMessageIDs` is the list of messages a transaction could still undo, and a
+        // fully undone archive has none left. What it did is carried by the count, which is why
+        // the archive above still reads as confirmed rather than as one that failed.
+        let archive = try #require(history.first { $0.operation == .archive })
+        let undo = try #require(history.first { $0.operation == .restoreToInbox })
+        #expect(archive.succeededMessageIDs.isEmpty)
+        #expect(archive.undoState == .undone)
+        #expect(!archive.isUndoable)
+        #expect(undo.succeededMessageIDs == [MailMessageID("m-1")])
     }
 
     @Test("A refused mutation is recorded as a failure, not left out")

@@ -910,8 +910,14 @@ final class InboxSessionModel {
         case .restoreToInbox:
             guard let undoing else { break }
             if receipt.confirmedCount == undoing.succeededCount {
-                // Everything came back, so there is nothing left to undo.
-                _ = await mutationRecords.record(undoing.settingUndoState(.undone))
+                // Everything came back, so there is nothing left to undo — and nothing left for
+                // the transaction to name. Narrowed to empty rather than marked `.undone` with
+                // its list intact, so the full and partial paths agree about what the list
+                // means: the messages this archive still has out of the inbox. Leaving two
+                // identifiers on a fully-undone archive made it read as *partly* undone, because
+                // "how many came back" is the difference between what it confirmed and what it
+                // still names.
+                _ = await mutationRecords.record(undoing.narrowingUndoOffer(to: []))
                 undoableArchive = nil
             } else {
                 // A partial undo leaves the messages that did *not* come back still archived,
