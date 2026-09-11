@@ -30,7 +30,6 @@ struct ActivityView: View {
     /// Loaded when the screen opens and after an undo, from the local file.
     @State private var entries: [ActivityEntry] = []
     @State private var selectedEntryID: ActivityEntry.ID?
-    @State private var hasLoaded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -164,7 +163,6 @@ struct ActivityView: View {
     /// user just acted on updates in place rather than going stale behind them.
     private func reload() async {
         entries = await session.activityHistory()
-        hasLoaded = true
 
         // A selection that survived a reload but no longer names a row would leave the detail
         // pane empty with no way back to it.
@@ -387,3 +385,106 @@ private struct ActivityDetailView: View {
         }
     }
 }
+
+// Previews are development-only, and these run on the debug-only sample mailbox, so the whole
+// block stays out of release builds.
+#if DEBUG
+#Preview("Populated") {
+    ActivityPreview(seedsHistory: true)
+}
+
+#Preview("Empty") {
+    ActivityPreview(seedsHistory: false)
+}
+
+/// Drives the Activity preview from the synthetic mailbox.
+///
+/// The populated variant seeds the transaction store directly rather than archiving anything:
+/// ``SampleMailProvider`` vends no mutation boundary, so there is nothing in a sample run that
+/// could produce a transaction — which is the point, and also why the states this screen has to
+/// get right are otherwise only visible on a real account.
+///
+/// It covers the four that read differently: a complete archive with its undo still open, a
+/// partial archive, one that has been partly undone, and a restore.
+private struct ActivityPreview: View {
+
+    let seedsHistory: Bool
+
+    @State private var session: InboxSessionModel
+    @State private var isReady = false
+
+    init(seedsHistory: Bool) {
+        self.seedsHistory = seedsHistory
+        _session = State(initialValue: InboxSessionModel(
+            provider: SampleMailProvider(),
+            mutationRecords: EphemeralMutationRecordStore(),
+            fetchRequest: MailFetchRequest(limit: 60)
+        ))
+    }
+
+    var body: some View {
+        Group {
+            if isReady {
+                ActivityView(session: session)
+            } else {
+                ProgressView()
+            }
+        }
+        .frame(width: 940, height: 620)
+        .task {
+            let records = EphemeralMutationRecordStore()
+            if seedsHistory {
+                for transaction in Self.sampleHistory { _ = await records.record(transaction) }
+            }
+            session = InboxSessionModel(
+                provider: SampleMailProvider(),
+                mutationRecords: records,
+                fetchRequest: MailFetchRequest(limit: 60)
+            )
+            await session.connect().value
+            isReady = true
+        }
+    }
+
+    private static var sampleHistory: [MailMutationTransaction] {
+        let account = SampleMailbox.account.emailAddress.address
+        let now = Date()
+
+        func transaction(
+            _ operation: MailMutationOperation,
+            ids: [String],
+            selected: Int,
+            confirmed: Int,
+            minutesAgo: Double,
+            undoState: MailMutationTransaction.UndoState
+        ) -> MailMutationTransaction {
+            MailMutationTransaction(
+                id: UUID(),
+                operation: operation,
+                accountAddress: account,
+                succeededMessageIDs: ids.map { MailMessageID($0) },
+                selectedMessageCount: selected,
+                occurredAt: now.addingTimeInterval(-60 * minutesAgo),
+                undoState: undoState,
+                confirmedMessageCount: confirmed
+            )
+        }
+
+        // The sample mailbox's own identifiers, so the detail view has metadata to resolve for
+        // the newest entry and nothing to resolve for the older ones — which is the graceful
+        // degradation this screen has to show.
+        let loaded = SampleMailbox.messages().prefix(3).map(\.id.rawValue)
+
+        return [
+            transaction(.archive, ids: Array(loaded), selected: 3, confirmed: 3,
+                        minutesAgo: 12, undoState: .undoable),
+            transaction(.archive, ids: ["gone-1", "gone-2", "gone-3", "gone-4", "gone-5", "gone-6"],
+                        selected: 8, confirmed: 6, minutesAgo: 90, undoState: .superseded),
+            transaction(.archive, ids: ["half-1", "half-2"],
+                        selected: 5, confirmed: 5, minutesAgo: 1_500, undoState: .superseded),
+            transaction(.restoreToInbox, ids: ["back-1", "back-2", "back-3"],
+                        selected: 3, confirmed: 3, minutesAgo: 1_480, undoState: .notUndoable),
+        ]
+    }
+}
+#endif
