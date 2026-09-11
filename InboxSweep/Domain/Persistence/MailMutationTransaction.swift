@@ -384,6 +384,15 @@ nonisolated final class EphemeralMutationRecordStore: MailMutationRecording, @un
 
     init() {}
 
+    /// Starts with transactions already in it.
+    ///
+    /// Exists so a store can be handed to a session *fully populated* rather than filled in by an
+    /// `await` the caller has to sequence before connecting. Used by the synthetic-mailbox
+    /// Activity fixture and by tests that describe a relaunch.
+    init(seeded transactions: [MailMutationTransaction]) {
+        stored = transactions
+    }
+
     func record(_ transaction: MailMutationTransaction) async -> MutationRecordOutcome {
         lock.withLock {
             stored.removeAll { $0.id == transaction.id }

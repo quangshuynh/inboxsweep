@@ -28,4 +28,12 @@ enum UITestLaunchArgument {
     /// behind.
     static let deterministicWindow = "--ui-test-window"
 
+    /// Seeds the synthetic mailbox's Activity with invented transactions, so the populated screen
+    /// can be exercised. Matches `SampleActivity.launchArgument`.
+    ///
+    /// Only meaningful alongside ``sampleData``. It seeds *records*, not a capability: the sample
+    /// session still has no mutation boundary, so the rows it produces are readable and none of
+    /// them is undoable — which is the state the case asserts.
+    static let sampleActivity = "--sample-activity"
+
 }

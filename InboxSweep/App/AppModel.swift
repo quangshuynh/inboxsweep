@@ -92,10 +92,15 @@ final class AppModel {
     /// It also runs without any way to archive. ``SampleMailProvider`` vends no mutation
     /// boundary, so the sample session has no archiver at all — the Archive control is absent
     /// rather than disabled, because there is no mailbox behind it to change.
+    ///
+    /// Its transaction store is in-memory, and empty unless ``SampleActivity`` was asked for. A
+    /// seeded one holds invented *records* and adds no capability: the session still cannot
+    /// write, and the undo it restores from those records is still refused for want of a grant.
     func useSampleData() {
         isUsingSampleData = true
         session = InboxSessionModel(
             provider: SampleMailProvider(),
+            mutationRecords: SampleActivity.recordStore(),
             fetchRequest: MailFetchRequest(limit: 60)
         )
         session.connect()

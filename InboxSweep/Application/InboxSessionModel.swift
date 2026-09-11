@@ -1019,7 +1019,12 @@ final class InboxSessionModel {
     /// Everything about a frozen set that can be checked without asking the provider.
     ///
     /// Returns the refusal, or `nil` when the set still describes the window on screen.
-    private func validateAgainstLoadedWindow(_ selection: ArchiveSelectionSnapshot) -> MailMutationError? {
+    ///
+    /// Internal rather than private so the stale-review cases can be asserted by *which* refusal
+    /// they produce. Which one matters: "the messages you reviewed have changed" and "that's
+    /// already been done" send the user to different places, and a test that only checked that
+    /// nothing was archived would pass with the two swapped.
+    func validateAgainstLoadedWindow(_ selection: ArchiveSelectionSnapshot) -> MailMutationError? {
         guard case .loaded(let snapshot) = state else { return .messageNotInLoadedWindow }
         guard archiveCapability != .unsupported else { return .notSupported }
         guard archiveCapability.isGranted else { return .permissionRequired }

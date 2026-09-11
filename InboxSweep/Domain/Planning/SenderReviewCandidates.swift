@@ -72,13 +72,24 @@ nonisolated struct SenderReviewCandidates: Equatable, Sendable {
         let ownMessages = reviewed.filter { $0.message.sender.groupingKey == senderKey }
         let affected = ownMessages.filter(\.isAffectedByPlan)
 
+        // A retained message is one of two quite different things, and the screen has to be able
+        // to tell them apart: held back *for its own sake* — starred, Important, conversation-like
+        // — or simply never reached by the action's scope. The planner already draws that line on
+        // the membership, so this counts it rather than re-deriving it.
+        let retained = ownMessages.filter { !$0.isAffectedByPlan }
+        let protectedCount = retained.count { $0.membership?.isProtected == true }
+
         return SenderReviewCandidates(
             senderKey: senderKey,
             action: action,
+            // Filtered on protection a second time. The planner holds protected messages back
+            // already, so this changes nothing today — and it is what keeps "a convenience action
+            // never picks protected mail" from depending on the planner continuing to order its
+            // two filters the way it does.
             messageIDs: affected.filter { !$0.isProtected }.map(\.id),
             loadedMessageCount: ownMessages.count,
-            protectedMessageCount: affected.count(where: \.isProtected),
-            outOfScopeMessageCount: ownMessages.count - affected.count
+            protectedMessageCount: protectedCount,
+            outOfScopeMessageCount: retained.count - protectedCount
         )
     }
 
