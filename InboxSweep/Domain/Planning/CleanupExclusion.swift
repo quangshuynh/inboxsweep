@@ -64,7 +64,7 @@ nonisolated enum CleanupExclusionReason: Hashable, Sendable {
         case .markedImportant:
             return "\(messages) \(isAre) marked Important by Gmail"
         case .protectedTopic(let topic):
-            return "\(messages) mention \(topic.evidencePhrase) in the subject line"
+            return "\(messages) \(ProposalPhrasing.mentionsMention(count)) \(topic.evidencePhrase) in the subject line"
         case .replyLikeSubject:
             return "\(messages) \(ProposalPhrasing.looksLook(count)) like part of a conversation"
         case .newerThanCutoff(let days):

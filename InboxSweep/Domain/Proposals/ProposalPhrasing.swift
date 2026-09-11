@@ -30,6 +30,11 @@ nonisolated enum ProposalPhrasing {
         count == 1 ? "looks" : "look"
     }
 
+    /// The verb that agrees with a count of `count`, for verbs inflected like "mention".
+    static func mentionsMention(_ count: Int) -> String {
+        count == 1 ? "mentions" : "mention"
+    }
+
     /// Renders a mean interval between messages as a rounded, hedged cadence phrase.
     ///
     /// "About 3 messages per week" reads as an observation; "every 56.2 hours" reads as a

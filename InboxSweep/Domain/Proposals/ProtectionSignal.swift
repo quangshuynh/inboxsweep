@@ -91,7 +91,8 @@ nonisolated struct ProtectionSignal: Identifiable, Hashable, Sendable {
             return "\(messages) \(ProposalPhrasing.looksLook(messageCount)) like part of a conversation "
                 + "rather than a broadcast"
         case .subjectTopic(let topic):
-            let base = "\(messages) mention \(topic.evidencePhrase) in the subject line"
+            let base = "\(messages) \(ProposalPhrasing.mentionsMention(messageCount)) "
+                + "\(topic.evidencePhrase) in the subject line"
             return confidence == .suggestive
                 ? "\(base) — a single mention, so it may not be what it looks like"
                 : base
