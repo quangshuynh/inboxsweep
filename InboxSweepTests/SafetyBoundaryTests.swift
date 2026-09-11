@@ -247,10 +247,15 @@ struct SafetyBoundaryTests {
         // descriptive after a partial undo otherwise needed the subjects copied in beside it.
         // The point of this case is that the record became one integer richer and no closer to
         // holding somebody's mail.
+        //
+        // `origin` arrived in Interval 11 for the same shape of reason: a second thing can now
+        // cause an archive, and a history that could not say which would let a rule's work read
+        // as the user's. It holds a case name and, for a rule, that rule's `UUID` — nothing that
+        // came out of a mailbox.
         let propertyNames = Set(Mirror(reflecting: transaction).children.compactMap(\.label))
         #expect(propertyNames == [
             "id", "operation", "accountAddress", "succeededMessageIDs", "selectedMessageCount",
-            "confirmedMessageCount", "occurredAt", "undoState",
+            "confirmedMessageCount", "occurredAt", "undoState", "origin",
         ])
         // Growing from one message to many, and then to a browsable history, did not grow what a
         // transaction knows about mail.
@@ -266,11 +271,21 @@ struct SafetyBoundaryTests {
         )
         #expect(entryProperties == [
             "id", "operation", "messageIDs", "selectedCount", "occurredAt", "undoState",
-            "confirmedCount",
+            "confirmedCount", "origin",
         ])
         #expect(entryProperties.isDisjoint(with: [
             "subject", "sender", "from", "body", "snippet", "labels", "query",
         ]))
+
+        // What an origin can actually contain, spelled out: two fixed words and a rule
+        // identifier. In particular a rule-driven entry does **not** write the sender the rule
+        // matches, even though the rules file holds one. Two files naming the same address is
+        // twice the exposure for a row that already reads correctly without it.
+        #expect(MailMutationOrigin.confirmed.storedValue == "confirmed")
+        #expect(MailMutationOrigin.senderReviewed.storedValue == "senderReviewed")
+        let ruleID = UUID()
+        #expect(MailMutationOrigin.rule(ruleID).storedValue == "rule:\(ruleID.uuidString)")
+        #expect(!MailMutationOrigin.rule(ruleID).storedValue.contains("@"))
     }
 
     @Test("A frozen selection names messages and an account, and carries no instruction")
@@ -1548,8 +1563,12 @@ struct SafetyBoundaryTests {
                 undoState: .undoable
             )
         )
+        //
+        // `rule` arrived in Interval 11 so a row can name the authorization that produced it. It
+        // is a `SenderRule`, which is a description of an instruction and holds nothing that can
+        // carry one out: no provider, no boundary, no request.
         let propertyNames = Set(Mirror(reflecting: entry).children.compactMap(\.label))
-        #expect(propertyNames == ["transaction", "resolvedMessages", "isUndoable"])
+        #expect(propertyNames == ["transaction", "resolvedMessages", "isUndoable", "rule"])
         #expect(propertyNames.isDisjoint(with: [
             "provider", "archiver", "request", "endpoint", "action", "session", "perform", "execute",
         ]))

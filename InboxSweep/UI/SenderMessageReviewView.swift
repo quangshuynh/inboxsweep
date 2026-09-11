@@ -71,6 +71,13 @@ struct SenderMessageReviewView: View {
     /// Said when a frozen set could not be built because the window moved under the selection.
     @State private var selectionIsStale = false
 
+    /// The rule review, when the user has opened it.
+    ///
+    /// A sheet rather than a section, for the same reason the unsubscribe options are one: it is
+    /// a different decision about different mail. This screen is about the messages already here;
+    /// a rule is about the ones that have not arrived. Opening it creates nothing.
+    @State private var isShowingRuleReview = false
+
     /// The unsubscribe options screen, when the user has opened it.
     ///
     /// A separate sheet rather than a section of this one, because the two answer different
@@ -109,6 +116,16 @@ struct SenderMessageReviewView: View {
         }
         .sheet(isPresented: $isShowingUnsubscribeOptions) {
             UnsubscribeOptionsSheet(session: session, summary: summary)
+        }
+        .sheet(isPresented: $isShowingRuleReview) {
+            // Derived here and handed over. `makeSenderRuleReview` reads the loaded window and
+            // returns a value; it writes nothing, and the sheet's own confirming button is the
+            // only thing in the app that creates a rule.
+            if let review = session.makeSenderRuleReview(forSenderKey: summary.id) {
+                SenderRuleReviewSheet(session: session, review: review)
+            } else {
+                RuleUnavailableSheet(session: session, summary: summary)
+            }
         }
         .onAppear(perform: applyPreselectionIfNeeded)
     }
@@ -287,11 +304,46 @@ struct SenderMessageReviewView: View {
 
             Spacer()
 
+            ruleControl
             unsubscribeControl
             archiveControl
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+
+    /// The way from this sender's messages to a rule about this sender's future messages.
+    ///
+    /// **Create archive rule…**, with the ellipsis carrying its usual meaning: it opens something
+    /// to read, and nothing has happened when it is closed. Pressing it derives a review and
+    /// presents it. It does not create a rule, does not enable one, and does not archive anything,
+    /// and there is no path from this button to the rule store that skips the review's own
+    /// confirming press.
+    ///
+    /// Offered whether or not this session can execute a rule, for the same reason the archive
+    /// review and the unsubscribe options are: what it opens is a reading, and the review screen
+    /// is the honest place to say whether anything can run. It is replaced by a way into Rules
+    /// once this sender already has one, because the answer to "I want a rule for this sender" when
+    /// there is one is to show it, not to stack a second.
+    @ViewBuilder
+    private var ruleControl: some View {
+        if let existing = session.rule(forSenderKey: summary.id) {
+            Button {
+                isShowingRuleReview = true
+            } label: {
+                Label(existing.isEnabled ? "Rule is on" : "Rule is off", systemImage: "wand.and.stars.inverse")
+            }
+            .help("You already have a rule for this sender. Opens Rules, where you can turn it off or delete it.")
+            .accessibilityIdentifier("messageReview.existingRuleButton")
+        } else {
+            Button {
+                isShowingRuleReview = true
+            } label: {
+                Label("Create archive rule…", systemImage: "wand.and.stars.inverse")
+            }
+            .help("Shows exactly what a rule for this sender would do to future mail. Opening it creates nothing, and archives nothing.")
+            .accessibilityIdentifier("messageReview.createRuleButton")
+        }
     }
 
     /// The way from this sender's messages to this sender's unsubscribe options.
@@ -410,7 +462,12 @@ struct SenderMessageReviewView: View {
                     // window stops agreeing rather than acting on whatever is selected by then.
                     let frozen = session.makeArchiveSelection(
                         forSenderKey: summary.id,
-                        messageIDs: selectedMessageIDs
+                        messageIDs: selectedMessageIDs,
+                        // Where the ticks came from, recorded on the transaction so Activity can
+                        // tell the two apart later. It changes nothing about what is archived:
+                        // both are this screen's own checkbox column, and both go through the
+                        // same confirmation.
+                        origin: appliedPreselection == nil ? .confirmed : .senderReviewed
                     )
                     if let frozen {
                         selectionIsStale = false

@@ -247,7 +247,15 @@ nonisolated enum MutationTransactionDTO {
     /// because a build that wrote version 3 could not perform an unsubscribe. That is what
     /// requirement 16 of this interval asks for: evolve only as much as needed, and leave the
     /// existing guarantees alone.
-    static let schemaVersion = 4
+    ///
+    /// Bumped from 4 in Interval 11 for the same kind of change, and it is worth saying that
+    /// twice: **a new optional key beside the existing ones**. A transaction gained an origin,
+    /// because a second thing can now cause one. Nothing about an existing entry is reinterpreted,
+    /// and a version-4 file decodes with its archive history, its unsubscribe history, and its
+    /// live undo offer intact, every transaction in it reading as
+    /// ``MailMutationOrigin/confirmed`` — which is exactly what those were, since rules did not
+    /// exist when that file was written.
+    static let schemaVersion = 5
 
     /// The versions this build will read.
     ///
@@ -262,7 +270,7 @@ nonisolated enum MutationTransactionDTO {
     /// already been narrowed by a partial undo, where it understates how many the archive
     /// originally confirmed. Understating is the safe direction: it can make an old row read as
     /// a smaller archive than it was, and it can never invent a message.
-    static let readableVersions: Set<Int> = [2, 3, 4]
+    static let readableVersions: Set<Int> = [2, 3, 4, 5]
 
     static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
@@ -332,6 +340,10 @@ nonisolated enum MutationTransactionDTO {
         /// identifier count is the answer.
         var confirmedCount: Int?
 
+        /// What caused this operation. Absent before version 5, where the answer is that somebody
+        /// confirmed it, because nothing else could have.
+        var origin: String?
+
         enum CodingKeys: String, CodingKey {
             case id
             case operation = "op"
@@ -340,6 +352,7 @@ nonisolated enum MutationTransactionDTO {
             case occurredAt = "at"
             case undoState = "undo"
             case confirmedCount = "confirmed"
+            case origin
         }
     }
 
@@ -396,7 +409,8 @@ nonisolated enum MutationTransactionDTO {
             selectedCount: transaction.selectedMessageCount,
             occurredAt: transaction.occurredAt,
             undoState: transaction.undoState.rawValue,
-            confirmedCount: transaction.confirmedMessageCount
+            confirmedCount: transaction.confirmedMessageCount,
+            origin: transaction.origin.storedValue
         )
     }
 
@@ -423,7 +437,13 @@ nonisolated enum MutationTransactionDTO {
               // selected. Outside that range it is not a count any run of this app produced,
               // and a history row built from it would claim something that never happened.
               confirmedCount >= entry.messageIDs.count,
-              confirmedCount <= entry.selectedCount
+              confirmedCount <= entry.selectedCount,
+              // An origin this build does not recognise is an entry a later version wrote.
+              // Dropped rather than defaulted: reading it as "somebody confirmed this" would put a
+              // row in Activity claiming a person did something a rule did, and reading it as a
+              // rule would invent an authorization. A missing key is not this case; it decodes as
+              // ``MailMutationOrigin/confirmed``, which is what a pre-version-5 entry means.
+              let origin = MailMutationOrigin.decoding(entry.origin)
         else { return nil }
 
         // Duplicates would mean sending two requests for one message and counting it twice.
@@ -439,7 +459,8 @@ nonisolated enum MutationTransactionDTO {
             selectedMessageCount: entry.selectedCount,
             occurredAt: entry.occurredAt,
             undoState: undoState,
-            confirmedMessageCount: confirmedCount
+            confirmedMessageCount: confirmedCount,
+            origin: origin
         )
     }
 }

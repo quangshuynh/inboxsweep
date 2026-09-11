@@ -24,6 +24,16 @@ actor SampleMailProvider: MailProvider {
 
     private let sampleUnsubscriber: (any MailUnsubscribing)?
 
+    /// The archive boundary, `nil` unless a debug launch argument asked for one.
+    ///
+    /// Default-off, exactly like ``unsubscriber``. An ordinary sample run still has no way to
+    /// archive at all, so the Archive control is absent rather than disabled and a synthetic
+    /// session cannot reach a write even by accident. Under ``SampleRules/archivingLaunchArgument``
+    /// it gets ``SampleArchiver``, which edits an in-memory label set and has no transport.
+    nonisolated var messageArchiver: (any MailMessageArchiving)? { sampleArchiver }
+
+    private let sampleArchiver: (any MailMessageArchiving)?
+
     private let messages: [MailMessage]
     private let pageSize: Int
     private let account: MailAccount
@@ -33,9 +43,11 @@ actor SampleMailProvider: MailProvider {
         messages: [MailMessage] = SampleMailbox.messages(),
         pageSize: Int = 60,
         account: MailAccount = SampleMailbox.account,
-        unsubscriber: (any MailUnsubscribing)? = SampleUnsubscribe.unsubscriber()
+        unsubscriber: (any MailUnsubscribing)? = SampleUnsubscribe.unsubscriber(),
+        archiver: (any MailMessageArchiving)? = SampleRules.archiver()
     ) {
         self.sampleUnsubscriber = unsubscriber
+        self.sampleArchiver = archiver
         self.messages = messages
         self.pageSize = max(1, pageSize)
         self.account = MailAccount(

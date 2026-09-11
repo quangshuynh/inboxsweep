@@ -213,8 +213,11 @@ struct UnsubscribeHistoryStoreTests {
 
     @Test("The current schema is 4, and 2 and 3 are still readable")
     func schemaVersions() {
-        #expect(MutationTransactionDTO.schemaVersion == 4)
-        #expect(MutationTransactionDTO.readableVersions == [2, 3, 4])
+        // Bumped to 5 in Interval 11, when a transaction gained an origin. Version 4 is still
+        // read, and reads exactly as it meant: rules did not exist when it was written, so every
+        // entry in it came from somebody pressing a confirming button.
+        #expect(MutationTransactionDTO.schemaVersion == 5)
+        #expect(MutationTransactionDTO.readableVersions == [2, 3, 4, 5])
     }
 
     @Test("An entry this build cannot account for is dropped rather than displayed")

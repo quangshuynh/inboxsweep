@@ -85,6 +85,20 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// When the operation finished.
     let occurredAt: Date
 
+    /// What caused this operation to happen.
+    ///
+    /// Added in Interval 11, when a second thing could cause one. Until then every transaction in
+    /// this file was the result of somebody pressing a confirming button, so "why did this
+    /// happen?" had one answer and did not need recording. A local sender rule can now archive a
+    /// message without anybody present, and an Activity screen that could not tell the two apart
+    /// would be answering the wrong question: "3 messages archived" is a very different thing to
+    /// read depending on whether you did it.
+    ///
+    /// A record written before this field existed decodes as ``MailMutationOrigin/confirmed``,
+    /// which is exactly what it was: rules did not exist, so nothing in an older file could have
+    /// come from one.
+    let origin: MailMutationOrigin
+
     /// Whether this transaction is still the one an undo would act on.
     private(set) var undoState: UndoState
 
@@ -100,7 +114,8 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
         selectedMessageCount: Int,
         occurredAt: Date,
         undoState: UndoState,
-        confirmedMessageCount: Int? = nil
+        confirmedMessageCount: Int? = nil,
+        origin: MailMutationOrigin = .confirmed
     ) {
         self.id = id
         self.operation = operation
@@ -109,6 +124,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
         self.selectedMessageCount = selectedMessageCount
         self.occurredAt = occurredAt
         self.undoState = undoState
+        self.origin = origin
         self.confirmedMessageCount = max(
             confirmedMessageCount ?? succeededMessageIDs.count,
             succeededMessageIDs.count
@@ -279,7 +295,8 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
             selectedMessageCount: selectedMessageCount,
             occurredAt: occurredAt,
             undoState: remaining.isEmpty ? .undone : .undoable,
-            confirmedMessageCount: confirmedMessageCount
+            confirmedMessageCount: confirmedMessageCount,
+            origin: origin
         )
     }
 
@@ -289,12 +306,32 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// restore is recorded as ``UndoState/notUndoable`` on purpose: its inverse is archiving
     /// again, and archiving is something the user asks for explicitly rather than something an
     /// "undo the undo" button does for them.
+    ///
+    /// ### Why a rule-driven archive is not undoable
+    ///
+    /// `origin` is the only thing that decides it, and it decides it deliberately. The app keeps
+    /// **at most one undoable transaction per account**: a new archive supersedes the previous
+    /// offer. That invariant is safe while every archive is something a person just did, because
+    /// the offer they lose is one they replaced on purpose. A rule is not that. It runs on every
+    /// load, without anybody asking, so letting it take the offer would mean a user's deliberate
+    /// twelve-message undo quietly disappearing because they pressed Reload and two newsletters
+    /// arrived.
+    ///
+    /// The alternative — a second, parallel undo offer — is a bigger change to the lifecycle than
+    /// this feature earns, and a screen offering two undos is a screen where somebody presses the
+    /// wrong one.
+    ///
+    /// So a rule-driven archive is recorded, counted, listed, and attributed to its rule, and it
+    /// carries no undo. Nothing is fabricated in its place: Activity says there is none and says
+    /// why, and archived mail is still in All Mail where Gmail's own **Move to Inbox** will put it
+    /// back. See ``Docs/Rules.md``.
     static func completing(
         _ receipt: MailArchiveSetReceipt,
-        at occurredAt: Date
+        at occurredAt: Date,
+        origin: MailMutationOrigin = .confirmed
     ) -> MailMutationTransaction {
         let confirmed = receipt.confirmedMessageIDs
-        let undoable = receipt.operation == .archive && !confirmed.isEmpty
+        let undoable = receipt.operation == .archive && !confirmed.isEmpty && origin.isUndoable
         return MailMutationTransaction(
             id: receipt.operationID,
             operation: receipt.operation,
@@ -303,8 +340,81 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
             selectedMessageCount: receipt.selectedCount,
             occurredAt: occurredAt,
             undoState: undoable ? .undoable : .notUndoable,
-            confirmedMessageCount: confirmed.count
+            confirmedMessageCount: confirmed.count,
+            origin: origin
         )
+    }
+}
+
+/// What caused a mutation, kept distinct because the three are different promises to the user.
+///
+/// Requirement 20 of Interval 11: the history must not collapse "I ticked these twelve and
+/// pressed Archive", "I opened a sender's review, kept what it suggested, and pressed Archive",
+/// and "a rule I authorized last month archived this while I was reading something else" into one
+/// undifferentiated row. All three are honest archives through the same boundary; only the last
+/// one happened without a person in the room.
+nonisolated enum MailMutationOrigin: Hashable, Sendable {
+
+    /// Somebody ticked a list of messages and confirmed it.
+    case confirmed
+
+    /// The same, reached from a sender-level review that filled the ticks in first.
+    ///
+    /// Still an explicit confirmation, and recorded separately because the *selection* was the
+    /// app's suggestion rather than the user's own reading of the list. Nobody's mail is treated
+    /// differently for it; the record simply says where the set came from.
+    case senderReviewed
+
+    /// A local sender rule archived it while InboxSweep was loading mail.
+    ///
+    /// Carries the rule so Activity can name which authorization was acted on, and so a rule the
+    /// user later deletes still has its history attributable.
+    case rule(SenderRule.ID)
+
+    /// Whether an operation from this origin may become the account's undo offer.
+    ///
+    /// See ``MailMutationTransaction/completing(_:at:origin:)`` for why a rule's may not.
+    var isUndoable: Bool {
+        switch self {
+        case .confirmed, .senderReviewed: true
+        case .rule: false
+        }
+    }
+
+    /// Whether InboxSweep did this without anybody present.
+    var wasAutomatic: Bool {
+        if case .rule = self { return true }
+        return false
+    }
+
+    /// The rule behind this operation, when there was one.
+    var ruleID: SenderRule.ID? {
+        if case .rule(let id) = self { return id }
+        return nil
+    }
+
+    /// The stored form. Parsed back strictly: an origin this build does not recognise is not one
+    /// it wrote, and the decoder drops the entry rather than guessing which of the three it meant.
+    var storedValue: String {
+        switch self {
+        case .confirmed: "confirmed"
+        case .senderReviewed: "senderReviewed"
+        case .rule(let id): "rule:\(id.uuidString)"
+        }
+    }
+
+    /// Rebuilds an origin from ``storedValue``, or `nil` for anything this build did not write.
+    static func decoding(_ stored: String?) -> MailMutationOrigin? {
+        guard let stored else { return .confirmed }
+        switch stored {
+        case "confirmed": return .confirmed
+        case "senderReviewed": return .senderReviewed
+        default:
+            guard stored.hasPrefix("rule:"), let id = UUID(uuidString: String(stored.dropFirst(5))) else {
+                return nil
+            }
+            return .rule(id)
+        }
     }
 }
 

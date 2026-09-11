@@ -109,10 +109,39 @@ final class InboxSessionModel {
     /// one request rather than two — independently of whether a button was disabled in time.
     private(set) var unsubscribeActivity: UnsubscribeActivity?
 
+    // MARK: - Rule state
+    //
+    // Kept apart from both of the above, again. A rule is a third thing: not a capability the
+    // provider vends, and not an action in flight, but a standing authorization the user gave
+    // once and can withdraw.
+
+    /// The rules the connected account has, newest first.
+    ///
+    /// Refreshed whenever a window is published, for the same reason ``archiveCapability`` is:
+    /// they are account-scoped, and a session that signed in as somebody else must not still be
+    /// holding the previous account's authorizations. Empty while signed out.
+    private(set) var senderRules: [SenderRule] = []
+
+    /// What the last rule pass did, or `nil` when none has run or the user has dismissed it.
+    ///
+    /// Transient. The changes themselves are in the transaction file; this is the reading the
+    /// dashboard shows once and then forgets. See ``SenderRuleRun``.
+    private(set) var ruleRun: SenderRuleRun?
+
+    /// Whether a rule pass is working through its messages right now.
+    private(set) var isApplyingRules = false
+
+    /// Something that went wrong creating, enabling, or deleting a rule.
+    ///
+    /// Separate from ``notice`` because a rule that could not be saved is about a decision the
+    /// user just made on a specific screen, and that screen is where they should be told.
+    private(set) var ruleWriteWarning: String?
+
     private let provider: any MailProvider
     private let cache: any InboxCacheStoring
     private let planStore: any CleanupPlanStoring
     private let mutationRecords: any MailMutationRecording
+    private let ruleStore: any SenderRuleStoring
     private let now: @Sendable () -> Date
 
     /// The mutation boundary, when the provider has one.
@@ -185,6 +214,19 @@ final class InboxSessionModel {
     /// again — which freezes a **new** identifier, because that is a new decision.
     private var performedUnsubscribeIDs: Set<UUID> = []
 
+    /// The messages each rule has already been sent to the boundary for, this session.
+    ///
+    /// The guard that makes "avoid repeated attempts against the same loaded message" true. A
+    /// message enters this set the moment a request is about to go out for it, successfully or
+    /// not, so a failure produces at most one attempt per session rather than one per reload.
+    ///
+    /// Session-lifetime rather than persisted, deliberately. Persisting it would mean a file that
+    /// grows with every message a rule ever looked at, for the sake of not retrying something
+    /// once after a relaunch — and a message that failed for a transient reason genuinely does
+    /// deserve one more try tomorrow. What it must not do is retry in a loop today, and this is
+    /// what stops that.
+    private var ruleAttemptedMessageIDs: [SenderRule.ID: Set<MailMessageID>] = [:]
+
     /// When the loaded window was written to the cache, or `nil` when it came from the
     /// provider during this launch. Shown in the header so a window restored from disk is
     /// never mistaken for a fresh read of the mailbox.
@@ -195,6 +237,7 @@ final class InboxSessionModel {
         cache: any InboxCacheStoring = EphemeralInboxCache(),
         planStore: any CleanupPlanStoring = EphemeralCleanupPlanStore(),
         mutationRecords: any MailMutationRecording = EphemeralMutationRecordStore(),
+        ruleStore: any SenderRuleStoring = EphemeralSenderRuleStore(),
         urlOpener: any ExternalURLOpening = WorkspaceURLOpener(),
         fetchRequest: MailFetchRequest = MailFetchRequest(),
         loadDepth: MailboxLoadDepth = .firstPage,
@@ -208,6 +251,7 @@ final class InboxSessionModel {
         self.cache = cache
         self.planStore = planStore
         self.mutationRecords = mutationRecords
+        self.ruleStore = ruleStore
         self.firstPageRequest = fetchRequest
         self.scope = fetchRequest.scope
         self.loadDepth = loadDepth
@@ -396,6 +440,7 @@ final class InboxSessionModel {
             // A cancelled deep load keeps every page it managed to read; the alternative is
             // throwing away work the user already waited for.
             await publishSnapshot(for: account, isLoadingMore: false, persist: true)
+            await applyRulesIfPossible()
         }
     }
 
@@ -424,6 +469,10 @@ final class InboxSessionModel {
                 // app no longer has permission to look at, so keeping it would be keeping a
                 // list about somebody's mail for nobody's benefit.
                 await mutationRecords.clear(for: connectedAccount)
+                // And the rules, which matter most of the three: they are the only file that
+                // names *senders*. Leaving a list of somebody's correspondents on disk after they
+                // asked the app to forget their mailbox would be the worst version of this.
+                await ruleStore.clear(for: connectedAccount)
             }
             reset()
             state = .signedOut
@@ -657,9 +706,13 @@ final class InboxSessionModel {
     /// loaded message of `key`'s sender. Silently dropping the strays would mean opening a
     /// confirmation for a different set than the one the user ticked, which is precisely what
     /// freezing exists to prevent. The caller's recovery is to reload and choose again.
+    /// - Parameter origin: How the ticks were arrived at. Recorded on the durable transaction so
+    ///   Activity can tell a set the user read row by row from one a sender-level review filled in
+    ///   for them. It changes nothing about what is archived or what is asked of the user.
     func makeArchiveSelection(
         forSenderKey key: SenderSummary.ID,
-        messageIDs: some Collection<MailMessageID>
+        messageIDs: some Collection<MailMessageID>,
+        origin: MailMutationOrigin = .confirmed
     ) -> ArchiveSelectionSnapshot? {
         guard case .loaded(let snapshot) = state, !messageIDs.isEmpty else { return nil }
 
@@ -685,7 +738,8 @@ final class InboxSessionModel {
                     protectionReason: $0.protectionReason
                 )
             },
-            frozenAt: now()
+            frozenAt: now(),
+            origin: origin
         )
     }
 
@@ -812,11 +866,17 @@ final class InboxSessionModel {
     /// the window already in memory, and the undoability comes from a value the session already
     /// holds.
     func activityHistory() async -> [ActivityEntry] {
-        await mutationHistory().map { transaction in
+        let rulesByID = Dictionary(senderRules.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return await mutationHistory().map { transaction in
             ActivityEntry(
                 transaction: transaction,
                 resolvedMessages: resolvedMessages(for: transaction),
-                isUndoable: canUndo(transaction)
+                isUndoable: canUndo(transaction),
+                // Resolved from the rules the account has *now*, and allowed to be `nil`. A rule
+                // the user has since deleted leaves its history behind, exactly as an archive
+                // leaves its messages archived, and the row says so rather than pretending the
+                // operation had no cause.
+                rule: transaction.origin.ruleID.flatMap { rulesByID[$0] }
             )
         }
     }
@@ -891,7 +951,11 @@ final class InboxSessionModel {
             .restoreToInbox,
             selection: selection,
             messageIDs: transaction.succeededMessageIDs,
-            undoing: transaction
+            undoing: transaction,
+            // An undo is always something a person pressed, whatever caused the archive it
+            // reverses. A restore is never undoable anyway, so the value only ever describes who
+            // asked for it, and the answer here is always "the user".
+            origin: .confirmed
         )
     }
 
@@ -904,7 +968,7 @@ final class InboxSessionModel {
         // second refuses a *frozen set that has already been executed* — which is the case the
         // first one misses, because by then nothing is running any more and the sheet is still
         // on screen showing the same confirmed set.
-        guard !isMutating else { return .alreadyFinished }
+        guard !isMutating, !isApplyingRules else { return .alreadyFinished }
         guard mutationActivity?.id != snapshot.id else { return .alreadyFinished }
 
         if let refusal = validateAgainstLoadedWindow(snapshot) {
@@ -914,7 +978,13 @@ final class InboxSessionModel {
             return failMutation(operation, snapshot.messageIDs, .selectionChanged)
         }
 
-        return execute(operation, selection: selection, messageIDs: snapshot.messageIDs, undoing: nil)
+        return execute(
+            operation,
+            selection: selection,
+            messageIDs: snapshot.messageIDs,
+            undoing: nil,
+            origin: snapshot.origin
+        )
     }
 
     /// Runs a validated selection and applies whatever came back.
@@ -922,9 +992,10 @@ final class InboxSessionModel {
         _ operation: MailMutationOperation,
         selection: MailArchiveSelection,
         messageIDs: [MailMessageID],
-        undoing: MailMutationTransaction?
+        undoing: MailMutationTransaction?,
+        origin: MailMutationOrigin
     ) -> Task<Void, Never> {
-        guard !isMutating else { return .alreadyFinished }
+        guard !isMutating, !isApplyingRules else { return .alreadyFinished }
         guard let archiver else { return failMutation(operation, messageIDs, .notSupported) }
         guard case .loaded(let snapshot) = state else {
             return failMutation(operation, messageIDs, .messageNotInLoadedWindow)
@@ -956,7 +1027,8 @@ final class InboxSessionModel {
             guard await provider.currentConnection().account?.emailAddress.address == selection.accountAddress else {
                 await finish(
                     .refused(selection, operation: operation, because: .accountChanged),
-                    undoing: undoing
+                    undoing: undoing,
+                    origin: origin
                 )
                 return
             }
@@ -974,7 +1046,7 @@ final class InboxSessionModel {
                     await self?.advanceProgress(of: activityID, to: completed)
                 }
             )
-            await finish(receipt, undoing: undoing)
+            await finish(receipt, undoing: undoing, origin: origin)
         }
     }
 
@@ -992,7 +1064,8 @@ final class InboxSessionModel {
     /// produces one transaction and one local state, not two.
     private func finish(
         _ receipt: MailArchiveSetReceipt,
-        undoing: MailMutationTransaction?
+        undoing: MailMutationTransaction?,
+        origin: MailMutationOrigin
     ) async {
         let occurredAt = now()
 
@@ -1000,7 +1073,7 @@ final class InboxSessionModel {
         // which is what "failures remain in your Inbox" means in code.
         reconcile(receipt)
 
-        let recordOutcome = await writeTransaction(receipt, at: occurredAt, undoing: undoing)
+        let recordOutcome = await writeTransaction(receipt, at: occurredAt, undoing: undoing, origin: origin)
         mutationActivity = mutationActivity?.settingPhase(
             .finished(receipt, localRecordWarning: recordOutcome.warning)
         )
@@ -1022,9 +1095,10 @@ final class InboxSessionModel {
     private func writeTransaction(
         _ receipt: MailArchiveSetReceipt,
         at occurredAt: Date,
-        undoing: MailMutationTransaction?
+        undoing: MailMutationTransaction?,
+        origin: MailMutationOrigin
     ) async -> MutationRecordOutcome {
-        let transaction = MailMutationTransaction.completing(receipt, at: occurredAt)
+        let transaction = MailMutationTransaction.completing(receipt, at: occurredAt, origin: origin)
 
         // Superseding happens before the new transaction is written, so a crash between the two
         // leaves no file in which two transactions both claim to be undoable.
@@ -1511,6 +1585,352 @@ final class InboxSessionModel {
         return task
     }
 
+    // MARK: - Sender rules: reading
+    //
+    // The whole of what the app does about rules lives between here and the end of the
+    // execution section. Read it in that order: what a rule would be, freezing one, checking a
+    // frozen one, saving it, managing it, and — last, and smallest — running it.
+
+    /// Whether this account already has a rule for a sender.
+    ///
+    /// Asked by the screens that would otherwise offer to create a second one. Two rules for one
+    /// sender are not two authorizations; see ``SenderRuleRetention/retained(_:)``.
+    func rule(forSenderKey key: SenderSummary.ID) -> SenderRule? {
+        senderRules.first { $0.senderKey == key }
+    }
+
+    /// Whether another rule may be created at all.
+    var isAtRuleCapacity: Bool { SenderRuleRetention.isAtCapacity(senderRules) }
+
+    /// Whether this session could ever carry a rule out.
+    ///
+    /// Distinguishes "this mailbox cannot be changed" from "you have no rules", which are answers
+    /// to different questions. A rule may still be *created* when this is false: it is a durable
+    /// authorization, and refusing to remember a decision because today's grant is read-only
+    /// would be refusing to remember it. The screens say so instead.
+    var canExecuteRules: Bool { archiveCapability.isGranted && archiver != nil }
+
+    /// Dismisses the summary of the last rule pass. Withdraws nothing and undoes nothing.
+    func dismissRuleRun() {
+        guard !isApplyingRules else { return }
+        ruleRun = nil
+    }
+
+    /// Clears the warning from a rule that could not be written.
+    func dismissRuleWriteWarning() { ruleWriteWarning = nil }
+
+    // MARK: - Sender rules: freezing a review
+
+    /// Freezes what a rule for one sender would be.
+    ///
+    /// **Opening a review creates nothing.** It reads the window in memory, builds a value, and
+    /// returns it: no file is written, no rule exists, and abandoning the sheet costs one
+    /// allocation. That is requirement 11 of this interval, and it is true by construction rather
+    /// than by a flag somebody remembered to check — this method has no reference to the store.
+    ///
+    /// Returns `nil` rather than a snapshot for something that could not become a rule:
+    ///
+    /// - no loaded window, so there is no account to scope it to;
+    /// - a sender with no parseable address. ``EmailAddress/unknownGroupingKey`` is shared by
+    ///   every malformed header in the mailbox, so a rule on it would archive "anything InboxSweep
+    ///   could not read the sender of", which is exactly the fuzzy authority this feature refuses;
+    /// - a sender that already has a rule, because the answer there is to open the existing one
+    ///   rather than to stack a second.
+    func makeSenderRuleReview(forSenderKey key: SenderSummary.ID) -> SenderRuleReviewSnapshot? {
+        guard case .loaded(let snapshot) = state else { return nil }
+        guard key != EmailAddress.unknownGroupingKey, !key.isEmpty else { return nil }
+        guard rule(forSenderKey: key) == nil, !isAtRuleCapacity else { return nil }
+
+        let reviewed = reviewedMessages(forSenderKey: key)
+        let createdAt = now()
+
+        return SenderRuleReviewSnapshot(
+            rule: SenderRule(
+                accountAddress: snapshot.account.emailAddress.address,
+                senderKey: key,
+                senderDisplayValue: snapshot.senders.first { $0.id == key }?.sender.displayValue ?? key,
+                action: .archiveNewInboxMail,
+                isEnabled: true,
+                createdAt: createdAt
+            ),
+            scope: scope,
+            loadedMessageCount: reviewed.count,
+            protectedMessageCount: reviewed.count { $0.protectionReason?.isProtective == true },
+            canExecute: canExecuteRules,
+            frozenAt: createdAt
+        )
+    }
+
+    /// Whether the frozen review could still be turned into a rule, without writing anything.
+    ///
+    /// The cheap half of the validation ``createRule(from:)`` performs: a guard for a button's
+    /// enabled state, never a substitute for the re-validation there, which additionally asks the
+    /// provider which account it is authenticated as.
+    func canCreateRule(from review: SenderRuleReviewSnapshot) -> Bool {
+        validateAgainstLoadedWindow(review) == nil
+    }
+
+    /// Everything about a frozen rule review that can be checked without asking the provider.
+    ///
+    /// Returns the refusal, or `nil` when the review still describes the state on screen.
+    /// Internal rather than private so the stale cases can be asserted by *which* refusal they
+    /// produce: "the mailbox moved" and "you already have a rule for this sender" send the user to
+    /// different places, and a test that only checked no rule was created would pass with the two
+    /// swapped.
+    func validateAgainstLoadedWindow(_ review: SenderRuleReviewSnapshot) -> SenderRuleFailure? {
+        guard case .loaded(let snapshot) = state else { return .reviewIsStale }
+        guard review.accountAddress == snapshot.account.emailAddress.address else { return .accountChanged }
+        guard review.scope == scope else { return .reviewIsStale }
+        guard review.rule.isExecutable else { return .actionNotSupported }
+        guard review.senderKey != EmailAddress.unknownGroupingKey, !review.senderKey.isEmpty else {
+            return .senderNotIdentifiable
+        }
+        guard rule(forSenderKey: review.senderKey) == nil else { return .ruleAlreadyExists }
+        guard !isAtRuleCapacity else { return .tooManyRules }
+
+        // The sender has to still be a sender in the window the review was read from. A review
+        // frozen against a page that has since been replaced describes a sender the user can no
+        // longer see, and authorizing something about mail nobody is looking at is exactly what
+        // freezing exists to prevent.
+        guard snapshot.senders.contains(where: { $0.id == review.senderKey }) else { return .reviewIsStale }
+        return nil
+    }
+
+    // MARK: - Sender rules: authorizing
+
+    /// Creates exactly the rule the user reviewed, after they have confirmed it.
+    ///
+    /// The **only** method in the app that writes a rule. Nothing else calls the store's `save`,
+    /// so there is no path from a proposal, a preview, a saved plan, an archive confirmation, or
+    /// an unsubscribe review to a stored rule that does not come through here, and this is only
+    /// ever called by the confirming button on ``SenderRuleReviewSheet``.
+    ///
+    /// It performs no confirming of its own. What it does is **refuse**: every precondition is
+    /// re-checked against the state as it is now, and the frozen rule is saved unchanged or not at
+    /// all. It is never adjusted to fit — a rule quietly retargeted between the screen that
+    /// described it and the file that stores it would be an authorization nobody gave.
+    @discardableResult
+    func createRule(from review: SenderRuleReviewSnapshot) -> Task<Void, Never> {
+        ruleWriteWarning = nil
+        if let refusal = validateAgainstLoadedWindow(review) {
+            ruleWriteWarning = refusal.message
+            return .alreadyFinished
+        }
+
+        return Task { @MainActor [self] in
+            // Asked of the provider rather than taken from the snapshot, exactly as the archive
+            // and unsubscribe paths do: the snapshot records which account the window was *read*
+            // for, and the question here is which account the app is authenticated as *now*.
+            guard await provider.currentConnection().account?.emailAddress.address == review.accountAddress else {
+                ruleWriteWarning = SenderRuleFailure.accountChanged.message
+                return
+            }
+            // Re-checked after the await, because the window can move while the provider answers.
+            guard validateAgainstLoadedWindow(review) == nil else {
+                ruleWriteWarning = SenderRuleFailure.reviewIsStale.message
+                return
+            }
+
+            // The frozen value, saved as it is. Not rebuilt, not merged, not re-derived.
+            let outcome = await ruleStore.save(review.rule)
+            ruleWriteWarning = outcome.warning
+            await refreshRules()
+        }
+    }
+
+    /// Turns one rule on or off.
+    ///
+    /// Deliberately no confirmation. Disabling is the safe direction and needs no friction, and
+    /// re-enabling is re-affirming something the user already reviewed rather than authorizing
+    /// something new.
+    @discardableResult
+    func setRule(_ rule: SenderRule, enabled: Bool) -> Task<Void, Never> {
+        guard let account, rule.accountAddress == account.emailAddress.address else {
+            return .alreadyFinished
+        }
+        ruleWriteWarning = nil
+        return Task { @MainActor [self] in
+            let outcome = await ruleStore.save(rule.settingEnabled(enabled))
+            ruleWriteWarning = outcome.warning
+            await refreshRules()
+        }
+    }
+
+    /// Deletes one rule from the connected account.
+    ///
+    /// Account-scoped in both halves: the guard here, and the store's own predicate. A rule can
+    /// never be deleted out of a mailbox that is not the one on screen.
+    ///
+    /// Deleting a rule changes nothing about mail it already archived. Those messages stay
+    /// archived and their Activity entries stay in the history, because they are a record of what
+    /// the app did and withdrawing an authorization does not un-happen it.
+    @discardableResult
+    func deleteRule(_ rule: SenderRule) -> Task<Void, Never> {
+        guard let account, rule.accountAddress == account.emailAddress.address else {
+            return .alreadyFinished
+        }
+        ruleWriteWarning = nil
+        return Task { @MainActor [self] in
+            let outcome = await ruleStore.delete(ruleID: rule.id, for: account)
+            ruleWriteWarning = outcome.warning
+            ruleAttemptedMessageIDs[rule.id] = nil
+            await refreshRules()
+        }
+    }
+
+    /// Re-reads the connected account's rules, or empties them when there is no account.
+    private func refreshRules() async {
+        guard let account else {
+            senderRules = []
+            return
+        }
+        senderRules = await ruleStore.rules(for: account)
+    }
+
+    // MARK: - Sender rules: running
+
+    /// Applies every enabled rule to the window that was just loaded.
+    ///
+    /// ### When this runs, which is the whole product model
+    ///
+    /// At the end of a load, and nowhere else. InboxSweep has no background process, no login
+    /// item, and no timer that outlives the app, so the only moments it can see a new message are
+    /// the moments it fetches one — which is when somebody opens it or presses Reload. Every
+    /// screen that mentions a rule says exactly that, in
+    /// ``SenderRule/Action/executionDescription``, because the alternative would be implying a
+    /// Gmail filter the app has no permission to create.
+    ///
+    /// ### What it will not do
+    ///
+    /// - **Touch mail that predates its rule.** ``SenderRuleMatching/Refusal/predatesRule``.
+    /// - **Touch protected mail.** ``SenderRuleMatching/protectionPolicy`` and the surfaced count
+    ///   in ``SenderRuleRun/protectedSummary``.
+    /// - **Touch a message twice.** ``ruleAttemptedMessageIDs``.
+    /// - **Reach anything but the message-level archive boundary.** Every request it makes is the
+    ///   same `MailArchiveRequest` a person pressing Archive makes, through the same
+    ///   ``MessageSetMutator``, one at a time. There is no sender endpoint, no batch call, and no
+    ///   thread mutation, and `RuleSafetyTests` asserts it.
+    /// - **Unsubscribe from anything, ever.** A rule has one action and it is not that one.
+    @discardableResult
+    func applySenderRules() -> Task<Void, Never> {
+        Task { @MainActor [self] in await applyRulesIfPossible() }
+    }
+
+    /// The pass itself, awaited by the loads so that a test can await a load and see the result.
+    private func applyRulesIfPossible() async {
+        guard case .loaded(let snapshot) = state,
+              let archiver,
+              !isApplyingRules,
+              !isMutating,
+              archiveCapability.isGranted
+        else { return }
+
+        let account = snapshot.account
+        let enabled = senderRules.filter(\.isEnabled)
+        guard !enabled.isEmpty else { return }
+
+        isApplyingRules = true
+        defer { isApplyingRules = false }
+
+        var outcomes: [SenderRuleRun.RuleOutcome] = []
+        var halt: MailMutationError?
+        var changedAnything = false
+
+        // Rules run **one at a time, and their messages one at a time inside that**. There is no
+        // parallelism anywhere in this pass, which is the same choice ``MessageSetMutator`` makes
+        // and for the same reasons: a bounded footprint on somebody's Gmail quota, and a stop that
+        // can honestly promise at most one more message changes.
+        for rule in enabled {
+            if halt != nil { break }
+
+            let outcome = SenderRuleMatching.outcome(
+                of: rule,
+                for: account,
+                in: messagesInScope,
+                alreadyAttempted: ruleAttemptedMessageIDs[rule.id] ?? []
+            )
+
+            guard !outcome.isEmpty else {
+                if outcome.protected.isEmpty, outcome.deferredCount == 0 { continue }
+                outcomes.append(
+                    SenderRuleRun.RuleOutcome(
+                        ruleID: rule.id,
+                        senderDisplayValue: rule.senderDisplayValue,
+                        archivedCount: 0,
+                        failedCount: 0,
+                        protectedCount: outcome.protected.count,
+                        deferredCount: outcome.deferredCount
+                    )
+                )
+                continue
+            }
+
+            guard let selection = MailArchiveSelection(
+                messageIDs: outcome.matched,
+                accountAddress: account.emailAddress.address
+            ) else { continue }
+
+            // Asked of the provider once per rule rather than once per pass. A pass can take a
+            // while, and archiving one sender's mail into somebody else's mailbox is the failure
+            // this question exists to prevent.
+            guard await provider.currentConnection().account?.emailAddress.address == account.emailAddress.address else {
+                halt = .accountChanged
+                break
+            }
+            guard !Task.isCancelled else {
+                halt = .cancelled
+                break
+            }
+
+            // Recorded before the requests go out, so a message that fails is still a message
+            // this session has tried, and a pass that is interrupted mid-run cannot re-send for
+            // the messages it already asked about.
+            ruleAttemptedMessageIDs[rule.id, default: []].formUnion(outcome.matched)
+
+            let receipt = await MessageSetMutator(archiver: archiver).perform(.archive, selection)
+
+            // Only the messages Gmail confirmed, exactly as a confirmed archive does.
+            reconcile(receipt)
+            changedAnything = changedAnything || receipt.confirmedCount > 0
+
+            if receipt.confirmedCount > 0 || receipt.failedCount > 0 {
+                _ = await mutationRecords.record(
+                    MailMutationTransaction.completing(receipt, at: now(), origin: .rule(rule.id))
+                )
+            }
+
+            outcomes.append(
+                SenderRuleRun.RuleOutcome(
+                    ruleID: rule.id,
+                    senderDisplayValue: rule.senderDisplayValue,
+                    archivedCount: receipt.confirmedCount,
+                    failedCount: receipt.failedCount + receipt.notAttemptedCount,
+                    protectedCount: outcome.protected.count,
+                    deferredCount: outcome.deferredCount
+                )
+            )
+
+            // A failure about the *session* stops the pass and nothing else. **No rule is ever
+            // disabled by a failure**, however severe: a rule is an authorization the user gave,
+            // and the app withdrawing one because Gmail was busy would be the app revoking a
+            // decision it has no standing to revoke. The user is told what happened and the rules
+            // are left exactly as they were.
+            if let error = receipt.leadingFailure, error.endsTheRun { halt = error }
+        }
+
+        let run = SenderRuleRun(
+            accountAddress: account.emailAddress.address,
+            outcomes: outcomes,
+            finishedAt: now(),
+            haltedBy: halt
+        )
+        if run.isWorthShowing { ruleRun = run }
+
+        // Republished only when the mailbox actually changed, so a pass that matched nothing
+        // costs one comparison and does not rewrite the cache file byte-for-byte identical.
+        if changedAnything { await republishAfterMutation() }
+    }
+
     // MARK: - Cleanup previews
 
     /// The proposal for a sender in the loaded window, if one has been computed.
@@ -1596,6 +2016,7 @@ final class InboxSessionModel {
         )
         refreshSavedPlan()
         await restoreUndoOffer(for: account)
+        await refreshRules()
         return true
     }
 
@@ -1612,6 +2033,11 @@ final class InboxSessionModel {
             nextPageToken = page.nextPageToken
             loadedPageCount = 1
             await publishSnapshot(for: account, isLoadingMore: false, persist: true)
+            // After the window is published, never before: a rule reasons over the window the
+            // user is looking at, and running it against a half-merged page would be running it
+            // against something nobody could see. Awaited rather than launched, so that awaiting
+            // a load is awaiting everything the load causes.
+            await applyRulesIfPossible()
         } catch {
             let providerError = MailProviderError.wrapping(error)
             if providerError.requiresReauthentication { reset() }
@@ -1699,6 +2125,10 @@ final class InboxSessionModel {
         // undoing it. This is the call that makes the offer survive a relaunch: every published
         // window re-derives it from the local transaction file for the account on screen.
         await restoreUndoOffer(for: account)
+        // Re-read for the same reason, and with the same consequence: rules are account-scoped,
+        // so a session that signed in as somebody else must never still be holding the previous
+        // account's authorizations. Reading them does not run them.
+        await refreshRules()
 
         guard persist else { return }
 
@@ -1753,6 +2183,14 @@ final class InboxSessionModel {
         undoableArchive = nil
         mutationActivity = nil
         archiveCapability = .unsupported
+        // Dropped rather than kept. Rules are account-scoped and live on disk, so the next
+        // published window re-reads them for whichever account is connected then, which is both
+        // how they survive a reload and how a sign-in as somebody else cannot inherit the
+        // previous account's authorizations.
+        senderRules = []
+        ruleRun = nil
+        ruleWriteWarning = nil
+        ruleAttemptedMessageIDs = [:]
     }
 }
 

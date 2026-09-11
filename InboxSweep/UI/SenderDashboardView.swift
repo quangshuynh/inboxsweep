@@ -33,6 +33,13 @@ struct SenderDashboardView: View {
         /// What InboxSweep has changed in this mailbox.
         case activity
 
+        /// What InboxSweep has standing permission to do to it.
+        ///
+        /// A sibling of ``activity`` rather than a section of it: one says what the app did and
+        /// cannot be acted on, the other says what it will do and is the only place that can be
+        /// changed.
+        case rules
+
         /// One sender's loaded messages.
         case messageReview(SenderSummary)
 
@@ -55,6 +62,7 @@ struct SenderDashboardView: View {
             switch self {
             case .cleanupPlan: "cleanupPlan"
             case .activity: "activity"
+            case .rules: "rules"
             case .messageReview(let summary): "messageReview-\(summary.id)"
             case .senderCleanupReview(let summary, let candidates):
                 "senderCleanupReview-\(summary.id)-\(candidates.action.id)"
@@ -71,6 +79,7 @@ struct SenderDashboardView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 10)
             }
+            ruleRunBanner
             Divider()
             filterBar
             Divider()
@@ -134,6 +143,9 @@ struct SenderDashboardView: View {
 
             case .activity:
                 ActivityView(session: session)
+
+            case .rules:
+                SenderRulesView(session: session)
 
             case .messageReview(let sender):
                 SenderMessageReviewView(
@@ -354,6 +366,10 @@ struct SenderDashboardView: View {
                 .fixedSize()
                 .layoutPriority(1)
 
+            rulesLink
+                .fixedSize()
+                .layoutPriority(1)
+
             Text(PrivacyNotice.summary)
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
@@ -388,6 +404,102 @@ struct SenderDashboardView: View {
         .buttonStyle(.link)
         .help("Shows what InboxSweep has changed in this mailbox. Nothing is sent to Gmail by opening it.")
         .accessibilityIdentifier("dashboard.activityLink")
+    }
+
+    /// What the last rule pass did, reported where the user is looking.
+    ///
+    /// ### Why this is on the dashboard rather than only in Activity
+    ///
+    /// Because a rule is the one thing in this app that changes a mailbox while nobody is asking
+    /// it to, and the user has to find out *at the time* rather than by opening a drawer. It is
+    /// the same reasoning that put the undo offer on the review screen.
+    ///
+    /// It says three separate things and never merges them: what was archived, what was
+    /// deliberately left behind, and what failed. The middle one matters most: mail a rule
+    /// declined to archive is mail still sitting in somebody's Inbox from a sender they believe is
+    /// handled, and it is by construction the mail most likely to need them.
+    ///
+    /// Dismissing it withdraws nothing. The changes are in Activity either way.
+    @ViewBuilder
+    private var ruleRunBanner: some View {
+        if let run = session.ruleRun, run.isWorthShowing {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "wand.and.stars.inverse")
+                    .foregroundStyle(.tint)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    if let archived = run.archivedSummary {
+                        Text(archived)
+                            .font(.callout.weight(.medium))
+                            .accessibilityIdentifier("dashboard.ruleRun.archived")
+                    }
+                    if let protectedNote = run.protectedSummary {
+                        Text(protectedNote)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("dashboard.ruleRun.protected")
+                    }
+                    if let deferred = run.deferredSummary {
+                        Text(deferred)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("dashboard.ruleRun.deferred")
+                    }
+                    if let failure = run.failureSummary {
+                        Text(failure)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("dashboard.ruleRun.failure")
+                    }
+                    if run.archivedCount > 0 {
+                        Text(SenderRuleRun.noUndoNote)
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("dashboard.ruleRun.noUndo")
+                    }
+                }
+
+                Spacer(minLength: 12)
+
+                Button("Rules") { sheet = .rules }
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier("dashboard.ruleRun.rulesButton")
+
+                Button("Dismiss") { session.dismissRuleRun() }
+                    .buttonStyle(.link)
+                    .help("Hides this summary. It changes nothing, and the details stay in Activity.")
+                    .accessibilityIdentifier("dashboard.ruleRun.dismissButton")
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+            .accessibilityIdentifier("dashboard.ruleRun")
+        }
+    }
+
+    /// The in-content way into Rules, beside Activity and for the same reason.
+    ///
+    /// "What has this app changed?" and "what may it change without me?" are the two questions a
+    /// person is entitled to be able to answer from the screen in front of them, and neither
+    /// should depend on a toolbar that a narrow window collapses into an overflow menu.
+    ///
+    /// Opening it reaches no mailbox. See ``SenderRulesView``.
+    private var rulesLink: some View {
+        Button {
+            sheet = .rules
+        } label: {
+            Label(
+                session.senderRules.isEmpty ? "Rules" : "^[\(session.senderRules.count) rule](inflect: true)",
+                systemImage: "wand.and.stars.inverse"
+            )
+            .font(.callout)
+        }
+        .buttonStyle(.link)
+        .help("Shows what InboxSweep may do to this mailbox without asking. Nothing is sent to Gmail by opening it.")
+        .accessibilityIdentifier("dashboard.rulesLink")
     }
 
     @ToolbarContentBuilder

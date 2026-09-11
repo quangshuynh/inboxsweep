@@ -36,11 +36,13 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     init(
         transaction: MailMutationTransaction,
         resolvedMessages: [MailMessage] = [],
-        isUndoable: Bool = false
+        isUndoable: Bool = false,
+        rule: SenderRule? = nil
     ) {
         self.transaction = transaction
         self.resolvedMessages = resolvedMessages
         self.isUndoable = isUndoable
+        self.rule = rule
     }
 
     // MARK: - Facts
@@ -48,6 +50,19 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     var occurredAt: Date { transaction.occurredAt }
     var operation: MailMutationOperation { transaction.operation }
     var status: MailMutationTransaction.ActivityStatus { transaction.activityStatus }
+
+    /// What caused this operation.
+    var origin: MailMutationOrigin { transaction.origin }
+
+    /// Whether InboxSweep did this without anybody present.
+    var wasAutomatic: Bool { transaction.origin.wasAutomatic }
+
+    /// The rule this account still has for the rule that performed this, when it still has one.
+    ///
+    /// Passed in rather than looked up, so a row cannot reach the store. `nil` covers both "this
+    /// was not a rule" and "the rule has since been deleted", and the wording below distinguishes
+    /// them by asking ``origin`` rather than this.
+    let rule: SenderRule?
 
     /// How many messages the user confirmed.
     var selectedCount: Int { transaction.selectedMessageCount }
@@ -110,11 +125,11 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
                     : "No messages were archived"
             }
             if isPartial {
-                return "Archived \(confirmedCount) of \(selectedCount) messages\(senderSuffix)"
+                return "Archived \(confirmedCount) of \(selectedCount) messages\(senderSuffix)\(ruleSuffix)"
             }
             return confirmedCount == 1
-                ? "Archived 1 message\(senderSuffix)"
-                : "Archived \(confirmedCount) messages\(senderSuffix)"
+                ? "Archived 1 message\(senderSuffix)\(ruleSuffix)"
+                : "Archived \(confirmedCount) messages\(senderSuffix)\(ruleSuffix)"
 
         case .restoreToInbox:
             if confirmedCount == 0 {
@@ -142,6 +157,29 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     /// that anything it sends later is affected. It says these messages had one sender.
     private var senderSuffix: String { cameFromOneSender ? " from one sender" : "" }
 
+    /// " by rule", when a local rule did this and not a person.
+    ///
+    /// In the headline rather than in a detail line, because it is the difference between news a
+    /// user already knows and news they do not. "Archived 3 messages" beside a timestamp they were
+    /// not at the keyboard for is a row that invites them to think they did it.
+    ///
+    /// It says *by rule*, never *by Gmail*. InboxSweep sent those requests; a row implying Gmail
+    /// did it on its own would be the app disowning a change it made.
+    private var ruleSuffix: String { wasAutomatic ? " by rule" : "" }
+
+    /// Which local rule did this, when the account still has it.
+    ///
+    /// `nil` for everything a person confirmed. For a rule-driven row whose rule has since been
+    /// deleted it still says so, because the archive happened and deleting the authorization
+    /// afterwards does not make it anonymous.
+    var ruleAttribution: String? {
+        guard wasAutomatic else { return nil }
+        guard let rule else {
+            return "Your rule for this sender did this. The rule has since been deleted; the messages stayed archived."
+        }
+        return "Your rule for \(rule.senderDisplayValue) did this\(rule.isEnabled ? "" : ", and it is now turned off")."
+    }
+
     /// The state line under the headline, or `nil` when there is nothing to add.
     ///
     /// Says where the *undo* stands, never where the mailbox stands.
@@ -149,6 +187,8 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
         switch status {
         case .undoAvailable:
             return "Undo available"
+        case .undoSuperseded where wasAutomatic:
+            return "No undo for a rule"
         case .undoSuperseded:
             return "Undo superseded by a later archive"
         case .undoCompleted:
@@ -203,6 +243,11 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
                 return base + " They were put back afterwards."
             case .undoPartiallyCompleted:
                 return base + " \(restoredCount) of them were put back afterwards; the rest were not."
+            case .undoSuperseded where wasAutomatic:
+                // Not "superseded": nothing replaced it, because a rule-driven archive is never
+                // offered as an undo in the first place. Saying so plainly is the point, since the
+                // alternative is a row that reads as though an offer existed and was lost.
+                return base + " " + SenderRuleRun.noUndoNote
             case .undoSuperseded:
                 return base + " A later archive replaced this one as the undo InboxSweep offers, so there is no standing offer to reverse it."
             case .restore, .nothingChanged:

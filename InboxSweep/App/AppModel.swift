@@ -37,6 +37,13 @@ final class AppModel {
     /// sign-out and back in, rather than a second one left behind.
     private let mutationRecords = FileMutationTransactionStore()
 
+    /// The local rules the user has authorized.
+    ///
+    /// Held here for the same reason the other three are. It is the only one of them that names
+    /// senders, and it is deleted with the rest when the account is disconnected; see
+    /// ``FileSenderRuleStore``.
+    private let ruleStore = FileSenderRuleStore()
+
     init() {
         let configuration = GmailOAuthConfiguration.load()
         isProviderConfigured = configuration != nil
@@ -47,7 +54,8 @@ final class AppModel {
             ),
             cache: cache,
             planStore: planStore,
-            mutationRecords: mutationRecords
+            mutationRecords: mutationRecords,
+            ruleStore: ruleStore
         )
 
         #if DEBUG
@@ -107,6 +115,10 @@ final class AppModel {
         session = InboxSessionModel(
             provider: SampleMailProvider(),
             mutationRecords: SampleActivity.recordStore(),
+            // In memory, and empty unless a launch argument seeded one. Invented mail has no
+            // business leaving a rules file on somebody's Mac, and a sample run must never write
+            // to the real account's.
+            ruleStore: SampleRules.store(),
             // Nothing synthetic opens a real browser or mail client. Under the sample
             // unsubscribe argument a handoff has to *succeed* for its outcome and its Activity
             // row to be visible, and launching Safari at a `.example` host during a UI test is
@@ -127,7 +139,8 @@ final class AppModel {
             ),
             cache: cache,
             planStore: planStore,
-            mutationRecords: mutationRecords
+            mutationRecords: mutationRecords,
+            ruleStore: ruleStore
         )
     }
     #endif

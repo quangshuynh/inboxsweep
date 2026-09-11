@@ -227,6 +227,14 @@ private struct ActivityRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if let attribution = entry.ruleAttribution {
+                    Text(attribution)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("activity.row.ruleAttribution")
+                }
+
                 if let status = entry.statusSummary {
                     Label(status, systemImage: statusSymbolName)
                         .font(.caption)
@@ -334,6 +342,13 @@ private struct ActivityDetailView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("activity.detail.explanation")
+
+            if let attribution = entry.ruleAttribution {
+                Label(attribution, systemImage: "wand.and.stars.inverse")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("activity.detail.ruleAttribution")
+            }
 
             if let status = entry.statusSummary {
                 Label(status, systemImage: "info.circle")

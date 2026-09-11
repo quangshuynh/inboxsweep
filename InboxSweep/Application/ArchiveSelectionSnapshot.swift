@@ -62,6 +62,14 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
     /// When the set was frozen. Shown nowhere; it is the answer to "how stale is this?".
     let frozenAt: Date
 
+    /// How the set was arrived at, carried into the durable transaction.
+    ///
+    /// Never ``MailMutationOrigin/rule(_:)``: a rule does not build one of these, because a rule
+    /// has no confirmation to freeze. The two values this can hold are both explicit
+    /// confirmations, and the distinction between them is *where the ticks came from* rather than
+    /// how much the user agreed to. Both went through the same sheet and the same button.
+    let origin: MailMutationOrigin
+
     init(
         id: UUID = UUID(),
         accountAddress: String,
@@ -69,7 +77,8 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
         senderDisplayValue: String,
         scope: MailboxScope,
         messages: [SelectedMessage],
-        frozenAt: Date
+        frozenAt: Date,
+        origin: MailMutationOrigin = .confirmed
     ) {
         self.id = id
         self.accountAddress = accountAddress
@@ -78,6 +87,7 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
         self.scope = scope
         self.messages = messages
         self.frozenAt = frozenAt
+        self.origin = origin
     }
 
     /// One message, as the confirmation describes it.
