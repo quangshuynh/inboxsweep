@@ -125,6 +125,19 @@ struct SenderDashboardView: View {
                     .buttonStyle(.link)
             }
 
+            if let savedPlan = session.savedPlan, !savedPlan.isEmpty {
+                Button {
+                    // Resuming *selects* the saved senders and opens the preview. It carries
+                    // nothing out, because there is nothing in this app that could.
+                    selectedSenderIDs = Set(savedPlan.usableSelections.map(\.senderKey))
+                    isPlanPresented = true
+                } label: {
+                    Label("^[\(savedPlan.usableSelections.count) saved sender](inflect: true)", systemImage: "bookmark")
+                }
+                .help("Reopens the preview with the senders and actions you saved. Nothing is carried out.")
+                .accessibilityIdentifier("dashboard.resumeSavedPlanButton")
+            }
+
             Button {
                 isPlanPresented = true
             } label: {

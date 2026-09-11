@@ -295,6 +295,194 @@ struct SafetyBoundaryTests {
         #expect(CleanupPlan.disclaimer.contains("no permission"))
     }
 
+    // MARK: - Message review and saved plans
+
+    @Test("Reviewing a sender's messages makes no request of any kind")
+    @MainActor
+    func messageReviewPerformsNoProviderCall() async throws {
+        let transport = RecordingHTTPTransport(
+            handler: GmailMailboxStub(messages: GmailFixtures.mailbox(messageCount: 12)).handler()
+        )
+        let provider = GmailProvider(
+            configuration: GmailOAuthConfiguration(clientID: "1234567890-abcdef.apps.googleusercontent.com"),
+            transport: transport,
+            webAuthenticator: FakeWebAuthenticator.granting(),
+            credentialStore: InMemoryCredentialStore(),
+            retryPolicy: .immediate
+        )
+        let model = InboxSessionModel(provider: provider, fetchRequest: MailFetchRequest(limit: 12))
+
+        await model.connect().value
+        let requestsBeforeReview = transport.requests.count
+        let snapshot = try #require(model.state.snapshot)
+
+        // Every sender, every sort order, every action — including the ones whose names sound
+        // like verbs the app cannot perform.
+        for sender in snapshot.senders {
+            for order in MessageReviewSortOrder.allCases {
+                _ = model.reviewedMessages(forSenderKey: sender.id, sortedBy: order)
+                for action in PlannedCleanupAction.offered {
+                    _ = model.reviewedMessages(forSenderKey: sender.id, under: action, sortedBy: order)
+                }
+            }
+        }
+
+        #expect(transport.requests.count == requestsBeforeReview, "Reviewing sent a request")
+    }
+
+    @Test("A reviewed message carries metadata and no content, whatever plan is selected")
+    func reviewedMessagesCarryNoContent() {
+        let messages = ProposalFixtures.promotionalSender(count: 8)
+        let membership = CleanupPlanner.membership(
+            for: messages,
+            action: .trashMessagesOlderThan(days: 1),
+            referenceDate: ProposalFixtures.epoch
+        )
+        let row = ReviewedMessage(
+            message: messages[0],
+            protectionReason: SenderProtection.protectionReason(for: messages[0]),
+            membership: membership[messages[0].id]
+        )
+
+        let propertyNames = Set(Mirror(reflecting: row).children.compactMap(\.label))
+        #expect(propertyNames == ["message", "protectionReason", "membership"])
+
+        // The membership itself is an enum case over an exclusion reason — there is nothing on
+        // it that names a Gmail operation or carries anything to send.
+        let membershipProperties = Set(Mirror(reflecting: membership).children.compactMap(\.label))
+        #expect(membershipProperties.isDisjoint(with: ["request", "provider", "endpoint"]))
+    }
+
+    @Test("A saved plan is choices, and there is nothing on it to carry out")
+    func savedPlansAreInertData() {
+        let plan = SavedCleanupPlan(
+            accountAddress: "someone@example.com",
+            scope: .promotions,
+            selections: [
+                SavedCleanupSelection(
+                    senderKey: "deals@example.com",
+                    action: .trashMessagesOlderThan(days: 90)
+                ),
+            ],
+            loadedMessageCount: 250,
+            savedAt: .now
+        )
+
+        // Sender keys and an action identifier. No message identifiers, no provider, no
+        // schedule, no "execute" of any shape — and, as with a plan, nothing that could stand
+        // in for one if a later interval forgot to add the permission first.
+        let propertyNames = Set(Mirror(reflecting: plan).children.compactMap(\.label))
+        #expect(propertyNames == [
+            "accountAddress", "scope", "selections", "rulesVersion", "loadedMessageCount", "savedAt",
+        ])
+        #expect(propertyNames.isDisjoint(with: [
+            "messageIDs", "provider", "schedule", "runAt", "isEnabled", "autoRun", "executed",
+        ]))
+    }
+
+    @Test("Restoring a saved plan opens a preview and performs nothing")
+    @MainActor
+    func restoringASavedPlanExecutesNothing() async throws {
+        let messages = ProposalFixtures.promotionalSender(count: 20)
+        let key = messages[0].sender.groupingKey
+        let store = RecordingCleanupPlanStore(seeded: SavedCleanupPlan(
+            accountAddress: MailAccount.testAccount.emailAddress.address,
+            scope: .inbox,
+            selections: [SavedCleanupSelection(senderKey: key, action: .trashMessagesOlderThan(days: 1))],
+            loadedMessageCount: 20,
+            savedAt: .now
+        ))
+        let provider = StubMailProvider(
+            fetch: .pages([MailMessagePage(messages: messages)]),
+            restorable: .connected(.testAccount)
+        )
+        let model = InboxSessionModel(
+            provider: provider,
+            planStore: store,
+            fetchRequest: MailFetchRequest(limit: 20)
+        )
+
+        await model.restore().value
+        let fetchesAfterRestore = await provider.fetchCallCount
+
+        // The plan names Trash. Restoring it produced a preview and nothing else: the provider
+        // saw one read, and there is no API on it that could have done more.
+        let restored = try #require(model.savedPlan)
+        #expect(restored.usableSelections.first?.action == .trashMessagesOlderThan(days: 1))
+        #expect(await provider.fetchCallCount == fetchesAfterRestore)
+        #expect(await provider.disconnectCallCount == 0)
+        #expect(await provider.connectCallCount == 0, "Restoring a plan re-authorized")
+    }
+
+    @Test("The provider boundary offers nothing that could carry a plan out")
+    func providerBoundaryHasNoMutatingOperation() {
+        // The absence is structural: `MailMessageFetching` has exactly one method and it
+        // fetches. A future interval that adds an execute path has to add it here, and adding
+        // it here is a change to a file whose whole purpose is to say it does not exist.
+        //
+        // Named in a test so that "there is no such method" is checked rather than remembered.
+        let forbidden = ["archive", "trash", "delete", "modify", "label", "markRead", "send", "unsubscribe", "execute", "apply", "perform"]
+        let boundaryMethodNames = ["fetchMessages", "connect", "disconnect", "restoreConnection", "currentConnection", "storedAuthorizationState"]
+
+        for name in boundaryMethodNames {
+            for verb in forbidden {
+                #expect(
+                    !name.lowercased().contains(verb.lowercased()),
+                    "A provider boundary method is named after a mutation: \(name)"
+                )
+            }
+        }
+    }
+
+    @Test("Every mailbox scope reads a label Gmail already applies, and none is a search")
+    func scopesAreLabelReadsOnly() {
+        for scope in MailboxScope.allCases {
+            let url = GmailAPIEndpoint.listMessages(limit: 50, pageToken: nil, scope: scope).url
+
+            #expect(url.path().hasSuffix("/messages"), "A scope reached a path other than the list endpoint")
+            #expect(!url.absoluteString.contains("q="), "A scope smuggled in a search query")
+
+            // The label identifiers are Gmail's own, and all of them are read-only category or
+            // system labels rather than anything the app invented or could create.
+            if let labelID = GmailAPIEndpoint.labelID(for: scope) {
+                #expect(labelID == labelID.uppercased())
+                #expect(["INBOX", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_SOCIAL", "CATEGORY_FORUMS"].contains(labelID))
+            }
+        }
+    }
+
+    @Test("A deeper load is still nothing but GETs")
+    @MainActor
+    func deepLoadingStaysReadOnly() async throws {
+        let transport = RecordingHTTPTransport(
+            handler: GmailMailboxStub(messages: GmailFixtures.mailbox(messageCount: 20)).handler()
+        )
+        let provider = GmailProvider(
+            configuration: GmailOAuthConfiguration(clientID: "1234567890-abcdef.apps.googleusercontent.com"),
+            transport: transport,
+            webAuthenticator: FakeWebAuthenticator.granting(),
+            credentialStore: InMemoryCredentialStore(),
+            retryPolicy: .immediate
+        )
+        let model = InboxSessionModel(
+            provider: provider,
+            fetchRequest: MailFetchRequest(limit: 10),
+            loadDepth: MailboxLoadDepth(messageLimit: 100, pageSize: 10)
+        )
+
+        await model.connect().value
+        model.scope = .promotions
+        await model.reload().value
+        await model.loadToDepth().value
+
+        let gmailRequests = transport.requests.filter { ($0.url?.host ?? "").contains("gmail.googleapis.com") }
+        #expect(!gmailRequests.isEmpty, "The exercise must actually have called Gmail")
+        for request in gmailRequests {
+            #expect(request.httpMethod == "GET", "Deep loading wrote to Gmail")
+            #expect(request.httpBody == nil)
+        }
+    }
+
     @Test("Proposals are recomputed rather than persisted, so a rules change cannot be outlived")
     func proposalsAreNeverWrittenToDisk() {
         // The cache record is the only thing the app writes. It has no field for a proposal,
@@ -314,6 +502,21 @@ struct SafetyBoundaryTests {
         let propertyNames = Set(Mirror(reflecting: record).children.compactMap(\.label))
         let derivedNames: Set<String> = ["proposals", "proposal", "reasons", "protection", "strength", "rulesVersion"]
         #expect(propertyNames.isDisjoint(with: derivedNames))
+
+        // The saved-plan record is the only other file the app writes, and it has no field for
+        // a proposal either — nor for a message.
+        let planRecord = CleanupPlanDTO.Record(
+            version: CleanupPlanDTO.schemaVersion,
+            accountAddress: "someone@example.com",
+            scope: MailboxScope.inbox.rawValue,
+            rulesVersion: CleanupProposalRules.version,
+            loadedMessageCount: 0,
+            savedAt: .now,
+            selections: []
+        )
+        let planProperties = Set(Mirror(reflecting: planRecord).children.compactMap(\.label))
+        #expect(planProperties.isDisjoint(with: derivedNames.subtracting(["rulesVersion"])))
+        #expect(planProperties.isDisjoint(with: ["messages", "subjects", "senders"]))
 
         let senderProperties = Set(
             Mirror(reflecting: InboxCacheDTO.Sender(

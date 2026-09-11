@@ -27,6 +27,11 @@ struct CleanupPlanSheet: View {
             header
             Divider()
 
+            if let savedPlan = session.savedPlan, savedPlan.isStale {
+                stalenessNotice(savedPlan)
+                Divider()
+            }
+
             if plan.isEmpty {
                 ContentUnavailableView(
                     "Nothing selected",
@@ -45,6 +50,51 @@ struct CleanupPlanSheet: View {
         .onAppear(perform: seedActions)
     }
 
+    // MARK: - Saved choices
+
+    /// The current selections, in the order the sheet shows them.
+    private var selections: [SavedCleanupSelection] {
+        senderKeys.map {
+            SavedCleanupSelection(senderKey: $0, action: actions[$0] ?? defaultAction(for: $0))
+        }
+    }
+
+    /// Whether what is on screen is exactly what was last saved.
+    private var matchesSavedPlan: Bool {
+        session.savedPlan?.saved.selections == selections
+    }
+
+    /// Says what has moved since these choices were saved, and never quietly corrects it.
+    ///
+    /// A plan restored beside a changed ruleset is the case worth interrupting for: the
+    /// reasoning the user was reading when they chose is not the reasoning on screen now.
+    private func stalenessNotice(_ restored: RestoredCleanupPlan) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label {
+                Text(restored.isInvalidated ? "These saved choices are out of date" : "Something has changed since these choices were saved")
+                    .font(.headline)
+            } icon: {
+                Image(systemName: restored.isInvalidated ? "exclamationmark.triangle" : "clock.arrow.circlepath")
+                    .foregroundStyle(.orange)
+            }
+
+            ForEach(restored.staleness) { reason in
+                Text(reason.explanation)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("Nothing has been carried out. This is still a preview, and these choices only decide what it shows.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .accessibilityIdentifier("cleanupPlan.stalenessNotice")
+    }
+
     // MARK: - Plan
 
     /// Rebuilt on every render from the session's in-memory window.
@@ -60,8 +110,17 @@ struct CleanupPlanSheet: View {
         )
     }
 
+    /// What a sender starts on: whatever the user last saved for it, or the action the
+    /// proposal suggests.
+    ///
+    /// A plan the rules have since invalidated is not used as a seed — resuming it would put
+    /// last week's choice beside this week's reasoning without saying so.
     private func defaultAction(for key: SenderSummary.ID) -> PlannedCleanupAction {
-        session.proposal(forSenderKey: key)?.kind.defaultPlannedAction ?? .reviewSubscription
+        if let savedPlan = session.savedPlan, !savedPlan.isInvalidated,
+           let saved = savedPlan.saved.action(forSenderKey: key) {
+            return saved
+        }
+        return session.proposal(forSenderKey: key)?.kind.defaultPlannedAction ?? .reviewSubscription
     }
 
     private func seedActions() {
@@ -144,12 +203,24 @@ struct CleanupPlanSheet: View {
                     .accessibilityIdentifier("cleanupPlan.windowNotice")
             }
 
-            HStack {
+            HStack(spacing: 10) {
                 Text("Nothing on this screen is sent to Gmail.")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
 
                 Spacer()
+
+                if session.savedPlan != nil {
+                    Button("Forget saved choices") { session.discardSavedPlan() }
+                        .accessibilityIdentifier("cleanupPlan.forgetButton")
+                }
+
+                Button(matchesSavedPlan ? "Choices saved" : "Remember these choices") {
+                    session.savePlan(selections)
+                }
+                .disabled(plan.isEmpty || matchesSavedPlan)
+                .help("Keeps which senders you picked and what you chose to preview for each, on this Mac. It schedules nothing — InboxSweep cannot carry a cleanup out.")
+                .accessibilityIdentifier("cleanupPlan.saveButton")
 
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)

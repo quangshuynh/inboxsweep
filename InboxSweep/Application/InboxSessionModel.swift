@@ -50,8 +50,16 @@ final class InboxSessionModel {
     /// requests.
     var loadDepth: MailboxLoadDepth
 
+    /// The saved preview choices for the connected account, checked against the window on
+    /// screen, or `nil` when there are none.
+    ///
+    /// Read-only from the outside and never acted on: restoring a plan re-opens a preview.
+    /// There is nothing in the app that could carry one out.
+    private(set) var savedPlan: RestoredCleanupPlan?
+
     private let provider: any MailProvider
     private let cache: any InboxCacheStoring
+    private let planStore: any CleanupPlanStoring
     private let now: @Sendable () -> Date
 
     /// The loaded window, kept so that re-sorting and paging do not need a round trip.
@@ -70,6 +78,13 @@ final class InboxSessionModel {
     /// How many pages have been read into the current window, for the progress line.
     private var loadedPageCount = 0
 
+    /// The saved plan as it was written, before being checked against the current window.
+    ///
+    /// Kept separately from ``savedPlan`` so staleness can be re-evaluated after every page
+    /// without re-reading the file — a plan that was fine over 250 messages becomes stale the
+    /// moment a deep load reaches 2,500, and the user finds that out as it happens.
+    private var storedPlan: SavedCleanupPlan?
+
     /// When the loaded window was written to the cache, or `nil` when it came from the
     /// provider during this launch. Shown in the header so a window restored from disk is
     /// never mistaken for a fresh read of the mailbox.
@@ -78,6 +93,7 @@ final class InboxSessionModel {
     init(
         provider: any MailProvider,
         cache: any InboxCacheStoring = EphemeralInboxCache(),
+        planStore: any CleanupPlanStoring = EphemeralCleanupPlanStore(),
         fetchRequest: MailFetchRequest = MailFetchRequest(),
         loadDepth: MailboxLoadDepth = .firstPage,
         sortOrder: SenderSortOrder = .messageVolume,
@@ -85,6 +101,7 @@ final class InboxSessionModel {
     ) {
         self.provider = provider
         self.cache = cache
+        self.planStore = planStore
         self.firstPageRequest = fetchRequest
         self.scope = fetchRequest.scope
         self.loadDepth = loadDepth
@@ -288,7 +305,12 @@ final class InboxSessionModel {
         activeTask?.cancel()
         return run { [self] in
             await provider.disconnect()
-            if let connectedAccount { await cache.clear(for: connectedAccount) }
+            if let connectedAccount {
+                await cache.clear(for: connectedAccount)
+                // Disconnecting is the user saying they are done. Leaving a list of their
+                // senders on disk afterwards would be the opposite of what they asked for.
+                await planStore.clear(for: connectedAccount)
+            }
             reset()
             notice = nil
             state = .signedOut
@@ -307,6 +329,46 @@ final class InboxSessionModel {
             // Ties break on ID so the list is stable between identical loads, exactly as the
             // sender list is.
             .sorted { $0.receivedAt == $1.receivedAt ? $0.id.rawValue < $1.id.rawValue : $0.receivedAt > $1.receivedAt }
+    }
+
+    // MARK: - Saved planning state
+
+    /// Remembers the senders and actions currently chosen in the preview.
+    ///
+    /// Stores the *choosing* and nothing derived from it: no proposal, no reason, no count of
+    /// what would be affected. Those are recomputed from the loaded window every launch, so a
+    /// saved plan cannot bring a stale verdict back onto the screen.
+    ///
+    /// Saving does not schedule anything. There is no execution path in this app for a plan to
+    /// be executed by.
+    @discardableResult
+    func savePlan(_ selections: [SavedCleanupSelection]) -> Task<Void, Never> {
+        guard case .loaded(let snapshot) = state else { return .alreadyFinished }
+        guard !selections.isEmpty else { return discardSavedPlan() }
+
+        let plan = SavedCleanupPlan(
+            accountAddress: snapshot.account.emailAddress.address,
+            scope: snapshot.scope,
+            selections: selections,
+            loadedMessageCount: snapshot.loadedMessageCount,
+            savedAt: now()
+        )
+
+        // Published against the window it was just saved against, so it starts out un-stale
+        // rather than waiting for a reload to be evaluated.
+        storedPlan = plan
+        savedPlan = plan.restored(into: snapshot)
+
+        return Task { [planStore] in await planStore.save(plan) }
+    }
+
+    /// Forgets the saved choices for the connected account.
+    @discardableResult
+    func discardSavedPlan() -> Task<Void, Never> {
+        storedPlan = nil
+        savedPlan = nil
+        guard let account else { return .alreadyFinished }
+        return Task { [planStore] in await planStore.clear(for: account) }
     }
 
     // MARK: - Message review
@@ -394,6 +456,7 @@ final class InboxSessionModel {
         guard !Task.isCancelled else { return false }
 
         reset()
+        storedPlan = await planStore.load(for: account)
         append(cached.messages)
         nextPageToken = cached.nextPageToken
         loadedPageCount = cached.messages.isEmpty ? 0 : 1
@@ -424,12 +487,15 @@ final class InboxSessionModel {
                 cachedAt: cached.savedAt
             )
         )
+        refreshSavedPlan()
         return true
     }
 
     private func loadFirstPage(for account: MailAccount) async {
         reset()
         state = .loading(account)
+
+        storedPlan = await planStore.load(for: account)
 
         do {
             let page = try await provider.fetchMessages(currentFirstPageRequest)
@@ -502,6 +568,8 @@ final class InboxSessionModel {
             )
         )
 
+        refreshSavedPlan()
+
         guard persist else { return }
 
         await cache.save(
@@ -535,7 +603,14 @@ final class InboxSessionModel {
         }.value
     }
 
+    /// Re-checks the stored plan against the window currently on screen.
+    private func refreshSavedPlan() {
+        savedPlan = storedPlan?.restored(into: state.snapshot)
+    }
+
     private func reset() {
+        storedPlan = nil
+        savedPlan = nil
         messages = []
         loadedMessageIDs = []
         nextPageToken = nil
