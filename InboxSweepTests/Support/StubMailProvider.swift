@@ -139,7 +139,10 @@ actor StubMailProvider: MailProvider {
 }
 
 extension MailAccount {
-    static let testAccount = MailAccount(
+    /// `nonisolated` because the project compiles with `MainActor` as the default isolation,
+    /// which would otherwise make this constant main-actor-isolated and therefore unusable as a
+    /// default argument in an actor's initializer.
+    nonisolated static let testAccount = MailAccount(
         emailAddress: EmailAddressParser.parse("Sample User <sample.user@example.com>"),
         providerDisplayName: "Stub",
         providerMessageCount: 1_234

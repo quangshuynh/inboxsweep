@@ -679,7 +679,7 @@ struct SafetyBoundaryTests {
         model.sortOrder = .mostRecent
         await model.reload().value
 
-        #expect(await archiver.allRequests.isEmpty, "Something other than an explicit action archived")
+        #expect(archiver.allRequests.isEmpty, "Something other than an explicit action archived")
     }
 
     @Test("A restored plan naming an archive action still archives nothing")
@@ -713,7 +713,7 @@ struct SafetyBoundaryTests {
 
         let restored = try #require(model.savedPlan)
         #expect(restored.usableSelections.first?.action == .archiveMessagesOlderThan(days: 1))
-        #expect(await archiver.allRequests.isEmpty, "A restored plan reached the mutation boundary")
+        #expect(archiver.allRequests.isEmpty, "A restored plan reached the mutation boundary")
         #expect(model.mutationActivity == nil)
         #expect(model.undoableArchive == nil)
     }
@@ -733,7 +733,7 @@ struct SafetyBoundaryTests {
         let target = messages[3].id
         await model.archiveMessage(target).value
 
-        let requests = await archiver.allRequests
+        let requests = archiver.allRequests
         #expect(requests.count == 1, "One confirmation produced \(requests.count) mutations")
         #expect(requests.first?.messageID == target)
 
