@@ -248,7 +248,7 @@ struct SenderDashboardView: View {
             Text(PrivacyNotice.summary)
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
-                .help("InboxSweep suggests and previews. It has no ability to delete, archive, or modify mail in this version.")
+                .help("InboxSweep suggests and previews. The only change it can make is archiving one message you open and confirm, from a sender's message review — nothing on this screen changes your mail.")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

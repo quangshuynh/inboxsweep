@@ -2,9 +2,13 @@ import SwiftUI
 
 /// The starting screen: what the app does, what it will ask for, and what it will not do.
 ///
-/// This screen is the app's consent conversation. It says plainly that InboxSweep is
-/// read-only and names the exact permission before the user is sent to Google, so nothing
-/// about the Google consent sheet comes as a surprise.
+/// This screen is the app's consent conversation, and since the app gained the ability to
+/// archive a message it is carrying more weight than it used to. Google's own consent sheet
+/// will say something close to "read, compose, send and permanently delete all your email" for
+/// `gmail.modify`, which is both alarming and — for what this app does with it — wrong. The
+/// only defence against that is to say first, here, exactly what the permission allows, exactly
+/// what InboxSweep does with it, and exactly what it still cannot do, in terms specific enough
+/// to be checked.
 struct SignedOutView: View {
 
     let appModel: AppModel
@@ -45,9 +49,10 @@ struct SignedOutView: View {
 
             Text("""
                 InboxSweep groups your mail by sender, says which senders look worth cleaning up \
-                and why, and can show you what a cleanup would affect before anything happens. \
-                It changes nothing: this version can recommend and preview, but it has no way to \
-                archive, delete, or alter your mail. Deciding what to do stays with you.
+                and why, and shows you what a cleanup would affect before anything happens. \
+                The one change it can make is archiving a single message you pick out and \
+                confirm — and undoing it. It cannot act on a sender, run a cleanup plan, or \
+                delete anything. Deciding what happens stays with you, one message at a time.
                 """)
                 .font(.body)
                 .foregroundStyle(.secondary)
@@ -56,22 +61,61 @@ struct SignedOutView: View {
     }
 
     private var permissionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("What Google will ask you to allow")
                 .font(.headline)
 
-            Text(GmailScope.userFacingDescription)
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
+            permission(
+                symbol: "eye",
+                title: "Reading your message details",
+                detail: GmailScope.readingDescription
+            )
 
-            Text("""
-                That permission cannot change your mail. InboxSweep does not request access to \
-                message bodies or attachments, and it does not request permission to send, delete, \
-                label, or modify anything.
-                """)
+            permission(
+                symbol: "archivebox",
+                title: "Changing which labels a message carries",
+                detail: GmailScope.archivingDescription
+            )
+
+            // The honest caveat, not buried. Google's consent sheet describes this permission
+            // in its broadest terms, and a user who reads that after being told "InboxSweep
+            // can archive" deserves to have been warned that the two describe the same grant.
+            Label {
+                Text("""
+                    Google grants the second one as a single permission and describes it in its \
+                    broadest terms on the consent screen. InboxSweep's use of it is limited to \
+                    adding and removing the Inbox label on one message at a time, at your \
+                    confirmation — that limit is in the app's code, not in the permission.
+                    """)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "info.circle")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+
+            Text(GmailScope.stillNotGrantedDescription)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityIdentifier("signedOut.permissions")
+    }
+
+    private func permission(symbol: String, title: String, detail: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.callout.weight(.semibold))
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: symbol)
+                .foregroundStyle(.tint)
+                .frame(width: 18)
         }
     }
 

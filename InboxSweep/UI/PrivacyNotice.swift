@@ -16,11 +16,19 @@ nonisolated enum PrivacyNotice {
     static let points: [Point] = [
         Point(
             symbol: "eye",
-            text: "Read-only. InboxSweep asks Google for permission to read message details, and nothing else."
+            text: """
+                InboxSweep reads your message details — who wrote, the subject, the date, the \
+                labels. Never the message itself: bodies and attachments are not requested.
+                """
         ),
         Point(
             symbol: "hand.raised",
-            text: "Nothing is deleted, archived, marked, moved, or sent. This version has no way to change your mailbox."
+            text: """
+                The one change it can make is archiving a single message you pick and confirm, \
+                which takes it out of your Inbox without deleting it — and you can undo that. \
+                Nothing is deleted, trashed, marked, sent, or unsubscribed from, and nothing is \
+                ever changed for a whole sender or on its own.
+                """
         ),
         Point(
             symbol: "desktopcomputer",
@@ -47,7 +55,13 @@ nonisolated enum PrivacyNotice {
         ),
     ]
 
-    static let summary = "InboxSweep reads. It never writes."
+    /// The one-line claim shown in the dashboard footer.
+    ///
+    /// It used to read "InboxSweep reads. It never writes." That sentence stopped being true
+    /// the moment a single-message archive existed, and leaving it there would have been the
+    /// most quietly misleading string in the app — a promise the code no longer keeps, in the
+    /// place a user is most likely to take it at face value.
+    static let summary = "InboxSweep reads. It archives one message only when you confirm it."
 }
 
 /// A compact, scannable rendering of ``PrivacyNotice/points``.
