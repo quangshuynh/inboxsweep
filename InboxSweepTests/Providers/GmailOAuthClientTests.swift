@@ -67,7 +67,11 @@ struct GmailOAuthClientTests {
         #expect(value("client_id") == configuration.clientID)
         #expect(value("redirect_uri") == configuration.redirectURI)
         #expect(value("response_type") == "code")
-        #expect(value("scope") == GmailScope.metadata)
+        // Both scopes, in one authorization. The user sees one consent screen naming what the
+        // app will read and what it will be able to change, rather than being asked again later.
+        #expect(value("scope") == GmailScope.requestedScopeParameter)
+        #expect(value("scope")?.contains(GmailScope.metadata) == true)
+        #expect(value("scope")?.contains(GmailScope.modify) == true)
         #expect(value("code_challenge") == challenge.challenge)
         #expect(value("code_challenge_method") == "S256")
         #expect(value("state") == "fixed-state")

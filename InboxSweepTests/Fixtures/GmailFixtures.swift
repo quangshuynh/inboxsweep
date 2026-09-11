@@ -127,7 +127,20 @@ struct GmailMailboxStub {
     var missingMessageIDs: Set<String> = []
     var accessToken = "access-token"
     var refreshToken: String? = "refresh-token"
+
+    /// What the token endpoint reports as granted.
+    ///
+    /// Defaults to the read scope alone, which is deliberately the *old* grant: it keeps every
+    /// test written before archiving existed describing a read-only session, and it makes the
+    /// upgrade path the thing a test has to opt into rather than the thing it gets by accident.
     var grantedScope = GmailScope.metadata
+
+    /// Message IDs the modify endpoint reports as gone, for exercising a mutation that races a
+    /// deletion elsewhere.
+    var unmodifiableMessageIDs: Set<String> = []
+
+    /// A status to return from the modify endpoint instead of applying the change.
+    var modifyFailureStatus: Int?
 
     init(pages: [[GmailFixtures.SyntheticMessage]]) {
         self.pages = pages
@@ -145,6 +158,14 @@ struct GmailMailboxStub {
         let accessToken = accessToken
         let refreshToken = refreshToken
         let grantedScope = grantedScope
+        let unmodifiable = unmodifiableMessageIDs
+        let modifyFailureStatus = modifyFailureStatus
+
+        // Gmail's own behaviour, reproduced rather than faked: `messages.modify` applies the
+        // label change and echoes the whole message back with its *new* labels. A stub that
+        // returned a bare 200 would let the adapter claim success without ever checking what
+        // the mailbox says, which is the one thing the adapter must not be able to do.
+        let labelState = ModifiedLabelState(pages: pages)
 
         return { request, _ in
             let url = request.url?.absoluteString ?? ""
@@ -186,6 +207,29 @@ struct GmailMailboxStub {
                 ))
             }
 
+            if url.hasSuffix("/modify"), let id = Self.messageID(fromModifyURL: url) {
+                if let modifyFailureStatus {
+                    return json(
+                        GmailFixtures.apiErrorJSON(status: "FAILED", reason: "syntheticFailure"),
+                        status: modifyFailureStatus
+                    )
+                }
+                guard !unmodifiable.contains(id), !missing.contains(id),
+                      let message = pages.flatMap({ $0 }).first(where: { $0.id == id })
+                else {
+                    return json("{ \"error\": { \"code\": 404, \"message\": \"Not Found\" } }", status: 404)
+                }
+
+                let change = try JSONDecoder().decode(
+                    ModifyLabelsBody.self,
+                    from: request.httpBody ?? Data()
+                )
+                let labels = labelState.apply(change, to: id, startingFrom: message.labels)
+                var modified = message
+                modified.labels = labels
+                return json(modified.json)
+            }
+
             if let id = Self.messageID(fromMetadataURL: url) {
                 guard !missing.contains(id) else {
                     return json("{ \"error\": { \"code\": 404, \"message\": \"Not Found\" } }", status: 404)
@@ -198,6 +242,54 @@ struct GmailMailboxStub {
 
             return json("{ \"error\": { \"code\": 400, \"message\": \"unrouted \(url)\" } }", status: 400)
         }
+    }
+
+    /// The body InboxSweep is allowed to send to `messages.modify`.
+    ///
+    /// Decoded rather than ignored so a test can assert on what was *actually* sent, and so a
+    /// body carrying anything beyond these two keys fails to decode into anything meaningful.
+    struct ModifyLabelsBody: Decodable, Equatable {
+        var addLabelIds: [String]?
+        var removeLabelIds: [String]?
+    }
+
+    /// Remembers each message's labels across successive modify calls, so an archive followed by
+    /// an undo reports the right thing both times.
+    private final class ModifiedLabelState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var labels: [String: [String]]
+
+        init(pages: [[GmailFixtures.SyntheticMessage]]) {
+            labels = Dictionary(
+                pages.flatMap { $0 }.map { ($0.id, $0.labels) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
+
+        func apply(
+            _ change: GmailMailboxStub.ModifyLabelsBody,
+            to id: String,
+            startingFrom initial: [String]
+        ) -> [String] {
+            lock.withLock {
+                var current = labels[id] ?? initial
+                for removed in change.removeLabelIds ?? [] {
+                    current.removeAll { $0 == removed }
+                }
+                for added in change.addLabelIds ?? [] where !current.contains(added) {
+                    current.append(added)
+                }
+                labels[id] = current
+                return current
+            }
+        }
+    }
+
+    private static func messageID(fromModifyURL url: String) -> String? {
+        guard let range = url.range(of: "/users/me/messages/") else { return nil }
+        let tail = url[range.upperBound...]
+        let identifier = tail.prefix { $0 != "/" && $0 != "?" }
+        return identifier.isEmpty ? nil : String(identifier)
     }
 
     private static func messageID(fromMetadataURL url: String) -> String? {
