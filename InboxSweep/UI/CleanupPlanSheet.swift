@@ -16,6 +16,14 @@ struct CleanupPlanSheet: View {
     /// Opens the full message review for one sender.
     var onReviewSender: ((SenderSummary.ID) -> Void)?
 
+    /// Opens the same review for one sender, starting from what that sender's row would reach.
+    ///
+    /// The sender-level entry point, offered from the dry run because this is the screen where
+    /// somebody has just read "38 of 43 would be archived" and wants to get at the 38. It hands
+    /// over the sender and the action being previewed and nothing else — the preview still cannot
+    /// be carried out, and this does not make it carryable. It makes its result *editable*.
+    var onReviewCleanupForSender: ((SenderSummary.ID, PlannedCleanupAction) -> Void)?
+
     @Environment(\.dismiss) private var dismiss
 
     /// The action chosen per sender. Seeded from each proposal's default and then owned here,
@@ -173,6 +181,9 @@ struct CleanupPlanSheet: View {
                         ),
                         onReview: onReviewSender.map { review in
                             { review(entry.sender.groupingKey) }
+                        },
+                        onReviewCleanup: onReviewCleanupForSender.map { review in
+                            { review(entry.sender.groupingKey, entry.action) }
                         }
                     )
                     .padding(16)
@@ -255,6 +266,9 @@ private struct CleanupPlanEntryView: View {
 
     /// Opens the full review for this sender.
     var onReview: (() -> Void)?
+
+    /// Opens the full review for this sender with this row's affected messages already ticked.
+    var onReviewCleanup: (() -> Void)?
 
     /// Whether the named messages are expanded.
     ///
@@ -346,6 +360,13 @@ private struct CleanupPlanEntryView: View {
                             .buttonStyle(.link)
                             .font(.callout)
                             .accessibilityIdentifier("cleanupPlan.reviewButton")
+                    }
+                    if let onReviewCleanup, entry.action.movesMessages {
+                        Button("Review messages to archive…", action: onReviewCleanup)
+                            .buttonStyle(.link)
+                            .font(.callout)
+                            .help("Opens the review with the messages named above already ticked, so you can check them, change the list, and decide. It archives nothing, and never ticks a protected message.")
+                            .accessibilityIdentifier("cleanupPlan.reviewCleanupButton")
                     }
                     Spacer()
                 }

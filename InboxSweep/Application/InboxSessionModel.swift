@@ -124,6 +124,17 @@ final class InboxSessionModel {
     /// moment a deep load reaches 2,500, and the user finds that out as it happens.
     private var storedPlan: SavedCleanupPlan?
 
+    /// The operation identifiers that have already been sent to the mutation boundary.
+    ///
+    /// One confirmation is one operation, and this is what makes that true beyond the window in
+    /// which ``mutationActivity`` still describes it. The activity can be dismissed and the sheet
+    /// that produced it can stay on screen; an identifier in here cannot be un-executed.
+    ///
+    /// Session-lifetime rather than persisted, because it guards a *frozen snapshot*, and a
+    /// snapshot does not survive a relaunch either — there is nothing left after a quit that
+    /// could be submitted twice.
+    private var executedSelectionIDs: Set<UUID> = []
+
     /// When the loaded window was written to the cache, or `nil` when it came from the
     /// provider during this launch. Shown in the header so a window restored from disk is
     /// never mistaken for a fresh read of the mailbox.
@@ -555,9 +566,32 @@ final class InboxSessionModel {
         forSenderKey key: SenderSummary.ID,
         under action: PlannedCleanupAction
     ) -> [MailMessageID] {
-        reviewedMessages(forSenderKey: key, under: action)
-            .filter { $0.isAffectedByPlan && !$0.isProtected }
-            .map(\.id)
+        senderReviewCandidates(forSenderKey: key, under: action).messageIDs
+    }
+
+    /// What a sender-level *Review messages to archive…* opens the review screen with.
+    ///
+    /// The same identifiers ``preselectableMessageIDs(forSenderKey:under:)`` returns, plus the
+    /// counts needed to say *why* — how many the action's scope missed, how many protection held
+    /// back, and, when the answer is none at all, which of those it was.
+    ///
+    /// Everything the safety note on ``preselectableMessageIDs(forSenderKey:under:)`` says applies
+    /// unchanged, because this is where that method now gets its answer. Deriving this **performs
+    /// no write and starts nothing**: it filters ``reviewedMessages(forSenderKey:under:sortedBy:)``,
+    /// which is itself a pass over the window already in memory. There is no request, no plan
+    /// object handed to anything, and nothing remembered.
+    ///
+    /// Recomputed on every call rather than cached, so a deeper load or a reload between opening
+    /// a sender and opening its review produces candidates for the window that is actually there.
+    func senderReviewCandidates(
+        forSenderKey key: SenderSummary.ID,
+        under action: PlannedCleanupAction
+    ) -> SenderReviewCandidates {
+        SenderReviewCandidates.derive(
+            from: reviewedMessages(forSenderKey: key, under: action),
+            senderKey: key,
+            under: action
+        )
     }
 
     /// Freezes a set of chosen messages into the exact thing a confirmation will show.
@@ -589,6 +623,7 @@ final class InboxSessionModel {
             accountAddress: snapshot.account.emailAddress.address,
             senderKey: key,
             senderDisplayValue: snapshot.senders.first { $0.id == key }?.sender.displayValue ?? key,
+            scope: scope,
             messages: selected.map {
                 ArchiveSelectionSnapshot.SelectedMessage(
                     id: $0.id,
@@ -834,6 +869,12 @@ final class InboxSessionModel {
                 return
             }
 
+            // Recorded here rather than when the confirmation opened, or when it was validated:
+            // this is the first line past which a request really can go out. A run refused before
+            // it — a swapped account, a withdrawn grant — left the mailbox alone and stays
+            // re-confirmable.
+            executedSelectionIDs.insert(selection.operationID)
+
             let receipt = await MessageSetMutator(archiver: archiver).perform(
                 operation,
                 selection,
@@ -985,13 +1026,26 @@ final class InboxSessionModel {
         guard !selection.messages.isEmpty else { return .selectionChanged }
         guard selection.accountAddress == snapshot.account.emailAddress.address else { return .accountChanged }
 
-        // Every message must still be loaded, still in scope, and still this sender's. The last
-        // of those is what stops a set from crossing a sender boundary between the review that
-        // built it and the confirmation that runs it.
+        // One confirmation is one operation. A frozen set that has already been through the
+        // mutator is refused for the life of the session rather than re-sent, so a second press
+        // on a sheet still showing a finished result cannot become a second archive.
+        guard !executedSelectionIDs.contains(selection.id) else { return .alreadyExecuted }
+
+        // The window has to be the same *kind* of window, not just one that happens to contain
+        // the identifiers. Switching scope changes what the review screen was a review of.
+        guard selection.scope == scope else { return .selectionChanged }
+
+        // Every message must still be loaded, still in scope, still this sender's, and still in
+        // the inbox. The sender check is what stops a set from crossing a sender boundary between
+        // the review that built it and the confirmation that runs it; the inbox check is what
+        // stops an archive from being sent for a message that has already left it — archived in
+        // Gmail itself, or by an earlier confirmation — which would be a request whose answer the
+        // user could not tell apart from the one they asked for.
         let live = Dictionary(uniqueKeysWithValues: messagesInScope.map { ($0.id, $0) })
         for message in selection.messages {
             guard let loaded = live[message.id] else { return .selectionChanged }
             guard loaded.sender.groupingKey == selection.senderKey else { return .selectionChanged }
+            guard loaded.labels.contains(.inbox) else { return .selectionChanged }
         }
         return nil
     }

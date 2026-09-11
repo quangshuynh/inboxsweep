@@ -209,12 +209,21 @@ struct MutationHistoryTests {
         let withoutCache = ActivityEntry(transaction: archive)
 
         // The facts are identical either way. Only the decoration differs.
-        #expect(withCache.title == withoutCache.title)
         #expect(withCache.confirmedCount == withoutCache.confirmedCount)
         #expect(withCache.statusSummary == withoutCache.statusSummary)
         #expect(withCache.hasResolvedMetadata)
         #expect(withCache.metadataFallback == nil)
         #expect(withoutCache.metadataFallback != nil)
+
+        // The one thing the cache adds to the headline, and the shape of the difference matters:
+        // both rows say the same thing happened to the same number of messages, and the resolved
+        // one adds that they had one sender. That phrase is decoration derived from the cache —
+        // the transaction itself still holds no sender, which is why the unresolved row cannot
+        // say it and is none the poorer for it.
+        #expect(withCache.title == "Archived 3 messages from one sender")
+        #expect(withoutCache.title == "Archived 3 messages")
+        #expect(withCache.cameFromOneSender)
+        #expect(!withoutCache.cameFromOneSender)
     }
 
     @Test("A partly-resolvable row says how much of it the cache still covers")

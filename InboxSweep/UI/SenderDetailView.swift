@@ -31,6 +31,17 @@ struct SenderDetailView: View {
     /// here, so the inspector stays a view of a sender rather than an owner of navigation.
     var onReviewMessages: (() -> Void)?
 
+    /// Opens the same review, starting from what this sender's current preview would reach.
+    ///
+    /// The sender-level convenience, and the wording is the design. **Review messages to
+    /// archive…** says what pressing it does: it opens a review with boxes already ticked. It is
+    /// not *Archive sender*, *Clean sender*, or *Apply recommendation*, because none of those is
+    /// something InboxSweep can do — there is no whole-sender operation behind this, and the
+    /// button itself changes nothing at all.
+    ///
+    /// Optional, and absent when there is no action to derive candidates from.
+    var onReviewCleanup: (() -> Void)?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -185,6 +196,12 @@ struct SenderDetailView: View {
                 Text("Loaded messages")
                     .font(.headline)
                 Spacer()
+                if let onReviewCleanup {
+                    Button("Review messages to archive…", action: onReviewCleanup)
+                        .buttonStyle(.link)
+                        .help("Opens the message review with the messages this sender's preview would reach already ticked, so you can check them, change the list, and decide. Nothing is archived by opening it.")
+                        .accessibilityIdentifier("senderDetail.reviewCleanupButton")
+                }
                 if let onReviewMessages {
                     Button("Review…", action: onReviewMessages)
                         .buttonStyle(.link)

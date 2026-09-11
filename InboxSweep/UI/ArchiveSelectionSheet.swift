@@ -86,6 +86,7 @@ struct ArchiveSelectionSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             Label(headline, systemImage: headlineSymbol)
                 .font(.title3.weight(.semibold))
+                .lineLimit(3)
                 .accessibilityIdentifier("archiveSheet.headline")
 
             Text(subhead)
@@ -99,7 +100,13 @@ struct ArchiveSelectionSheet: View {
 
     private var headline: String {
         guard let activity else {
-            return count == 1 ? "Archive this message?" : "Archive these \(count) messages?"
+            // Names the sender, because by this interval a set can arrive here from a
+            // *sender-level* action and the user needs to see which sender's mail they are
+            // about to change. It says "selected" rather than "from Example Sender" alone, so
+            // the sentence cannot be read as an offer to archive the sender.
+            return count == 1
+                ? "Archive 1 selected message from \(selection.senderDisplayValue)?"
+                : "Archive \(count) selected messages from \(selection.senderDisplayValue)?"
         }
         switch activity.phase {
         case .running:
@@ -416,11 +423,23 @@ struct ArchiveSelectionSheet: View {
             point("checkmark.shield", "Does not delete them. They stay in your mailbox, in All Mail, and in search.")
             point("envelope", "Does not mark them read, star them, or change any other label.")
             point("bubble.left.and.bubble.right", "Affects these messages only — not the rest of their conversations, and nothing else from this sender.")
+            point("calendar.badge.clock", Self.senderScopeNote)
             point("list.number", "Sent to Gmail one message at a time, so each one gets its own answer.")
             point("arrow.uturn.backward", "Can be undone afterwards, including after you quit and reopen InboxSweep.")
         }
         .accessibilityIdentifier("archiveSheet.scope")
     }
+
+    /// The sentence that keeps a sender-level convenience from reading as sender-level authority.
+    ///
+    /// Said on the confirmation, not only in the documentation, because this is the screen where
+    /// somebody decides — and because a set that arrived here from **Review messages to archive…**
+    /// is the one case where a person could reasonably wonder whether they have just set something
+    /// up. They have not. There is no rule, no filter, and no schedule anywhere in this app.
+    static let senderScopeNote = """
+        Only the messages listed here will be changed. Future messages from this sender are not \
+        affected — InboxSweep creates no rule and archives nothing on its own.
+        """
 
     private func point(_ symbol: String, _ text: String) -> some View {
         Label {

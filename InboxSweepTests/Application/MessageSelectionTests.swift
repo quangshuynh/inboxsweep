@@ -271,6 +271,7 @@ struct MessageSelectionTests {
             accountAddress: "somebody.else@example.net",
             senderKey: frozen.senderKey,
             senderDisplayValue: frozen.senderDisplayValue,
+            scope: frozen.scope,
             messages: frozen.messages,
             frozenAt: Self.epoch
         )

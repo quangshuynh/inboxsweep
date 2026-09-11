@@ -118,7 +118,10 @@ struct ActivityHistoryTests {
         let entry = try #require(history.first)
 
         #expect(history.count == 1)
-        #expect(entry.title == "Archived 3 messages")
+        // "from one sender" because the loaded window can still describe all three and they
+        // agree — see `ActivityEntry.cameFromOneSender`. It is a statement about these three
+        // messages, not about the sender.
+        #expect(entry.title == "Archived 3 messages from one sender")
         #expect(entry.confirmedCount == 3)
         #expect(entry.selectedCount == 3)
         #expect(entry.unchangedCount == 0)
@@ -139,7 +142,7 @@ struct ActivityHistoryTests {
         ).value
 
         let entry = try #require(await session.activityHistory().first)
-        #expect(entry.title == "Archived 3 of 5 messages")
+        #expect(entry.title == "Archived 3 of 5 messages from one sender")
         #expect(entry.isPartial)
         #expect(entry.unchangedSummary == "2 messages couldn't be archived")
         #expect(entry.isUndoable, "The three that were archived can still be put back")
@@ -191,7 +194,7 @@ struct ActivityHistoryTests {
         #expect(history[0].isUndoable, "The most recent archive should still be undoable")
         #expect(!history[1].isUndoable, "A superseded archive became undoable by being listed")
         #expect(history[1].status == .undoSuperseded)
-        #expect(history[1].title == "Archived 2 messages", "Superseding rewrote what the archive did")
+        #expect(history[1].title == "Archived 2 messages from one sender", "Superseding rewrote what the archive did")
     }
 
     @Test("Undoing from Activity uses the existing path and the transaction's own messages")
