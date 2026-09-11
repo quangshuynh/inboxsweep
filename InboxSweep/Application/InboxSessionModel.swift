@@ -679,11 +679,70 @@ final class InboxSessionModel {
 
     /// The local record of what this app has changed, newest first.
     ///
-    /// Read on demand rather than held, because it is a receipt drawer the user opens, not
-    /// state the dashboard renders.
+    /// Read on demand rather than held, because it is a drawer the user opens, not state the
+    /// dashboard renders.
+    ///
+    /// **Reads only. Nothing here contacts a provider.** Opening Activity, scrolling it, and
+    /// opening a row are all answered from the local transaction file and the window already in
+    /// memory; the only thing on that screen that can reach Gmail is the existing Undo.
+    ///
+    /// Scoped to the connected account, and empty when there is none — so a history is never
+    /// shown beside a mailbox it does not belong to, and never shown at all while signed out.
     func mutationHistory() async -> [MailMutationTransaction] {
         guard let account else { return [] }
         return await mutationRecords.transactions(for: account)
+    }
+
+    /// The messages of a past transaction that are still described by the loaded window.
+    ///
+    /// Activity stores identifiers, not mail. When the window happens to still hold the messages
+    /// a transaction named, this is what lets a row say which ones they were — resolved from the
+    /// window in memory, which came from Gmail or from the local cache, and never re-fetched.
+    ///
+    /// Returning fewer than the transaction named is the ordinary case, not a failure. An
+    /// archive from last month names messages no longer in a 250-message inbox window, and the
+    /// right answer there is "3 messages archived" rather than three subjects kept on disk
+    /// forever so that an old row stays decorative. Callers show what comes back and degrade
+    /// gracefully when nothing does.
+    ///
+    /// Ordered to match the transaction's own list, so a detail view reads in the order the
+    /// operation ran.
+    func resolvedMessages(for transaction: MailMutationTransaction) -> [MailMessage] {
+        guard let account, transaction.accountAddress == account.emailAddress.address else { return [] }
+
+        let loaded = Dictionary(messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return transaction.succeededMessageIDs.compactMap { loaded[$0] }
+    }
+
+    /// The Activity history for the connected account, newest first, ready to render.
+    ///
+    /// One call so a screen cannot assemble half of this and forget the rest: each entry is a
+    /// transaction, whatever the loaded window can still say about its messages, and whether the
+    /// *existing* undo offer happens to be this one.
+    ///
+    /// **Performs no provider call.** The transactions come off disk, the metadata comes out of
+    /// the window already in memory, and the undoability comes from a value the session already
+    /// holds.
+    func activityHistory() async -> [ActivityEntry] {
+        await mutationHistory().map { transaction in
+            ActivityEntry(
+                transaction: transaction,
+                resolvedMessages: resolvedMessages(for: transaction),
+                isUndoable: canUndo(transaction)
+            )
+        }
+    }
+
+    /// Whether `transaction` is the one the existing undo path would act on right now.
+    ///
+    /// Asked by the Activity screen before it offers Undo, so that being *visible* never makes an
+    /// older or superseded transaction actionable. It adds no policy of its own — it compares
+    /// against ``undoableArchive``, which is the same value the review screen and the
+    /// confirmation sheet offer from, established by ``restoreUndoOffer(for:)``.
+    func canUndo(_ transaction: MailMutationTransaction) -> Bool {
+        guard let undoable = undoableArchive, undoable.isUndoable else { return false }
+        guard let account, transaction.accountAddress == account.emailAddress.address else { return false }
+        return undoable.id == transaction.id && !isMutating
     }
 
     // MARK: - The one path both mutations take
@@ -858,16 +917,12 @@ final class InboxSessionModel {
                 // A partial undo leaves the messages that did *not* come back still archived,
                 // so the offer stands — narrowed to exactly those, and never re-widened to
                 // include the ones already restored.
+                //
+                // Narrowing the *offer* and not the *history*: the archive's confirmed count,
+                // selected count, and timestamp are carried through untouched, so Activity keeps
+                // saying what that archive did rather than what is left of it.
                 let remaining = undoing.succeededMessageIDs.filter { !receipt.confirmedMessageIDs.contains($0) }
-                let narrowed = MailMutationTransaction(
-                    id: undoing.id,
-                    operation: undoing.operation,
-                    accountAddress: undoing.accountAddress,
-                    succeededMessageIDs: remaining,
-                    selectedMessageCount: undoing.selectedMessageCount,
-                    occurredAt: undoing.occurredAt,
-                    undoState: remaining.isEmpty ? .undone : .undoable
-                )
+                let narrowed = undoing.narrowingUndoOffer(to: remaining)
                 _ = await mutationRecords.record(narrowed)
                 undoableArchive = narrowed.isUndoable ? narrowed : nil
             }

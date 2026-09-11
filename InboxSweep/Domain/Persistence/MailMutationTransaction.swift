@@ -24,8 +24,22 @@ import Foundation
 /// same mailbox content in a second file for no gain. A transaction *names* messages; the
 /// window describes them.
 ///
+/// ### It is also the Activity history
+///
+/// The same records answer "what has InboxSweep changed in my mailbox?" on the Activity screen.
+/// That is a second job for one file rather than a second file, deliberately: a separate audit
+/// store would be the same identifiers written twice, free to disagree with the transactions
+/// undo actually acts on. It does mean the record has to survive being *used* — a partial undo
+/// narrows ``succeededMessageIDs`` so the remaining offer is accurate, and
+/// ``confirmedMessageCount`` is what keeps the history from being rewritten underneath it.
+///
+/// What it records is only what this app attempted or was told about. A message archived in
+/// Gmail itself never appears here, however plainly the next refresh shows it left the inbox:
+/// InboxSweep reconciles the mailbox it can see and does not invent a transaction it did not
+/// perform.
+///
 /// This is not analytics. Nothing here is aggregated, scored, or sent anywhere, and the store
-/// keeps a bounded number of the most recent entries rather than a history.
+/// keeps a bounded, deterministic number of entries per account — see ``MailMutationHistory``.
 nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
 
     /// The logical mutation this transaction is for.
@@ -41,7 +55,13 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// different mailbox. Checked again before an undo is offered *and* before it is sent.
     let accountAddress: String
 
-    /// The messages the provider confirmed — the only ones an undo may name.
+    /// The messages the provider confirmed **and that are still in that state** — the only ones
+    /// an undo may name.
+    ///
+    /// Narrows when an undo partially succeeds: the messages that came back are no longer
+    /// archived, so naming them again would be asking Gmail to restore something already
+    /// restored. What that narrowing must not do is rewrite the *history*, which is what
+    /// ``confirmedMessageCount`` is for.
     let succeededMessageIDs: [MailMessageID]
 
     /// How many messages the user confirmed, including the ones that failed.
@@ -50,12 +70,28 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// eight as the whole story.
     let selectedMessageCount: Int
 
+    /// How many messages this operation confirmed **when it ran**.
+    ///
+    /// A historical fact, fixed at the moment the provider answered, and the field the Activity
+    /// screen counts from.
+    ///
+    /// It exists because ``succeededMessageIDs`` is a live list and history is not. Archive ten
+    /// of ten, undo four of them, and the identifier list is down to six — so a screen counting
+    /// that list would say "archived 6 of 10", which is a partial archive that never happened.
+    /// The archive confirmed ten. Four of them were later put back, and that is a different
+    /// sentence about a different operation.
+    let confirmedMessageCount: Int
+
     /// When the operation finished.
     let occurredAt: Date
 
     /// Whether this transaction is still the one an undo would act on.
     private(set) var undoState: UndoState
 
+    /// - Parameter confirmedMessageCount: How many the operation confirmed when it ran. Defaults
+    ///   to the number of identifiers, which is correct for every transaction that has not since
+    ///   been partly undone — and is what a record written before this field existed means.
+    ///   Never allowed to be smaller than the list it describes.
     init(
         id: UUID,
         operation: MailMutationOperation,
@@ -63,7 +99,8 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
         succeededMessageIDs: [MailMessageID],
         selectedMessageCount: Int,
         occurredAt: Date,
-        undoState: UndoState
+        undoState: UndoState,
+        confirmedMessageCount: Int? = nil
     ) {
         self.id = id
         self.operation = operation
@@ -72,6 +109,10 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
         self.selectedMessageCount = selectedMessageCount
         self.occurredAt = occurredAt
         self.undoState = undoState
+        self.confirmedMessageCount = max(
+            confirmedMessageCount ?? succeededMessageIDs.count,
+            succeededMessageIDs.count
+        )
     }
 
     /// Where a transaction sits in the undo lifecycle.
@@ -102,10 +143,29 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// Whether this is the transaction an undo would act on right now.
     var isUndoable: Bool { undoState == .undoable && !succeededMessageIDs.isEmpty }
 
+    /// How many messages this transaction can still undo.
+    ///
+    /// The *live* count, which is not the same as what the operation did — see
+    /// ``confirmedMessageCount``. Use this to describe an undo offer and that one to describe
+    /// history.
     var succeededCount: Int { succeededMessageIDs.count }
 
-    /// How many of the confirmed messages the provider refused.
-    var failedMessageCount: Int { max(selectedMessageCount - succeededCount, 0) }
+    /// How many of the selected messages the provider refused or never saw.
+    ///
+    /// Counted from ``confirmedMessageCount`` rather than from the live identifier list, so a
+    /// later partial undo cannot retroactively turn a complete archive into a failed one.
+    var failedMessageCount: Int { max(selectedMessageCount - confirmedMessageCount, 0) }
+
+    /// How many of this archive's messages have since been put back.
+    ///
+    /// The difference between what the operation confirmed and what it can still undo, which is
+    /// exactly the set an undo has already restored.
+    var restoredMessageCount: Int { max(confirmedMessageCount - succeededCount, 0) }
+
+    /// Whether an undo has put some of this archive's messages back, but not all of them.
+    var isPartiallyUndone: Bool {
+        operation == .archive && restoredMessageCount > 0 && succeededCount > 0
+    }
 
     /// The single message, when this transaction named exactly one.
     ///
@@ -116,11 +176,18 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
         succeededMessageIDs.count == 1 ? succeededMessageIDs[0] : nil
     }
 
-    /// Whether the provider confirmed every message the user selected.
+    /// Whether the provider confirmed every message the user selected, **when this ran**.
+    ///
+    /// Fixed for the life of the record. A partial archive stays partial and a complete one
+    /// stays complete, whatever is undone afterwards, because this describes the operation and
+    /// not the mailbox's state today.
     var outcome: Outcome {
-        if succeededCount == 0 { return .failed }
+        if confirmedMessageCount == 0 { return .failed }
         return failedMessageCount == 0 ? .confirmed : .partiallyConfirmed
     }
+
+    /// Whether this operation did only part of what was asked.
+    var isPartial: Bool { outcome == .partiallyConfirmed }
 
     /// Whether every selected message went through.
     ///
@@ -135,6 +202,58 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
 
     var isConfirmed: Bool { outcome == .confirmed }
 
+    // MARK: - Activity
+
+    /// Where this transaction stands, as the Activity screen needs to say it.
+    ///
+    /// One value derived in one place, rather than each screen re-deriving it out of
+    /// ``undoState``, ``operation``, and three counts — which is how two screens end up
+    /// disagreeing about whether an archive was undone.
+    ///
+    /// Every case describes something InboxSweep *attempted or was told about*. There is no case
+    /// meaning "your mailbox looks like this now", because that is not a question a local record
+    /// of past operations can answer.
+    nonisolated enum ActivityStatus: String, Hashable, Sendable, CaseIterable {
+
+        /// An archive whose messages can still be put back.
+        case undoAvailable
+
+        /// An archive a later one replaced as the account's undo offer. Its messages are still
+        /// archived; there is simply no standing offer to reverse it.
+        case undoSuperseded
+
+        /// Every message this archive confirmed has been put back.
+        case undoCompleted
+
+        /// Some of this archive's messages have been put back and some have not.
+        case undoPartiallyCompleted
+
+        /// A restore — the record of an undo, which is not itself undoable.
+        case restore
+
+        /// An operation the provider confirmed nothing for. Nothing changed, so there is nothing
+        /// to reverse.
+        case nothingChanged
+    }
+
+    var activityStatus: ActivityStatus {
+        guard operation == .archive else { return .restore }
+        guard confirmedMessageCount > 0 else { return .nothingChanged }
+
+        switch undoState {
+        case .undoable:
+            // A narrowed offer — some already put back, some not — is both at once, and the
+            // partial reading is the more informative of the two.
+            return isPartiallyUndone ? .undoPartiallyCompleted : .undoAvailable
+        case .undone:
+            return restoredMessageCount < confirmedMessageCount ? .undoPartiallyCompleted : .undoCompleted
+        case .superseded:
+            return isPartiallyUndone ? .undoPartiallyCompleted : .undoSuperseded
+        case .notUndoable:
+            return isPartiallyUndone ? .undoPartiallyCompleted : .undoSuperseded
+        }
+    }
+
     // MARK: - Transitions
 
     /// The same transaction, moved to a new point in the undo lifecycle.
@@ -142,6 +261,26 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
         var updated = self
         updated.undoState = state
         return updated
+    }
+
+    /// The same transaction with its undo offer narrowed to the messages still archived.
+    ///
+    /// What a partial undo produces. The identifiers shrink to those that did *not* come back,
+    /// so a second undo asks Gmail only about messages that are still out of the inbox — and
+    /// ``confirmedMessageCount``, ``selectedMessageCount``, and ``occurredAt`` are carried
+    /// through untouched, because none of them is a statement about now. The archive still
+    /// archived what it archived.
+    func narrowingUndoOffer(to remaining: [MailMessageID]) -> MailMutationTransaction {
+        MailMutationTransaction(
+            id: id,
+            operation: operation,
+            accountAddress: accountAddress,
+            succeededMessageIDs: remaining,
+            selectedMessageCount: selectedMessageCount,
+            occurredAt: occurredAt,
+            undoState: remaining.isEmpty ? .undone : .undoable,
+            confirmedMessageCount: confirmedMessageCount
+        )
     }
 
     /// The transaction a finished run produces.
@@ -163,7 +302,8 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
             succeededMessageIDs: confirmed,
             selectedMessageCount: receipt.selectedCount,
             occurredAt: occurredAt,
-            undoState: undoable ? .undoable : .notUndoable
+            undoState: undoable ? .undoable : .notUndoable,
+            confirmedMessageCount: confirmed.count
         )
     }
 }
@@ -253,11 +393,9 @@ nonisolated final class EphemeralMutationRecordStore: MailMutationRecording, @un
     }
 
     func transactions(for account: MailAccount) async -> [MailMutationTransaction] {
-        lock.withLock {
-            stored
-                .filter { $0.accountAddress == account.emailAddress.address }
-                .sorted { $0.occurredAt > $1.occurredAt }
-        }
+        // The same retention policy the file store applies, so a session running on synthetic
+        // mail and one running on a real mailbox produce the same history for the same actions.
+        lock.withLock { MailMutationHistory.history(stored, for: account) }
     }
 
     func clear(for account: MailAccount) async {

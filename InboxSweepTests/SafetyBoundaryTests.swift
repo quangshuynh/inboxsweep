@@ -242,12 +242,18 @@ struct SafetyBoundaryTests {
             undoState: .undoable
         )
 
+        // `confirmedMessageCount` arrived with the Activity history. It is a *count*, and the
+        // reason it exists is that the alternative was worse: a history row that stayed
+        // descriptive after a partial undo otherwise needed the subjects copied in beside it.
+        // The point of this case is that the record became one integer richer and no closer to
+        // holding somebody's mail.
         let propertyNames = Set(Mirror(reflecting: transaction).children.compactMap(\.label))
         #expect(propertyNames == [
             "id", "operation", "accountAddress", "succeededMessageIDs", "selectedMessageCount",
-            "occurredAt", "undoState",
+            "confirmedMessageCount", "occurredAt", "undoState",
         ])
-        // Growing from one message to many did not grow what a transaction knows about mail.
+        // Growing from one message to many, and then to a browsable history, did not grow what a
+        // transaction knows about mail.
         #expect(propertyNames.isDisjoint(with: [
             "subject", "subjects", "sender", "senders", "from", "body", "snippet", "receivedAt",
             "labels", "senderKey", "action", "plan",
@@ -258,7 +264,13 @@ struct SafetyBoundaryTests {
         let entryProperties = Set(
             Mirror(reflecting: MutationTransactionDTO.entry(from: transaction)).children.compactMap(\.label)
         )
-        #expect(entryProperties == ["id", "operation", "messageIDs", "selectedCount", "occurredAt", "undoState"])
+        #expect(entryProperties == [
+            "id", "operation", "messageIDs", "selectedCount", "occurredAt", "undoState",
+            "confirmedCount",
+        ])
+        #expect(entryProperties.isDisjoint(with: [
+            "subject", "sender", "from", "body", "snippet", "labels", "query",
+        ]))
     }
 
     @Test("A frozen selection names messages and an account, and carries no instruction")

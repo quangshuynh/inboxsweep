@@ -15,6 +15,7 @@ struct SenderDashboardView: View {
     @State private var filter: ProposalFilter = .all
     @State private var isInspectorPresented = false
     @State private var isPlanPresented = false
+    @State private var isActivityPresented = false
 
     /// The sender whose loaded messages are being reviewed, if any.
     @State private var reviewedSender: SenderSummary?
@@ -69,6 +70,9 @@ struct SenderDashboardView: View {
                     reviewedSender = snapshot.senders.first { $0.id == key }
                 }
             )
+        }
+        .sheet(isPresented: $isActivityPresented) {
+            ActivityView(session: session)
         }
         .sheet(item: $reviewedSender) { sender in
             SenderMessageReviewView(
@@ -270,6 +274,17 @@ struct SenderDashboardView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            // Beside Reload rather than buried in the footer: "what has this app changed?" is a
+            // question somebody asks about the mailbox in front of them, and it should be
+            // answerable without hunting. It opens a reader — see ``ActivityView``.
+            Button {
+                isActivityPresented = true
+            } label: {
+                Label("Activity", systemImage: "clock.arrow.circlepath")
+            }
+            .help("Shows what InboxSweep has changed in this mailbox. Nothing is sent to Gmail by opening it.")
+            .accessibilityIdentifier("dashboard.activityButton")
+
             Button {
                 session.reload()
             } label: {
