@@ -4,8 +4,10 @@ import Foundation
 /// Synthetic mailbox content for development, previews, and UI tests.
 ///
 /// All addresses use the RFC 2606 reserved domains (`example.com`, `example.org`,
-/// `example.net`), which can never belong to anyone. No part of this file is derived from a
-/// real mailbox.
+/// `example.net`), which can never belong to anyone, and every unsubscribe destination is under
+/// the reserved `.example` TLD — which is not merely unregistered but unregistrable, so a bug
+/// that sent a request from a sample run could not reach anybody's server. No part of this file
+/// is derived from a real mailbox.
 nonisolated enum SampleMailbox {
 
     static let account = MailAccount(
@@ -32,7 +34,7 @@ nonisolated enum SampleMailbox {
             starredEvery: Int? = nil,
             importantEvery: Int? = nil,
             labels: Set<MailLabel> = [.inbox],
-            listUnsubscribe: Bool = false
+            unsubscribe: MessageUnsubscribeMetadata = .absent
         ) {
             for (index, subject) in subjects.enumerated() {
                 sequence += 1
@@ -49,7 +51,7 @@ nonisolated enum SampleMailbox {
                         subject: subject,
                         receivedAt: now.addingTimeInterval(-3600 * (hoursAgoStart + hoursApart * Double(index))),
                         labels: messageLabels,
-                        hasListUnsubscribeHeader: listUnsubscribe
+                        unsubscribe: unsubscribe
                     )
                 )
             }
@@ -62,7 +64,7 @@ nonisolated enum SampleMailbox {
             hoursApart: 24,
             unreadEvery: 2,
             labels: [.inbox, .categoryPromotions],
-            listUnsubscribe: true
+            unsubscribe: SampleUnsubscribe.oneClick
         )
 
         add(
@@ -85,7 +87,7 @@ nonisolated enum SampleMailbox {
             hoursApart: 17,
             unreadEvery: 1,
             labels: [.inbox, .categoryPromotions],
-            listUnsubscribe: true
+            unsubscribe: SampleUnsubscribe.webPageAndMail
         )
 
         add(
@@ -105,7 +107,7 @@ nonisolated enum SampleMailbox {
             hoursApart: 24,
             unreadEvery: 3,
             labels: [.inbox, .categoryUpdates],
-            listUnsubscribe: true
+            unsubscribe: SampleUnsubscribe.mailOnly
         )
 
         add(
@@ -138,7 +140,7 @@ nonisolated enum SampleMailbox {
             hoursAgoStart: 12,
             hoursApart: 168,
             unreadEvery: 3,
-            listUnsubscribe: true
+            unsubscribe: SampleUnsubscribe.malformed
         )
 
         add(

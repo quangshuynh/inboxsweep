@@ -71,6 +71,15 @@ struct SenderMessageReviewView: View {
     /// Said when a frozen set could not be built because the window moved under the selection.
     @State private var selectionIsStale = false
 
+    /// The unsubscribe options screen, when the user has opened it.
+    ///
+    /// A separate sheet rather than a section of this one, because the two answer different
+    /// questions about different mail: this screen is about the messages already here, and that
+    /// one is about the ones that have not arrived. Presenting it from here is a convenience —
+    /// the user is looking at this sender — not a suggestion that unsubscribing is part of the
+    /// archive flow.
+    @State private var isShowingUnsubscribeOptions = false
+
     /// The preselection that was actually applied, kept so the banner can say what it did.
     ///
     /// A record of something that already happened rather than live state. The user is free to
@@ -97,6 +106,9 @@ struct SenderMessageReviewView: View {
         .frame(minWidth: 900, idealWidth: 980, minHeight: 480, idealHeight: 620)
         .sheet(item: $pendingArchive) { frozen in
             ArchiveSelectionSheet(session: session, selection: frozen)
+        }
+        .sheet(isPresented: $isShowingUnsubscribeOptions) {
+            UnsubscribeOptionsSheet(session: session, summary: summary)
         }
         .onAppear(perform: applyPreselectionIfNeeded)
     }
@@ -275,10 +287,38 @@ struct SenderMessageReviewView: View {
 
             Spacer()
 
+            unsubscribeControl
             archiveControl
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+
+    /// The way from this sender's messages to this sender's unsubscribe options.
+    ///
+    /// **Unsubscribe…**, never *Stop all mail* or *Clean sender*. It is shown only when this
+    /// sender's own headers actually said something — a sender with no metadata gets no control
+    /// rather than a disabled one, because there is nothing behind it to enable.
+    ///
+    /// Pressing it opens a reading. Nothing is sent, nothing is opened, and the confirmation is
+    /// two screens and two deliberate presses away.
+    @ViewBuilder
+    private var unsubscribeControl: some View {
+        if unsubscribeOpportunity.availability.camesFromListHeader {
+            Button {
+                isShowingUnsubscribeOptions = true
+            } label: {
+                Label("Unsubscribe…", systemImage: "envelope.badge.shield.half.filled")
+            }
+            .disabled(session.isUnsubscribing)
+            .help("Shows what this sender's headers say about unsubscribing, and where it would go. Opening it sends nothing. Unlike archiving, unsubscribing is about mail you haven't received yet.")
+            .accessibilityIdentifier("messageReview.unsubscribeButton")
+        }
+    }
+
+    /// What this sender's headers say about unsubscribing, read from the window in memory.
+    private var unsubscribeOpportunity: UnsubscribeOpportunity {
+        session.unsubscribeOpportunity(forSenderKey: summary.id)
     }
 
     /// The selection row: what is ticked, and the three ways to change it in bulk.
@@ -511,6 +551,16 @@ struct SenderMessageReviewView: View {
 
             undoOffer
 
+            if unsubscribeOpportunity.availability.camesFromListHeader {
+                // Said on the screen that offers both, because this is where somebody could
+                // most easily take one for the other.
+                Label(UnsubscribeOpportunity.futureMailNote, systemImage: "calendar.badge.exclamationmark")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("messageReview.unsubscribeDistinctionNote")
+            }
+
             if let action {
                 Text("\(affectedCount) of ^[\(reviewed.count) loaded message](inflect: true) \(action.previewVerbPhrase); \(reviewed.count - affectedCount) would stay put, \(protectedCount) of them held back as protected.")
                     .font(.callout)
@@ -530,7 +580,7 @@ struct SenderMessageReviewView: View {
                         // what a whole-sender cleanup *would* do, and a button that really
                         // archives the ticked messages. Leaving the difference implicit would be
                         // the easiest way for someone to believe the preview was about to run.
-                        Text("Archiving the messages you tick is the only change InboxSweep can make, and it asks first. The preview above is not something it can carry out — Fill from preview only ticks boxes for you to check.")
+                        Text("Archiving the messages you tick is the only change InboxSweep can make to this mailbox, and it asks first. The preview above is not something it can carry out — Fill from preview only ticks boxes for you to check.")
                             .font(.footnote)
                             .foregroundStyle(.tertiary)
                             .fixedSize(horizontal: false, vertical: true)

@@ -36,4 +36,15 @@ enum UITestLaunchArgument {
     /// them is undoable — which is the state the case asserts.
     static let sampleActivity = "--sample-activity"
 
+    /// Gives the synthetic mailbox an in-process one-click unsubscribe boundary and an opener
+    /// that opens nothing. Matches `SampleUnsubscribe.launchArgument`.
+    ///
+    /// Only meaningful alongside ``sampleData``. It is what makes the *confirmed* unsubscribe
+    /// journeys runnable: the endpoint is `SampleUnsubscriber`, which has no transport at all,
+    /// so a case can drive a confirmation all the way to an Activity row without a socket being
+    /// opened or a browser being launched. Without it, the sample session has no unsubscribe
+    /// boundary and its confirmation is absent rather than disabled — which is its own thing
+    /// worth asserting.
+    static let sampleUnsubscribe = "--sample-unsubscribe"
+
 }

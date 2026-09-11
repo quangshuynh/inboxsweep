@@ -96,11 +96,22 @@ final class AppModel {
     /// Its transaction store is in-memory, and empty unless ``SampleActivity`` was asked for. A
     /// seeded one holds invented *records* and adds no capability: the session still cannot
     /// write, and the undo it restores from those records is still refused for want of a grant.
+    ///
+    /// Unsubscribing is the same story with one difference. *Detection* works on synthetic mail,
+    /// because reading a sender's headers is domain work and needs no boundary — so the options
+    /// screen and the review are visible here. *Execution* is off unless
+    /// ``SampleUnsubscribe/launchArgument`` was given, and even then it is
+    /// ``SampleUnsubscriber``, which has no transport and answers in-process.
     func useSampleData() {
         isUsingSampleData = true
         session = InboxSessionModel(
             provider: SampleMailProvider(),
             mutationRecords: SampleActivity.recordStore(),
+            // Nothing synthetic opens a real browser or mail client. Under the sample
+            // unsubscribe argument a handoff has to *succeed* for its outcome and its Activity
+            // row to be visible, and launching Safari at a `.example` host during a UI test is
+            // not the way to do that.
+            urlOpener: SampleURLOpener(),
             fetchRequest: MailFetchRequest(limit: 60)
         )
         session.connect()

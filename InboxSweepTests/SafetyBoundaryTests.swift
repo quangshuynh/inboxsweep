@@ -338,7 +338,11 @@ struct SafetyBoundaryTests {
             .compactMap(\.value) ?? []
 
         #expect(requested == GmailAPIEndpoint.metadataHeaders)
-        #expect(requested == ["From", "Subject", "Date", "List-Unsubscribe"])
+        // `List-Unsubscribe-Post` joined the list in Interval 10. It is written out here rather
+        // than only compared against the constant, so adding a sixth header is a change somebody
+        // has to make in a test as well as in the adapter — and so this line records that the
+        // header set grew by one and the *scope set* did not.
+        #expect(requested == ["From", "Subject", "Date", "List-Unsubscribe", "List-Unsubscribe-Post"])
     }
 
     // MARK: - Live traffic
@@ -412,7 +416,15 @@ struct SafetyBoundaryTests {
         let contentBearingNames: Set<String> = ["body", "bodyText", "html", "snippet", "payload", "attachments", "raw"]
 
         #expect(propertyNames.isDisjoint(with: contentBearingNames))
-        #expect(propertyNames == ["id", "threadID", "sender", "subject", "receivedAt", "labels", "hasListUnsubscribeHeader"])
+        // `hasListUnsubscribeHeader` became `unsubscribe` in Interval 10 — parsed values in
+        // place of a Boolean. Still metadata, and still nowhere to put a body: the type it holds
+        // can only contain destinations and recorded refusals.
+        #expect(propertyNames == ["id", "threadID", "sender", "subject", "receivedAt", "labels", "unsubscribe"])
+
+        // And what that type holds is itself content-free.
+        let metadataNames = Set(Mirror(reflecting: message.unsubscribe).children.compactMap(\.label))
+        #expect(metadataNames.isDisjoint(with: contentBearingNames))
+        #expect(metadataNames == ["targets", "declaresOneClickPost", "headerWasPresent"])
     }
 
     @Test("A sender summary makes no judgement about the sender")
@@ -435,13 +447,14 @@ struct SafetyBoundaryTests {
         #expect(propertyNames.isDisjoint(with: judgementNames))
     }
 
-    @Test("The List-Unsubscribe header is recorded but never acted on")
+    @Test("Loading mail parses the unsubscribe header and contacts nobody")
     func recordsUnsubscribeWithoutActingOnIt() async throws {
-        // The proposal rules do read `hasListUnsubscribeHeader` — it is part of what makes a
-        // sender read as a mailing list. Reading it is the whole of what the app does with it:
-        // there is no unsubscribe feature, and the address the header names is never contacted.
+        // Interval 10 gave the app an unsubscribe feature, so this test's claim narrowed and
+        // got sharper. *Loading* mail still contacts no unsubscribe address — parsing is
+        // parsing, and a destination sitting in a parsed value is not a request. What can reach
+        // one is a user opening a review and confirming it twice, which is asserted separately.
         let messages = [
-            GmailFixtures.SyntheticMessage(id: "u1", listUnsubscribe: "<https://example.com/unsub>"),
+            GmailFixtures.SyntheticMessage(id: "u1", listUnsubscribe: "<https://unsub.example/u/1>"),
             GmailFixtures.SyntheticMessage(id: "u2", from: "person@example.net"),
         ]
         let transport = RecordingHTTPTransport(handler: GmailMailboxStub(messages: messages).handler())
@@ -456,8 +469,12 @@ struct SafetyBoundaryTests {
         let page = try await provider.fetchMessages(MailFetchRequest(limit: 2))
 
         #expect(page.messages.contains { $0.hasListUnsubscribeHeader })
-        // No request was made to the unsubscribe URL itself.
-        #expect(!transport.requests.contains { ($0.url?.absoluteString ?? "").contains("unsub") })
+        // Parsed into a typed destination rather than kept as text.
+        #expect(page.messages.first { $0.id == MailMessageID("u1") }?.unsubscribe.webURLs.first?.host == "unsub.example")
+
+        // And nothing went to it. Every request this load made was to Google.
+        #expect(!transport.requests.contains { ($0.url?.absoluteString ?? "").contains("unsub.example") })
+        #expect(transport.requests.allSatisfy { ($0.url?.host ?? "").hasSuffix("googleapis.com") })
     }
 
     // MARK: - Cleanup previews

@@ -11,11 +11,21 @@ import SwiftUI
 ///
 /// ### It is a reader
 ///
-/// Opening it, scrolling it, and opening a row send nothing to Gmail. The history comes out of
-/// the local transaction file and the message details out of the window already in memory. The
-/// only control here that can reach a mailbox is **Undo**, which is the existing undo — the same
-/// offer the review screen makes, for the same single transaction, through the same path. A row
-/// cannot archive anything, and an older row cannot become undoable by being visible.
+/// Opening it, scrolling it, and opening a row send nothing to Gmail and nothing to anybody
+/// else. The history comes out of the local transaction file and the message details out of the
+/// window already in memory. The only control here that can reach a mailbox is **Undo**, which
+/// is the existing undo — the same offer the review screen makes, for the same single
+/// transaction, through the same path. A row cannot archive anything, an older row cannot become
+/// undoable by being visible, and **no unsubscribe row has any control on it at all**: there is
+/// no re-send, no retry, and no undo, because an unsubscribe has no inverse to offer.
+///
+/// ### Two kinds of row
+///
+/// Archives and unsubscribes are interleaved by time and rendered differently, because they say
+/// different things. An archive row counts messages and says where its undo stands; an
+/// unsubscribe row names a destination and says what InboxSweep did — "Unsubscribe request
+/// sent", "Opened unsubscribe page", "Opened email unsubscribe request". None of the three
+/// claims the user was unsubscribed, which is not something this app can observe.
 ///
 /// ### Tone
 ///
@@ -28,8 +38,8 @@ struct ActivityView: View {
     @Environment(\.dismiss) private var dismiss
 
     /// Loaded when the screen opens and after an undo, from the local file.
-    @State private var entries: [ActivityEntry] = []
-    @State private var selectedEntryID: ActivityEntry.ID?
+    @State private var entries: [ActivityTimelineEntry] = []
+    @State private var selectedEntryID: ActivityTimelineEntry.ID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,11 +51,14 @@ struct ActivityView: View {
         }
         .frame(minWidth: 760, idealWidth: 900, minHeight: 460, idealHeight: 580)
         .task(id: session.mutationActivity?.id) { await reload() }
+        // A second trigger for the second kind of entry, so an unsubscribe performed while this
+        // screen is open shows up the way an undo does.
+        .task(id: session.unsubscribeActivity?.id) { await reload() }
     }
 
     // MARK: - Derived state
 
-    private var selectedEntry: ActivityEntry? {
+    private var selectedEntry: ActivityTimelineEntry? {
         entries.first { $0.id == selectedEntryID }
     }
 
@@ -75,8 +88,9 @@ struct ActivityView: View {
 
     /// The boundary, stated on the screen rather than left to documentation.
     static let scopeNote = """
-        Everything InboxSweep has changed in this mailbox, on this Mac. Changes you made in Gmail \
-        itself are not listed here — InboxSweep only records what it did.
+        Everything InboxSweep has done for this account, on this Mac — messages it archived, and \
+        unsubscribes it sent or opened for you. Changes you made in Gmail itself are not listed \
+        here, and neither is an unsubscribe you did yourself: InboxSweep only records what it did.
         """
 
     @ViewBuilder
@@ -97,8 +111,9 @@ struct ActivityView: View {
             Label("No activity yet", systemImage: "clock")
         } description: {
             Text("""
-                InboxSweep hasn't changed anything in this mailbox. When you archive messages, \
-                each archive is listed here with what it did and whether it can still be undone.
+                InboxSweep hasn't done anything to this account yet. When you archive messages, each \
+                archive is listed here with what it did and whether it can still be undone — and when \
+                you unsubscribe from a sender, what InboxSweep sent or opened is listed too.
                 """)
         }
         .frame(maxHeight: .infinity)
@@ -107,8 +122,13 @@ struct ActivityView: View {
 
     private var entryList: some View {
         List(entries, selection: $selectedEntryID) { entry in
-            ActivityRow(entry: entry)
-                .tag(entry.id)
+            Group {
+                switch entry {
+                case .archive(let archive): ActivityRow(entry: archive)
+                case .unsubscribe(let unsubscribe): UnsubscribeActivityRow(entry: unsubscribe)
+                }
+            }
+            .tag(entry.id)
         }
         .listStyle(.inset)
         .frame(minWidth: 320, idealWidth: 380)
@@ -118,8 +138,15 @@ struct ActivityView: View {
     @ViewBuilder
     private var detail: some View {
         if let selectedEntry {
-            ActivityDetailView(entry: selectedEntry, session: session)
-                .frame(minWidth: 320)
+            Group {
+                switch selectedEntry {
+                case .archive(let archive):
+                    ActivityDetailView(entry: archive, session: session)
+                case .unsubscribe(let unsubscribe):
+                    UnsubscribeActivityDetailView(entry: unsubscribe)
+                }
+            }
+            .frame(minWidth: 320)
         } else {
             ContentUnavailableView(
                 "No change selected",
@@ -151,8 +178,9 @@ struct ActivityView: View {
     /// Says the history is bounded, before somebody notices an old change has gone and assumes
     /// something went wrong.
     static let retentionNote = """
-        InboxSweep keeps the \(MailMutationHistory.entryLimit) most recent changes for this \
-        account on this Mac, and no message content. Signing out deletes them.
+        InboxSweep keeps the \(MailMutationHistory.entryLimit) most recent archives and the \
+        \(MailMutationHistory.unsubscribeEntryLimit) most recent unsubscribes for this account on \
+        this Mac, and no message content. Signing out deletes them.
         """
 
     // MARK: - Loading
@@ -162,7 +190,7 @@ struct ActivityView: View {
     /// Re-run when a mutation finishes — which on this screen means an undo — so the row the
     /// user just acted on updates in place rather than going stale behind them.
     private func reload() async {
-        entries = await session.activityHistory()
+        entries = await session.activityTimeline()
 
         // A selection that survived a reload but no longer names a row would leave the detail
         // pane empty with no way back to it.
@@ -488,3 +516,129 @@ private struct ActivityPreview: View {
     }
 }
 #endif
+
+/// One unsubscribe, as a row: what InboxSweep did, where, and when.
+///
+/// Notice what it does not carry. There is no count, because an unsubscribe is not about a
+/// number of messages. There is no undo state, because there is no undo. And there is no
+/// control of any kind — a row on this screen cannot re-send anything, which is what makes
+/// scrolling past it free.
+private struct UnsubscribeActivityRow: View {
+
+    let entry: UnsubscribeActivityEntry
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: entry.symbolName)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.title)
+                    .font(.callout.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(entry.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+
+                Text(entry.occurredAt.formatted(.relative(presentation: .named)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let status = entry.statusSummary {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityIdentifier("activity.unsubscribeRow")
+    }
+}
+
+/// One unsubscribe in full.
+///
+/// It takes no `session`, unlike its archive counterpart, and the absence is the point: there
+/// is nothing on this screen for a session to do. An archive detail view holds an Undo button
+/// and therefore needs the object that can perform one. This view is text.
+private struct UnsubscribeActivityDetailView: View {
+
+    let entry: UnsubscribeActivityEntry
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                heading
+                facts
+                explanation
+                noUndo
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+        }
+        .accessibilityIdentifier("activity.unsubscribeDetail")
+    }
+
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(entry.title)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("activity.unsubscribeDetail.title")
+
+            Text(entry.occurredAt.formatted(.dateTime.weekday(.wide).day().month().year().hour().minute()))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// What was recorded, which is deliberately little.
+    private var facts: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                LabeledContent("Mechanism") { Text(entry.mechanism.displayName) }
+                LabeledContent(entry.mechanism == .mail ? "Mail domain" : "Host") {
+                    Text(entry.destinationHost)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("activity.unsubscribeDetail.host")
+                }
+                if let status = entry.statusCode {
+                    LabeledContent("Answer") { Text("HTTP \(status)") }
+                }
+                if let sender = entry.resolvedSender {
+                    LabeledContent("Sender") {
+                        Text(sender.displayValue)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+            }
+            .font(.callout)
+            .padding(6)
+        }
+        .accessibilityIdentifier("activity.unsubscribeDetail.facts")
+    }
+
+    private var explanation: some View {
+        Text(entry.explanation)
+            .font(.callout)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("activity.unsubscribeDetail.explanation")
+    }
+
+    /// Why there is no button here.
+    private var noUndo: some View {
+        Label {
+            Text(UnsubscribeActivityEntry.noUndoNote)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "arrow.uturn.backward.slash")
+        }
+        .accessibilityIdentifier("activity.unsubscribeDetail.noUndo")
+    }
+}

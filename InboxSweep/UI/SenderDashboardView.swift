@@ -44,6 +44,13 @@ struct SenderDashboardView: View {
         /// showing the first sheet's already-built body with the preselection never applied.
         case senderCleanupReview(SenderSummary, SenderReviewCandidates)
 
+        /// What one sender's own headers say about unsubscribing.
+        ///
+        /// A sibling of the review cases rather than something reachable from inside one: an
+        /// unsubscribe is not a kind of archive, and putting it behind the archive review would
+        /// have made it look like one.
+        case unsubscribeOptions(SenderSummary)
+
         var id: String {
             switch self {
             case .cleanupPlan: "cleanupPlan"
@@ -51,6 +58,7 @@ struct SenderDashboardView: View {
             case .messageReview(let summary): "messageReview-\(summary.id)"
             case .senderCleanupReview(let summary, let candidates):
                 "senderCleanupReview-\(summary.id)-\(candidates.action.id)"
+            case .unsubscribeOptions(let summary): "unsubscribeOptions-\(summary.id)"
             }
         }
     }
@@ -87,7 +95,12 @@ struct SenderDashboardView: View {
                         // — it offers **Enable archiving…** on a read-only grant and nothing at
                         // all on the synthetic mailbox. Gating it here and not on the dry-run row
                         // would also have made two identically-worded controls behave differently.
-                        onReviewCleanup: { openCleanupReview(for: sender, under: suggestedAction(for: sender.id)) }
+                        onReviewCleanup: { openCleanupReview(for: sender, under: suggestedAction(for: sender.id)) },
+                        // Offered whether or not this session can *perform* an unsubscribe, for
+                        // the same reason the archive review is: what it opens is a reading, and
+                        // the sheet is the honest place to say whether anything can be sent.
+                        onReviewUnsubscribe: { sheet = .unsubscribeOptions(sender) },
+                        unsubscribeOpportunity: session.unsubscribeOpportunity(forSenderKey: sender.id)
                     )
                 } else {
                     ContentUnavailableView(
@@ -136,6 +149,9 @@ struct SenderDashboardView: View {
                     proposal: snapshot.proposal(for: sender.id),
                     preselection: candidates
                 )
+
+            case .unsubscribeOptions(let sender):
+                UnsubscribeOptionsSheet(session: session, summary: sender)
             }
         }
         .accessibilityIdentifier("dashboard.screen")
