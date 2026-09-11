@@ -250,28 +250,18 @@ final class InboxSweepUITests: XCTestCase {
             return false
         }
 
-        // Immediately before the click, not only before the wait. The app can be occluded in
-        // between: measured once in four consecutive full runs, the runner reported the Interval
-        // 9 symptom, `Unable to find hit point for ScrollView`, on a control it had just found
-        // hittable and enabled.
+        // Re-checked immediately before the click, because the app can lose the foreground
+        // between the wait above and here.
         //
-        // This asks the app itself rather than guessing, and it is the same signal every launch
-        // already waits on. A window that has drifted out of its deterministic state says so, and
-        // ``UITestWindow`` puts it back within half a second of noticing. On a run where nothing
-        // drifts, this is one property read per click and nothing else.
-        waitForDeterministicWindow(app, timeout: Self.driftRecoveryTimeout)
+        // A stronger version of this was tried and measured **worse**: re-running the full
+        // window-state wait before every click, so a drifted window had five seconds to come
+        // back. Over two complete runs it produced a failure in each, against three clean runs in
+        // four for this version. The extra round trip per click appears to cost more than the
+        // drift it was catching, so what stays is the cheap half.
+        front(app)
         element.click()
         return true
     }
-
-    /// How long a click waits for a drifted window to come back.
-    ///
-    /// Short on purpose, and short is what makes it honest. ``UITestWindow`` notices drift within
-    /// ``maintenanceInterval`` and re-asserts immediately, so a window that is coming back is back
-    /// in well under a second. Five seconds is generous for that and far too short to paper over a
-    /// window that is genuinely stuck, which fails the case with the same message the launch wait
-    /// would have given.
-    private static let driftRecoveryTimeout: TimeInterval = 5
 
     /// Puts the app under test in front, immediately before something is done to it.
     ///
