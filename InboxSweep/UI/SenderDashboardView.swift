@@ -81,9 +81,13 @@ struct SenderDashboardView: View {
                         proposal: snapshot.proposal(for: sender.id),
                         messages: session.loadedMessages(forSenderKey: sender.id),
                         onReviewMessages: { sheet = .messageReview(sender) },
-                        onReviewCleanup: session.canOfferArchiving
-                            ? { openCleanupReview(for: sender, under: suggestedAction(for: sender.id)) }
-                            : nil
+                        // Offered whether or not this session can write. The button's job is to
+                        // move the user into a review state, which it does either way, and the
+                        // review screen is the honest place to say whether archiving is available
+                        // — it offers **Enable archiving…** on a read-only grant and nothing at
+                        // all on the synthetic mailbox. Gating it here and not on the dry-run row
+                        // would also have made two identically-worded controls behave differently.
+                        onReviewCleanup: { openCleanupReview(for: sender, under: suggestedAction(for: sender.id)) }
                     )
                 } else {
                     ContentUnavailableView(
@@ -324,11 +328,20 @@ struct SenderDashboardView: View {
 
             Spacer(minLength: 12)
 
+            // `fixedSize` and the layout priority are what keep this control *present*. A footer
+            // is a row of text competing for one line, and without them the link is the thing
+            // that gets compressed when the coverage sentence or the privacy note is long —
+            // squeezed to nothing on a narrow window, and intermittently unfindable in a UI test
+            // while the coverage line is still saying "loading". A route into Activity that
+            // disappears when a sentence beside it grows is not a route.
             activityLink
+                .fixedSize()
+                .layoutPriority(1)
 
             Text(PrivacyNotice.summary)
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
+                .lineLimit(2)
                 .help("InboxSweep suggests and previews. The only change it can make is archiving one message you open and confirm, from a sender's message review — nothing on this screen changes your mail.")
         }
         .padding(.horizontal, 16)
