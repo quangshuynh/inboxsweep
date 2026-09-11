@@ -2,20 +2,23 @@
 
 A privacy-conscious Gmail cleanup assistant for macOS.
 
-**InboxSweep recommends; you authorize.** This version does not even recommend yet — it reads
-your Gmail metadata, groups it by sender, reports factual observations about each one, and
-shows you who is filling your inbox. It has no ability to delete, archive, label, move,
-unsubscribe, or send mail.
+**InboxSweep recommends; you authorize.** It reads your Gmail metadata, groups it by sender,
+says which senders look worth cleaning up and why, and shows what a cleanup *would* affect. The
+one change it can make is archiving a **single message you select and confirm** — and undoing
+it. It cannot act on a sender, run a cleanup plan, or delete anything.
 
-> **Read-only.** InboxSweep requests a single Gmail permission that cannot modify a mailbox,
-> and the app contains no code that writes to one. See [Privacy posture](#privacy-posture).
+> **One write, and you press it.** Archiving removes the `INBOX` label from one named message
+> and nothing else. There is no bulk operation, no sender-level action, and no way for a
+> recommendation to carry itself out. See [Archiving](#archiving-one-message) and
+> [Privacy posture](#privacy-posture).
 
 <!-- macOS · SwiftUI · Swift 6 -->
 
 ## What it does
 
 - Connects a Google account with OAuth 2.0 (authorization code + PKCE, no client secret).
-- Requests exactly one scope: `gmail.metadata` — headers, labels, and dates. Not bodies.
+- Requests two scopes: `gmail.metadata` to read headers, labels, and dates — not bodies — and
+  `gmail.modify`, the narrowest permission Google publishes that can archive.
 - Fetches a bounded window of message metadata with bounded concurrency, cancellation support,
   and pagination — **250 messages by default, up to a documented ceiling of 2,500** — from the
   Inbox, any of Gmail's four categories, or All mail.
@@ -28,6 +31,9 @@ unsubscribe, or send mail.
   header.
 - **Saves the loaded window to this Mac**, so relaunching restores the dashboard without
   re-reading the mailbox, and says on screen when what you are looking at came from disk.
+- **Archives one selected message**, after a confirmation naming its sender, subject, and date
+  — and offers **Undo archive**, which is a real Gmail request rather than a local correction.
+- Keeps a small, bounded local record of what it changed, holding message IDs and no mail.
 - Handles signed-out, restoring, connecting, loading, loaded, empty, and error states.
 - Runs entirely against synthetic data when no Google account is configured, so the whole app
   can be developed and tested offline.
@@ -38,11 +44,15 @@ None of the following is implemented, and the UI does not pretend otherwise:
 
 | Not implemented | |
 | --- | --- |
-| Delete, trash, or archive | Mark as read, star, or label |
-| Unsubscribe (of any kind) | Executing any cleanup at all |
-| AI classification of any message | Cleanup rules or scheduling |
-| Background monitoring or notifications | Storage-savings estimates |
+| Delete, trash, or permanently remove | Mark as read, star, or label |
+| Unsubscribe (of any kind) | Archive a sender, or archive in bulk |
+| AI classification of any message | Executing a cleanup plan |
+| Background monitoring or notifications | Automatic or scheduled archiving |
 | Analytics or telemetry | CI, badges, or releases |
+
+Archiving is the one exception, and it is deliberately the narrowest one available: one message,
+named individually, after a confirmation, undoable. There is no control anywhere that archives
+more than one message, and no path from a proposal or a saved plan to a mutation.
 
 `List-Unsubscribe` headers are *recorded* as an observation. Nothing in this version reads
 that flag to decide anything, and the app never contacts an unsubscribe URL.
@@ -63,7 +73,9 @@ Domain        EmailAddress, MailMessage,         InboxSweep/Domain/Models
   ↓
 Boundaries    MailProvider, MailAccountAuthorizing,
               MailMessageFetching, MailProviderError,
-              InboxCacheStoring, CachedInbox     InboxSweep/Domain/Providers
+              MailMessageArchiving, MailMutationError,
+              InboxCacheStoring, CachedInbox,
+              MailMutationRecording              InboxSweep/Domain/Providers
                                                  InboxSweep/Domain/Persistence
   ↓
 Adapters      GmailProvider + OAuth, API client, InboxSweep/Providers/Gmail
@@ -79,6 +91,9 @@ Three seams make the whole adapter testable without a network or a Google accoun
 - **`InboxCacheStoring`** — persistence is a protocol the domain owns, so the session's
   relaunch behaviour is testable without touching the file system, and the default
   implementation stores nothing.
+- **`MailMessageArchiving`** — the mutation boundary, separate from the read boundary and
+  *optional*. A provider vends one only if it can write, so the synthetic mailbox has no code
+  path to a mutation rather than a guard someone has to remember.
 
 Notable decisions:
 
@@ -114,28 +129,62 @@ Notable decisions:
 - **There is no unbounded load.** Every depth is finite and capped, because a message costs a
   metadata request and an unbounded "load everything" is a denial of service aimed at the
   user's own quota.
+- **Reading and writing are different boundaries.** `MailMessageFetching` still has exactly one
+  method and it fetches. Archiving lives on its own optional protocol, so "can this thing change
+  a mailbox?" is answered by whether it vends an archiver, not by reading its implementation.
+- **The mutation vocabulary is two constants, not a parameter.** `GmailMutationRequest` can
+  carry one of two literal bodies, so "add or remove `INBOX` on one named message" is the whole
+  of what the app can express. A request that trashed a message or applied your own label is not
+  something the type can be asked to build.
+- **Nothing is claimed before Gmail confirms it.** Local state is reconciled from the labels on
+  Gmail's *reply*, not from the ones the app asked for, so a failure needs no rollback and a
+  success is never optimistic.
+- **An archived message leaves the window without leaving memory.** Inbox membership is derived
+  from labels by `MailboxScope.retains`, which is what lets undo restore the message to its
+  original position instead of appending it, and what makes the next refresh agree.
+- **A local write failure is not a remote failure.** If Gmail changes the mailbox and this Mac
+  cannot record it, that is reported as a success with a caveat. The opposite would tell the
+  user their mail was untouched when it was not.
 
-## Gmail permission
+## Gmail permissions
 
-InboxSweep requests one scope:
+InboxSweep requests two scopes:
 
 ```
-https://www.googleapis.com/auth/gmail.metadata
+https://www.googleapis.com/auth/gmail.metadata   read headers, labels, dates
+https://www.googleapis.com/auth/gmail.modify     change which labels a message carries
 ```
 
-It grants read access to message headers, labels, and dates — **not** message bodies or
-attachments. It is narrower than the more common `gmail.readonly`, which would also hand the
+`gmail.metadata` is narrower than the more common `gmail.readonly`, which would also hand the
 app every message body.
 
-The app never requests `gmail.modify`, `gmail.send`, `gmail.compose`, `gmail.insert`,
-`gmail.labels`, `gmail.settings.*`, or `https://mail.google.com/`. `SafetyBoundaryTests`
-asserts this; that every Gmail API request the app can construct is a `GET`; that no such
-request's path reaches one of Gmail's mutating operations (`modify`, `trash`, `batchDelete`,
-`send`, `settings`, and the rest); and that building a cleanup preview issues no provider call
-and sends no HTTP request at all.
+`gmail.modify` is what archiving needs, and it is **broader than what the app does with it** —
+it would also permit trashing, marking read, applying arbitrary labels, and reading bodies.
+Google publishes no narrower permission that can remove the `INBOX` label: `gmail.labels`
+governs label *definitions*, not applying them to a message. The alternative is not a smaller
+scope; it is not having an archive feature. Since the permission cannot be narrowed, the limit
+is in the code, and the signed-out screen says so before you are sent to Google rather than
+letting the consent screen contradict the app.
 
-One practical consequence of the narrower scope: Gmail rejects search queries (`q=`) under
-`gmail.metadata`. The fetch layer works within that limit rather than widening the scope.
+The app never requests `https://mail.google.com/` — the full-access scope, and the only one that
+permits **permanent deletion** — nor `gmail.send`, `gmail.compose`, `gmail.insert`,
+`gmail.labels`, `gmail.settings.*`, or contacts.
+
+`SafetyBoundaryTests` asserts all of the above, and that:
+
+- every *read* request the app can construct is a `GET` reaching no mutating path;
+- there are exactly **two** mutating requests, both `POST`s to
+  `users/me/messages/{id}/modify`, never to a thread or batch endpoint;
+- their bodies name `INBOX` and no other label, and carry one instruction each;
+- a message identifier is percent-encoded into a single path segment and cannot redirect a
+  request;
+- loading, previewing, saving a plan, restoring one, re-sorting, and reloading all reach the
+  mutation boundary **zero** times;
+- a provider is read-only unless it deliberately vends an archiver.
+
+One practical consequence of `gmail.metadata`: Gmail rejects search queries (`q=`) under it.
+The fetch layer works within that limit, and still requests `format=metadata` with four named
+headers even though `gmail.modify` would now permit bodies.
 
 ## Sender observations
 
@@ -165,6 +214,44 @@ messages can change it. `SenderObservationTests` covers each of these cases.
 
 No observation is combined into a score, a rank, or a recommendation. `SafetyBoundaryTests`
 asserts that `SenderSummary` has no property named for a judgement.
+
+## Archiving one message
+
+The app's only write. Full detail in **[Docs/Archiving.md](Docs/Archiving.md)**.
+
+In Gmail a message is in the Inbox exactly when it carries the `INBOX` label, so archiving one
+*is* removing that label:
+
+```
+POST /gmail/v1/users/me/messages/{id}/modify   {"removeLabelIds":["INBOX"]}
+POST /gmail/v1/users/me/messages/{id}/modify   {"addLabelIds":["INBOX"]}     # undo
+```
+
+Those two are the complete set of mutating requests the app can build.
+
+**The flow.** Open a sender → **Review…** → select one message → **Archive message…** → a
+confirmation naming the sender, subject, and received date, and saying that archiving removes
+the message from your Inbox and does not delete it → confirm → one request → the result, with
+**Undo archive** beside it.
+
+| | |
+| --- | --- |
+| **Scope** | One message you selected. Not its thread, not its sender, not anything else. |
+| **Effect** | `INBOX` removed. Read state, star, importance, and Gmail category untouched. |
+| **Undo** | A real Gmail request, not a local correction. Succeeds only when Gmail confirms. |
+| **Undo lifetime** | Until you undo, archive something else, reload, change scope, disconnect, dismiss the result, or quit. Not persisted, no timer. |
+| **In flight** | No Cancel once Gmail has the request — it may already have applied it, and the sheet says so. Duplicate submission is refused by the session, not only by a disabled button. |
+| **Local state** | Reconciled from the labels on Gmail's reply, only after it confirms. Summaries, proposals, protection, plan membership, and the cache all recompute. |
+| **Record** | Operation, message ID, account, timestamp, outcome. No subject, no sender, no body. Bounded to 50 entries, deleted on disconnect. |
+
+**If you signed in before archiving existed**, your read-only grant keeps working and is not
+treated as broken. The Archive control becomes **Enable archiving…**, which asks for the extra
+permission and nothing else; declining leaves the session exactly as it was. Granting it
+persists the widened scope, keeping the refresh token Google does not reissue.
+
+**Recommendations still cannot execute.** Proposals, dry-run previews, and saved plans are
+advisory. A saved plan naming "archive messages older than 30 days" reopens a preview when
+restored, and that is all it can ever do.
 
 ## Local persistence
 
@@ -288,14 +375,21 @@ xcodebuild -project InboxSweep.xcodeproj -scheme InboxSweep -destination 'platfo
 
 Claims below describe what this version actually does. Nothing more is implied.
 
-- **Read-only access.** The one scope requested cannot change a mailbox, and the app contains
-  no code path that writes to one.
-- **No message is altered, moved, or deleted.** There is no feature to do so. The cleanup
-  planner produces a description of what an action *would* reach; building one makes no
-  request of any kind, and there is no control anywhere that carries one out.
+- **One kind of write, and you confirm each one.** InboxSweep can remove the `INBOX` label from
+  a single message you selected, and put it back. Those two requests are the complete set of
+  mutations the app can construct.
+- **No message is deleted, trashed, marked, labelled, or sent.** There is no feature to do any
+  of it, and no scope that would permit permanent deletion.
+- **Nothing acts in bulk or on its own.** There is no archive-sender, archive-all, execute-plan,
+  scheduled, or background operation. The cleanup planner produces a description of what an
+  action *would* reach; building one makes no request of any kind, and there is no control
+  anywhere that carries one out.
 - **Metadata only.** Message requests use `format=metadata` with four named headers (`From`,
-  `Subject`, `Date`, `List-Unsubscribe`). Bodies and attachments are never requested and there
-  is nowhere in the domain model to put them.
+  `Subject`, `Date`, `List-Unsubscribe`). Bodies and attachments are never requested — even
+  though `gmail.modify` would now permit them — and there is nowhere in the domain model to put
+  them.
+- **A local record of what was changed.** One bounded file holds an operation, a message ID, an
+  account, a timestamp, and an outcome per mutation. No mail. It is deleted on disconnect.
 - **Local by default.** Message metadata lives in memory while the app runs and in one file
   inside the app's own sandbox container between launches — see
   [Local persistence](#local-persistence) for exactly what that file holds. The networking
@@ -348,6 +442,21 @@ not been independently audited and makes no anonymity guarantees.
 - The dry-run planner offers a fixed set of cutoffs (keep newest 5; 30 and 90 days). There is
   no way to type an arbitrary one, though a saved plan's file format would carry one.
 - The message review is per sender. There is no way to see every loaded message at once.
+- **Archiving is one message at a time, by design.** There is no multi-select, no sender-level
+  archive, and no way to carry out a previewed plan. Clearing a large sender means confirming
+  each message, which is the point rather than an oversight — but it does mean the dry-run
+  preview describes a cleanup the app cannot perform for you.
+- **`gmail.modify` grants more than the app uses.** Google publishes nothing narrower that can
+  archive, so the restraint is enforced by the code and its tests rather than by the permission.
+  A user auditing the grant in their Google Account will see a broad permission; the app's
+  limits are not visible from there.
+- The undo offer is session-lifetime and is not restored after a relaunch. Once it is gone, the
+  message is in All Mail and moving it back is a Gmail operation.
+- The mutation record is not surfaced in the UI. It is read by the session and kept for undo and
+  local correctness; there is no screen that lists it yet.
+- Archiving is message-level, so a conversation whose other messages are still in the Inbox
+  stays in the Inbox. That matches Gmail's own behaviour but can surprise anyone expecting a
+  thread to disappear.
 - A saved plan holds sender addresses on disk in the app's container. It is deleted on
   disconnect, but it is the one place a list of who writes to you is written unencrypted beyond
   the metadata cache.
@@ -372,14 +481,14 @@ InboxSweep/               App target
     Persistence/          The cache protocol and the window it stores
   Application/            Session state for the UI
   Providers/Gmail/        Gmail adapter (the only Gmail-aware code)
-  Providers/Persistence/  On-disk cache store and its file format
+  Providers/Persistence/  On-disk cache, plan, and mutation-record stores
   Providers/Sample/       Synthetic mailbox, debug builds only
   Providers/Networking/   HTTPTransport seam
   UI/                     SwiftUI views
   Config/                 Your local OAuth client plist (gitignored)
 InboxSweepTests/          Unit tests, fixtures, and test doubles
 InboxSweepUITests/        Launch and dashboard UI tests
-Docs/                     OAuth setup, session restore, release verification
+Docs/                     OAuth setup, session restore, archiving, release verification
 ```
 
 ## Licence

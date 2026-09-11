@@ -7,9 +7,16 @@ import SwiftUI
 /// at the 43, see the 5 and why they were spared, and decide whether the rules read their mail
 /// the way they would have.
 ///
-/// Nothing here opens, fetches, or changes anything. There is no message body to show —
-/// ``MailMessage`` has nowhere to hold one — the plan picker only changes which rows are
-/// highlighted, and the rows are not buttons because there is nothing for them to do.
+/// This screen is also the **only** place in the app that can change a mailbox, and it is
+/// deliberately the one that already makes the user look at an individual message. Selecting a
+/// row and pressing **Archive message…** opens a confirmation; nothing else does. A proposal, a
+/// dry-run preview, a saved plan, and a sender row can all lead the user *here*, and every one
+/// of them stops at this boundary — there is no control anywhere that archives a sender, a
+/// selection, or a plan.
+///
+/// Everything else here still changes nothing. There is no message body to show —
+/// ``MailMessage`` has nowhere to hold one — and the plan picker only changes which rows are
+/// highlighted.
 struct SenderMessageReviewView: View {
 
     let session: InboxSessionModel
@@ -21,6 +28,18 @@ struct SenderMessageReviewView: View {
     @State private var sortOrder: MessageReviewSortOrder = .newestFirst
     @State private var action: PlannedCleanupAction?
     @State private var showsOnlyAffected = false
+
+    /// The row the user has picked out, if any.
+    ///
+    /// Single-selection: the archive action acts on one message, so a multi-selection would
+    /// invite exactly the bulk operation this interval does not implement.
+    @State private var selectedMessageID: MailMessage.ID?
+
+    /// The message a confirmation is open for.
+    ///
+    /// Separate from ``selectedMessageID`` so that selecting a row never, by itself, puts the
+    /// app one keystroke away from a mutation. Pressing the button is what fills this in.
+    @State private var messagePendingArchive: MailMessage?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,6 +54,13 @@ struct SenderMessageReviewView: View {
         // The sheet takes its minimum width, so that is what has to fit all five columns —
         // an audit screen whose "under this plan" column is off the right edge audits nothing.
         .frame(minWidth: 900, idealWidth: 980, minHeight: 480, idealHeight: 620)
+        .sheet(item: $messagePendingArchive) { message in
+            MessageArchiveSheet(
+                session: session,
+                message: message,
+                senderDisplayValue: summary.sender.displayValue
+            )
+        }
         .onAppear {
             // Seeded from the proposal so the screen opens on the plan the app actually
             // suggested, rather than on whichever action happens to be first in a menu.
@@ -60,6 +86,30 @@ struct SenderMessageReviewView: View {
     private var affectedCount: Int { reviewed.count(where: \.isAffectedByPlan) }
     private var protectedCount: Int { reviewed.count { $0.membership?.isProtected == true } }
 
+    /// What this screen can and cannot do, said before anything else on it.
+    ///
+    /// Conditional because the old sentence — "no message is opened, moved, or changed" —
+    /// stopped being true on this exact screen the moment archiving arrived. It is still true
+    /// where the app genuinely cannot write, and saying so there is worth doing; saying it
+    /// beside a working Archive button would be worse than saying nothing.
+    private var disclaimer: String {
+        let preamble = "These are the \(reviewed.count) messages InboxSweep has loaded from this sender."
+        guard session.canOfferArchiving else {
+            return "\(preamble) Nothing on this screen is sent to Gmail, and no message is opened, moved, or changed."
+        }
+        return """
+            \(preamble) No message is opened — there is no message body to show. The only thing \
+            that changes your mailbox is Archive, which acts on one message you select and \
+            confirm, and can be undone.
+            """
+    }
+
+    /// The selected row, when exactly one is selected and it is still in the window.
+    private var selectedMessage: MailMessage? {
+        guard let selectedMessageID else { return nil }
+        return reviewed.first { $0.id == selectedMessageID }?.message
+    }
+
     // MARK: - Sections
 
     private var header: some View {
@@ -70,11 +120,11 @@ struct SenderMessageReviewView: View {
                 .accessibilityIdentifier("messageReview.screen")
 
             Label {
-                Text("These are the \(reviewed.count) messages InboxSweep has loaded from this sender. Nothing on this screen is sent to Gmail, and no message is opened, moved, or changed.")
+                Text(disclaimer)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("messageReview.disclaimer")
             } icon: {
-                Image(systemName: "eye")
+                Image(systemName: session.canOfferArchiving ? "archivebox" : "eye")
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -111,9 +161,49 @@ struct SenderMessageReviewView: View {
             }
 
             Spacer()
+
+            archiveControl
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+
+    /// The app's only route to changing a mailbox.
+    ///
+    /// Shown at all only when the provider can write — the synthetic mailbox gets nothing, not
+    /// a disabled button promising something it could never do. When the provider can write but
+    /// the grant does not cover it, the control becomes the request for that permission, which
+    /// keeps consenting and archiving two separate presses.
+    @ViewBuilder
+    private var archiveControl: some View {
+        if session.canOfferArchiving {
+            if session.archiveCapability.isGranted {
+                Button {
+                    // Read from the table, not from a proposal, a plan, or a recommendation.
+                    // This assignment is the only thing in the app that opens a confirmation,
+                    // and only a person pressing this button performs it.
+                    messagePendingArchive = selectedMessage
+                } label: {
+                    Label("Archive message…", systemImage: "archivebox")
+                }
+                .disabled(selectedMessage == nil || session.isMutating)
+                .help(
+                    selectedMessage == nil
+                        ? "Select one message to archive it. Archiving removes it from your Inbox; it does not delete it."
+                        : "Asks you to confirm, then removes this one message from your Inbox. It is not deleted, and you can undo it."
+                )
+                .accessibilityIdentifier("messageReview.archiveButton")
+            } else {
+                Button {
+                    session.requestArchivePermission()
+                } label: {
+                    Label("Enable archiving…", systemImage: "lock")
+                }
+                .disabled(session.isMutating)
+                .help("InboxSweep needs one more Gmail permission before it can archive a message you pick. Nothing is archived by granting it.")
+                .accessibilityIdentifier("messageReview.enableArchivingButton")
+            }
+        }
     }
 
     @ViewBuilder
@@ -131,7 +221,7 @@ struct SenderMessageReviewView: View {
             .frame(maxHeight: .infinity)
             .accessibilityIdentifier("messageReview.empty")
         } else {
-            Table(visible) {
+            Table(visible, selection: $selectedMessageID) {
                 TableColumn("Subject") { row in
                     Text(row.message.subject ?? "No subject")
                         .foregroundStyle(row.message.subject == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
@@ -212,10 +302,24 @@ struct SenderMessageReviewView: View {
             }
 
             HStack {
-                Text(CleanupPlan.disclaimer)
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(CleanupPlan.disclaimer)
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if session.canOfferArchiving {
+                        // Said here because this screen shows both things at once: a preview of
+                        // what a whole-sender cleanup *would* do, and a button that really
+                        // archives one message. Leaving the difference implicit would be the
+                        // easiest way for someone to believe the preview was about to run.
+                        Text("Archiving one selected message is the only change InboxSweep can make, and it asks first. The preview above is not something it can carry out.")
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("messageReview.archiveScopeNote")
+                    }
+                }
 
                 Spacer(minLength: 12)
 

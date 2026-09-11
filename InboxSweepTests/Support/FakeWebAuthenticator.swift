@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 @testable import InboxSweep
 
 /// Stands in for the Google consent window.
@@ -74,6 +75,24 @@ struct FakeWebAuthenticator: WebAuthenticating {
     /// The user closed the sign-in window.
     static func cancelling() -> FakeWebAuthenticator {
         FakeWebAuthenticator { _, _ in throw MailProviderError.cancelled }
+    }
+
+    /// Signs in successfully, then closes the window on every later authorization.
+    ///
+    /// The shape a permission upgrade needs: the session has to exist before it can be upgraded,
+    /// so an authenticator that refused the first sign-in too would never reach the case under
+    /// test.
+    static func grantingThenCancelling(code: String = "auth-code") -> FakeWebAuthenticator {
+        let hasGranted = Mutex(false)
+        return FakeWebAuthenticator { url, scheme in
+            let isFirst = hasGranted.withLock { granted -> Bool in
+                defer { granted = true }
+                return !granted
+            }
+            guard isFirst else { throw MailProviderError.cancelled }
+            let state = Self.queryValue("state", in: url) ?? ""
+            return URL(string: "\(scheme):/oauth2redirect?code=\(code)&state=\(state)")!
+        }
     }
 
     static func queryValue(_ name: String, in url: URL) -> String? {

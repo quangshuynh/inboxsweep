@@ -4,8 +4,9 @@ import SwiftUI
 ///
 /// Answers the two questions an aggregate row raises: "what does InboxSweep make of this?" and
 /// "which messages are these?". The proposal and its full reasoning come first, then the
-/// counts and observations behind them, then the messages themselves. It offers no action, in
-/// keeping with the app being read-only.
+/// counts and observations behind them, then the messages themselves. It offers no action of
+/// its own: **Review…** opens the screen where a single message can be archived, and this
+/// inspector stays a view of a sender rather than a place a sender can be acted on.
 struct SenderDetailView: View {
 
     let summary: SenderSummary

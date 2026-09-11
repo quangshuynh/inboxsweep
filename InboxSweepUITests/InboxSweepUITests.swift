@@ -28,6 +28,10 @@ final class InboxSweepUITests: XCTestCase {
             app.descendants(matching: .any)["privacy.notice"].exists,
             "The signed-out screen should state the privacy posture before asking for anything"
         )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["signedOut.permissions"].exists,
+            "Both Gmail permissions must be named before the user is sent to Google's consent screen"
+        )
     }
 
     @MainActor
@@ -176,7 +180,14 @@ final class InboxSweepUITests: XCTestCase {
             "The review should be sortable"
         )
 
-        // Reviewing is looking. There is nothing here that acts on a message.
+        // The sample mailbox is not a real account, so `SampleMailProvider` vends no mutation
+        // boundary and the Archive control is absent rather than disabled. That absence is
+        // worth asserting: it is the app's guarantee that a synthetic run cannot reach a write
+        // even by accident, and it holds because there is no archiver, not because a view
+        // remembered to check.
+        XCTAssertFalse(app.buttons["messageReview.archiveButton"].exists)
+        XCTAssertFalse(app.buttons["messageReview.enableArchivingButton"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
         XCTAssertFalse(app.buttons["Archive"].exists)
         XCTAssertFalse(app.buttons["Delete"].exists)
         XCTAssertFalse(app.buttons["Unsubscribe"].exists)

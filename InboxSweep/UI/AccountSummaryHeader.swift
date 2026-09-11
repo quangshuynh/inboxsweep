@@ -16,9 +16,14 @@ struct AccountSummaryHeader: View {
                     .lineLimit(1)
                     .accessibilityIdentifier("dashboard.accountLabel")
 
-                Text("Connected to \(snapshot.account.providerDisplayName) · read-only")
+                // "· read-only" used to sit here. It stopped being true when the app gained a
+                // single-message archive, and a standing claim under the account name is the
+                // worst place to leave one: it is on screen at all times and reads as a
+                // guarantee about the whole app.
+                Text("Connected to \(snapshot.account.providerDisplayName) · reads your mail; archives only what you confirm")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("dashboard.accessLabel")
 
                 if let coverage = coverageDescription {
                     Text(coverage)

@@ -26,9 +26,36 @@ nonisolated struct GmailStoredCredentials: Sendable, Equatable, Codable {
     let grantedScopes: [String]
     let accountEmailAddress: String
 
-    /// Whether the stored grant still covers everything the app needs to read.
-    var coversRequestedScopes: Bool {
-        GmailScope.requested.allSatisfy(grantedScopes.contains)
+    /// Whether the stored grant still covers everything the app needs to *read*.
+    ///
+    /// Deliberately not "covers everything requested". Since the archive permission was added,
+    /// a grant stored by an earlier version covers reading and not archiving — and that grant
+    /// is perfectly good. Discarding it would sign out every existing user over a capability
+    /// they have not asked to use, so the two questions are asked separately and only this one
+    /// decides whether a stored credential is usable.
+    var coversReadScopes: Bool {
+        GmailScope.coversReading(grantedScopes)
+    }
+
+    /// Whether the stored grant covers archiving.
+    ///
+    /// `false` for every credential written before the archive permission existed, which is
+    /// the state the upgrade flow is there to resolve.
+    var coversArchiveScopes: Bool {
+        GmailScope.coversArchiving(grantedScopes)
+    }
+
+    /// The same credential with a new record of what was granted.
+    ///
+    /// Used after a permission upgrade that returned no new refresh token — Google omits one
+    /// when the client already holds a valid grant — so the scope record is brought up to date
+    /// without throwing away the refresh token that still works.
+    func replacingGrantedScopes(_ scopes: [String]) -> GmailStoredCredentials {
+        GmailStoredCredentials(
+            refreshToken: refreshToken,
+            grantedScopes: scopes,
+            accountEmailAddress: accountEmailAddress
+        )
     }
 }
 

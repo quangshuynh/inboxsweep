@@ -44,6 +44,12 @@ actor StubMailProvider: MailProvider {
     private var restoreOutcome: MailRestoreOutcome
     /// What ``storedAuthorizationState()`` reports after a connect or restore.
     private var authorizationState: StoredAuthorizationState
+
+    /// The mutation boundary this provider vends, or `nil` for a provider that cannot write.
+    ///
+    /// `nonisolated let` so it is the same object for the life of the provider: the session
+    /// reads it once at construction, exactly as it does with the real adapter.
+    nonisolated let messageArchiver: (any MailMessageArchiving)?
     /// What ``disconnect()`` reports, so a test can drive the sign-out notices without needing
     /// a Keychain that refuses.
     private var disconnectOutcome: MailDisconnectOutcome = .complete
@@ -53,10 +59,12 @@ actor StubMailProvider: MailProvider {
         fetch: FetchBehavior = .pages([.empty]),
         restorable: MailConnection = .disconnected,
         restoreOutcome: MailRestoreOutcome? = nil,
-        authorizationState: StoredAuthorizationState = .unknown
+        authorizationState: StoredAuthorizationState = .unknown,
+        archiver: (any MailMessageArchiving)? = nil
     ) {
         self.connectBehavior = connect
         self.fetchBehavior = fetch
+        self.messageArchiver = archiver
         self.restoreOutcome = restoreOutcome
             ?? restorable.account.map(MailRestoreOutcome.restored)
             ?? .noStoredCredentials
@@ -117,6 +125,12 @@ actor StubMailProvider: MailProvider {
         disconnectOutcome = outcome
     }
 
+    /// Replaces the connected account without a sign-in, so a test can reproduce the account
+    /// changing between choosing a message and confirming it.
+    func setConnection(_ connection: MailConnection) {
+        self.connection = connection
+    }
+
     /// Changes behaviour mid-test, e.g. to make a retry succeed after a failure.
     func setFetchBehavior(_ behavior: FetchBehavior) {
         fetchBehavior = behavior
@@ -125,7 +139,10 @@ actor StubMailProvider: MailProvider {
 }
 
 extension MailAccount {
-    static let testAccount = MailAccount(
+    /// `nonisolated` because the project compiles with `MainActor` as the default isolation,
+    /// which would otherwise make this constant main-actor-isolated and therefore unusable as a
+    /// default argument in an actor's initializer.
+    nonisolated static let testAccount = MailAccount(
         emailAddress: EmailAddressParser.parse("Sample User <sample.user@example.com>"),
         providerDisplayName: "Stub",
         providerMessageCount: 1_234

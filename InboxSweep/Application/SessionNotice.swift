@@ -37,8 +37,8 @@ nonisolated struct SessionNotice: Equatable, Sendable, Identifiable {
         symbolName: "lock.rotation",
         title: "InboxSweep needs to ask for its permission again",
         message: """
-            The saved sign-in doesn't cover the read-only permission this version asks for, so it \
-            was discarded. Connecting again will request it.
+            The saved sign-in doesn't cover the permission this version needs to read your mail, \
+            so it was discarded. Connecting again will request it.
             """
     )
 
@@ -67,6 +67,21 @@ nonisolated struct SessionNotice: Equatable, Sendable, Identifiable {
             message: reason
         )
     }
+
+    // MARK: - Archiving
+
+    /// The user was asked for the archive permission and did not grant it.
+    ///
+    /// Not an error screen, because nothing failed: the read-only session they already had is
+    /// exactly as it was, and every part of the app except the Archive button still works. The
+    /// notice exists so the button staying unavailable is explained rather than mysterious.
+    static let archivePermissionDeclined = SessionNotice(
+        symbolName: "hand.raised",
+        title: "InboxSweep still can't archive",
+        message: """
+            The extra Gmail permission wasn't granted, so the Archive action stays unavailable.             Everything else works as before, your mailbox was not changed, and you can grant it             later from the message review screen.
+            """
+    )
 
     // MARK: - Disconnect
 

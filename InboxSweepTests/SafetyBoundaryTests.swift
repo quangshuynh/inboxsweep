@@ -2,53 +2,88 @@ import Foundation
 import Testing
 @testable import InboxSweep
 
-/// Guards the promise this interval makes: InboxSweep reads, and cannot write.
+/// Guards the promise the app makes about what it can do to a mailbox.
 ///
-/// These are not tests of a feature — they are tests of an *absence*. They exist so that a
-/// later change which quietly adds a mutating scope, a non-GET Gmail call, or a message body
-/// to the domain model fails here rather than in someone's mailbox.
+/// These are mostly tests of an *absence*. They exist so that a change which quietly adds a
+/// mutating scope, a second kind of write, a bulk operation, or a message body to the domain
+/// model fails here rather than in someone's mailbox.
 ///
-/// Interval 3 adds cleanup *proposals* and a dry-run planner, which is exactly the point at
-/// which the boundary is most likely to slip: the app now names the actions it would take.
-/// The cases under "Cleanup previews" assert that naming them is all it does.
-@Suite("Read-only safety boundary")
+/// Interval 6 is the first one where the answer stopped being "nothing". The app can now remove
+/// the `INBOX` label from one message the user picked and confirmed, and put it back. That makes
+/// this suite more important rather than less: the interesting property is no longer "there are
+/// no writes" but "there are exactly two, they are the two documented here, and nothing except a
+/// person pressing a button can reach them". Each section below pins down one part of that.
+@Suite("Mailbox safety boundary")
 struct SafetyBoundaryTests {
 
     // MARK: - Permissions
 
-    @Test("Exactly one Gmail scope is requested, and it is the metadata scope")
-    func requestsOnlyMetadataScope() {
-        #expect(GmailScope.requested == ["https://www.googleapis.com/auth/gmail.metadata"])
+    @Test("Exactly two Gmail scopes are requested: metadata to read, modify to archive")
+    func requestsOnlyTheTwoNeededScopes() {
+        #expect(GmailScope.requested == [
+            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.modify",
+        ])
     }
 
-    @Test("No scope that could change, send, or delete mail is ever requested")
-    func requestsNoMutatingScope() {
-        for scope in GmailScope.prohibitedForReadOnlyOperation {
-            #expect(!GmailScope.requested.contains(scope), "Requested a mutating scope: \(scope)")
+    @Test("No scope is requested that could send, permanently delete, or change settings")
+    func requestsNoProhibitedScope() {
+        for scope in GmailScope.prohibited {
+            #expect(!GmailScope.requested.contains(scope), "Requested a prohibited scope: \(scope)")
             #expect(!GmailScope.requestedScopeParameter.contains(scope))
         }
     }
 
-    @Test("The requested scope does not grant access to message bodies")
-    func requestsNoBodyAccess() {
-        // `gmail.readonly` would work for this interval's features but would also hand the
-        // app every message body. The narrower scope is the point.
+    @Test("The full-access scope, the one that permits permanent deletion, is never requested")
+    func requestsNoFullAccessScope() {
+        // `https://mail.google.com/` is the one that would let the app delete mail outright,
+        // with no Trash to recover it from. `gmail.modify` deliberately stops short of that,
+        // and this is the line the app will not cross.
+        #expect(GmailScope.prohibited.contains("https://mail.google.com/"))
+        #expect(!GmailScope.requested.contains("https://mail.google.com/"))
+    }
+
+    @Test("The requested scopes do not include the body-reading read scope")
+    func requestsNoBodyReadScope() {
+        // `gmail.modify` does imply body access — Google grants no narrower permission that can
+        // archive — so the limit that matters is enforced by the request surface below rather
+        // than by the scope. What is still true, and worth keeping true, is that the app never
+        // asks for `gmail.readonly`, and never asks Gmail for a body format.
         #expect(!GmailScope.requested.contains("https://www.googleapis.com/auth/gmail.readonly"))
+    }
+
+    @Test("Reading and archiving are separate permissions, and only reading is required")
+    func archivingIsASeparatePermission() {
+        // The property that keeps an existing read-only user signed in: a grant covering only
+        // the read scope is usable, and only the archive action is unavailable.
+        #expect(GmailScope.coversReading([GmailScope.metadata]))
+        #expect(!GmailScope.coversArchiving([GmailScope.metadata]))
+        #expect(GmailScope.coversArchiving(GmailScope.requested))
+
+        let readOnlyGrant = GmailStoredCredentials(
+            refreshToken: "synthetic",
+            grantedScopes: [GmailScope.metadata],
+            accountEmailAddress: "someone@example.com"
+        )
+        #expect(readOnlyGrant.coversReadScopes)
+        #expect(!readOnlyGrant.coversArchiveScopes)
     }
 
     // MARK: - Request surface
 
-    @Test("Every Gmail API request the app can build is a GET")
+    @Test("Every read request the app can build is a GET")
     func buildsOnlyReadRequests() {
         for request in GmailAPIEndpoint.allRequestBuilders() {
-            #expect(request.method == "GET", "Non-GET Gmail request: \(request.url)")
+            #expect(request.method == "GET", "Non-GET Gmail read request: \(request.url)")
         }
     }
 
-    @Test("No Gmail write endpoint is reachable from any request the app can build")
+    @Test("No Gmail write endpoint is reachable from the read request builders")
     func buildsNoWriteEndpoint() {
         // Gmail's mutating operations all live at named paths. A future change that adds one
-        // has to add a builder for it, and a builder for it shows up here.
+        // to the *read* builders has to add a builder for it, and a builder for it shows up
+        // here. `modify` is in this list too: the two legitimate modify requests live in a
+        // different type, which is checked separately below.
         let writePathFragments = [
             "modify", "batchModify", "trash", "untrash", "delete", "batchDelete",
             "send", "import", "insert", "labels", "settings", "watch", "stop",
@@ -59,10 +94,165 @@ struct SafetyBoundaryTests {
             for fragment in writePathFragments {
                 #expect(
                     !path.contains(fragment.lowercased()),
-                    "Gmail request reaches a mutating path: \(request.url)"
+                    "Gmail read request reaches a mutating path: \(request.url)"
                 )
             }
         }
+    }
+
+    // MARK: - The mutation surface
+    //
+    // The whole of what this app can do to a mailbox, enumerated. If any assertion in this
+    // section has to be changed, the change is the point — it means the app's power over
+    // somebody's mail has grown, and that should never happen as a side effect.
+
+    @Test("There are exactly two mutating requests, and both are message-level modify calls")
+    func buildsExactlyTwoMutations() {
+        let requests = GmailMutationEndpoint.allRequestBuilders()
+        #expect(requests.count == 2, "The app can build \(requests.count) mutating requests")
+
+        for request in requests {
+            #expect(request.method == "POST")
+            // `/users/me/messages/{id}/modify` — one message, named individually.
+            #expect(request.url.path().hasSuffix("/messages/message-id/modify"))
+            #expect(!request.url.path().contains("/threads/"), "A mutation reached the thread endpoint")
+        }
+    }
+
+    @Test("The only mutation bodies that exist add or remove the Inbox label, and nothing else")
+    func mutationBodiesOnlyTouchInbox() throws {
+        for request in GmailMutationEndpoint.allRequestBuilders() {
+            let body = try JSONDecoder().decode(
+                GmailMailboxStub.ModifyLabelsBody.self,
+                from: request.body
+            )
+
+            let touched = (body.addLabelIds ?? []) + (body.removeLabelIds ?? [])
+            #expect(touched == ["INBOX"], "A mutation touched labels other than INBOX: \(touched)")
+
+            // Belt and braces: the raw bytes name one label, so no extra key could be smuggled
+            // past a decoder that ignores unknown fields.
+            let raw = String(decoding: request.body, as: UTF8.self)
+            #expect(!raw.contains("TRASH"))
+            #expect(!raw.contains("SPAM"))
+            #expect(!raw.contains("UNREAD"))
+            #expect(!raw.contains("STARRED"))
+            #expect(raw.filter { $0 == ":" }.count == 1, "A mutation body carried more than one instruction")
+        }
+
+        // Archive removes, undo adds. Neither does both, which is what would be needed to
+        // express "take it out of the inbox and put it somewhere else".
+        let archive = GmailMutationEndpoint.removeFromInbox(messageID: MailMessageID("m-1"))
+        let undo = GmailMutationEndpoint.restoreToInbox(messageID: MailMessageID("m-1"))
+        #expect(String(decoding: archive.body, as: UTF8.self) == #"{"removeLabelIds":["INBOX"]}"#)
+        #expect(String(decoding: undo.body, as: UTF8.self) == #"{"addLabelIds":["INBOX"]}"#)
+    }
+
+    @Test("No mutating request reaches trash, delete, send, settings, or a batch endpoint")
+    func mutationsReachNoDestructiveEndpoint() {
+        let forbidden = [
+            "trash", "untrash", "delete", "batchdelete", "batchmodify", "send", "drafts",
+            "import", "insert", "settings", "watch", "stop", "labels", "threads",
+        ]
+
+        for request in GmailMutationEndpoint.allRequestBuilders() {
+            let url = request.url.absoluteString.lowercased()
+            for fragment in forbidden {
+                #expect(!url.contains(fragment), "A mutation reached \(fragment): \(request.url)")
+            }
+        }
+    }
+
+    @Test("A message identifier cannot inject a path segment of its own")
+    func identifiersCannotEscapeTheirSegment() {
+        // Identifiers come from Gmail's responses, not from the user, so this is not a hole
+        // anybody can reach today. It is checked anyway because the request builders are the
+        // app's narrowest claim about which endpoints it can reach, and one of them now writes.
+        let hostile = MailMessageID("m-1/../../settings/forwarding")
+
+        for url in [
+            GmailMutationEndpoint.removeFromInbox(messageID: hostile).url,
+            GmailMutationEndpoint.restoreToInbox(messageID: hostile).url,
+            GmailAPIEndpoint.messageMetadata(id: hostile).url,
+        ] {
+            // `pathComponents` decodes each segment, so the whole hostile identifier appearing
+            // as *one* component is the proof that its slashes were encoded rather than
+            // honoured. Six fixed segments, the identifier, and — for a mutation — `modify`.
+            let components = url.pathComponents
+            let fixed = ["/", "gmail", "v1", "users", "me", "messages"]
+            #expect(Array(components.prefix(6)) == fixed)
+            #expect(components[6] == hostile.rawValue, "The identifier spread across path segments")
+            #expect(components.count <= 8)
+            #expect(components.last == "modify" || components.count == 7)
+            #expect(!components.contains("settings"), "An identifier reached the settings endpoint")
+            #expect(!components.contains(".."))
+        }
+    }
+
+    @Test("The mutation boundary offers archiving and undo, and nothing else at all")
+    func mutationBoundaryIsTwoOperations() {
+        // Named here so that the protocol's shape is checked rather than remembered. Adding a
+        // `trash`, a `markRead`, a `setLabel`, or an `archiveAll` to `MailMessageArchiving`
+        // means editing this list, which means saying so out loud.
+        let boundaryMethodNames = ["archiveCapability", "authorizeArchiving", "archive", "restoreToInbox"]
+        let forbidden = [
+            "trash", "delete", "send", "unsubscribe", "markread", "markunread", "star",
+            "label", "batch", "all", "bulk", "sender", "execute", "apply", "plan", "schedule",
+        ]
+
+        for name in boundaryMethodNames {
+            for verb in forbidden {
+                #expect(
+                    !name.lowercased().contains(verb),
+                    "The mutation boundary gained something beyond archive and undo: \(name)"
+                )
+            }
+        }
+    }
+
+    @Test("A mutation request names one message and one account, and carries no plan")
+    func mutationRequestsAreSingular() {
+        let request = MailArchiveRequest(
+            messageID: MailMessageID("m-1"),
+            accountAddress: "someone@example.com"
+        )
+
+        // One identifier, not a list. There is no shape of this type that could ask for more
+        // than one message, and nothing on it that names a sender, an action, or a plan.
+        let propertyNames = Set(Mirror(reflecting: request).children.compactMap(\.label))
+        #expect(propertyNames == ["messageID", "accountAddress", "operationID"])
+        #expect(propertyNames.isDisjoint(with: [
+            "messageIDs", "messages", "senderKey", "senderKeys", "action", "plan", "labels", "query",
+        ]))
+
+        // And exactly two operations exist to ask for.
+        #expect(MailMutationOperation.allCases.count == 2)
+        #expect(Set(MailMutationOperation.allCases.map(\.rawValue)) == ["archive", "restoreToInbox"])
+    }
+
+    @Test("A mutation record holds no mail")
+    func mutationRecordsHoldNoMail() {
+        let record = MailMutationRecord(
+            id: UUID(),
+            operation: .archive,
+            messageID: MailMessageID("m-1"),
+            accountAddress: "someone@example.com",
+            occurredAt: .now,
+            outcome: .confirmed
+        )
+
+        let propertyNames = Set(Mirror(reflecting: record).children.compactMap(\.label))
+        #expect(propertyNames == ["id", "operation", "messageID", "accountAddress", "occurredAt", "outcome"])
+        #expect(propertyNames.isDisjoint(with: [
+            "subject", "sender", "from", "body", "snippet", "receivedAt", "labels",
+        ]))
+
+        // The file format carries even less: the account address is written once at the top of
+        // the file, not copied onto every entry.
+        let entryProperties = Set(
+            Mirror(reflecting: MutationRecordDTO.entry(from: record)).children.compactMap(\.label)
+        )
+        #expect(entryProperties == ["id", "operation", "messageID", "occurredAt", "outcome"])
     }
 
     @Test("Message requests ask for metadata, never for full or raw content")
@@ -291,7 +481,11 @@ struct SafetyBoundaryTests {
         for action in PlannedCleanupAction.offered {
             #expect(action.previewVerbPhrase.hasPrefix("would be"))
         }
-        #expect(CleanupPlan.disclaimer.contains("no permission"))
+        // The disclaimer had to be reworded when the app gained an archive, because "no
+        // permission to archive any message" stopped being true. What it claims now is the part
+        // that still is, and it is the part this screen needs: a preview cannot be carried out.
+        #expect(CleanupPlan.disclaimer.contains("Nothing here can be carried out"))
+        #expect(CleanupPlan.disclaimer.contains("cannot archive a sender"))
     }
 
     // MARK: - Message review and saved plans
@@ -413,13 +607,11 @@ struct SafetyBoundaryTests {
         #expect(await provider.connectCallCount == 0, "Restoring a plan re-authorized")
     }
 
-    @Test("The provider boundary offers nothing that could carry a plan out")
-    func providerBoundaryHasNoMutatingOperation() {
-        // The absence is structural: `MailMessageFetching` has exactly one method and it
-        // fetches. A future interval that adds an execute path has to add it here, and adding
-        // it here is a change to a file whose whole purpose is to say it does not exist.
-        //
-        // Named in a test so that "there is no such method" is checked rather than remembered.
+    @Test("The read boundary still offers nothing that could change a mailbox")
+    func readBoundaryHasNoMutatingOperation() {
+        // The separation this interval had to preserve. Archiving exists now, and it lives on
+        // its own protocol — `MailMessageFetching` still has exactly one method and it fetches.
+        // A future change that adds a write here rather than there has to edit this list.
         let forbidden = ["archive", "trash", "delete", "modify", "label", "markRead", "send", "unsubscribe", "execute", "apply", "perform"]
         let boundaryMethodNames = ["fetchMessages", "connect", "disconnect", "restoreConnection", "currentConnection", "storedAuthorizationState"]
 
@@ -427,9 +619,169 @@ struct SafetyBoundaryTests {
             for verb in forbidden {
                 #expect(
                     !name.lowercased().contains(verb.lowercased()),
-                    "A provider boundary method is named after a mutation: \(name)"
+                    "A read boundary method is named after a mutation: \(name)"
                 )
             }
+        }
+    }
+
+    @Test("A provider cannot write unless it deliberately vends a mutation boundary")
+    @MainActor
+    func providersAreReadOnlyByDefault() async {
+        // The default is the safe one, and the synthetic mailbox relies on it: no archiver
+        // means no code path to a mutation at all, rather than a guard somebody has to
+        // remember to write.
+        #expect(SampleMailProvider().messageArchiver == nil)
+        #expect(StubMailProvider().messageArchiver == nil)
+
+        let session = InboxSessionModel(provider: SampleMailProvider())
+        await session.connect().value
+        #expect(session.archiveCapability == .unsupported)
+        #expect(!session.canOfferArchiving)
+        #expect(!session.canArchive(messageID: MailMessageID("anything")))
+    }
+
+    // MARK: - Nothing reaches a mutation on its own
+    //
+    // The most important section in the suite. The app's write is reachable from exactly one
+    // place — a person selecting a message and confirming — and these cases exercise every
+    // *other* path that might plausibly grow into one.
+
+    @Test("Loading, previewing, saving a plan, and restoring one archive nothing")
+    @MainActor
+    func nothingButAnExplicitActionMutates() async throws {
+        let messages = ProposalFixtures.promotionalSender(count: 20) + ProposalFixtures.newsletterSender(count: 12)
+        let archiver = StubMessageArchiver()
+        let provider = StubMailProvider(
+            fetch: .pages([MailMessagePage(messages: messages)]),
+            archiver: archiver
+        )
+        let model = InboxSessionModel(provider: provider, fetchRequest: MailFetchRequest(limit: 40))
+
+        await model.connect().value
+        let snapshot = try #require(model.state.snapshot)
+
+        // Every read-and-reason operation the app has, including the ones whose names are verbs
+        // the app can now actually perform.
+        for sender in snapshot.senders {
+            _ = model.proposal(forSenderKey: sender.id)
+            _ = model.loadedMessages(forSenderKey: sender.id)
+            for action in PlannedCleanupAction.offered {
+                _ = model.reviewedMessages(forSenderKey: sender.id, under: action)
+                _ = model.cleanupPlan(for: [CleanupPlanRequest(senderKey: sender.id, action: action)])
+            }
+        }
+
+        await model.savePlan(
+            snapshot.senders.map { SavedCleanupSelection(senderKey: $0.id, action: .archiveMessagesOlderThan(days: 30)) }
+        ).value
+        await model.loadMore().value
+        model.sortOrder = .mostRecent
+        await model.reload().value
+
+        #expect(archiver.allRequests.isEmpty, "Something other than an explicit action archived")
+    }
+
+    @Test("A restored plan naming an archive action still archives nothing")
+    @MainActor
+    func restoringAPlanNamingArchiveArchivesNothing() async throws {
+        let messages = ProposalFixtures.promotionalSender(count: 20)
+        let key = messages[0].sender.groupingKey
+        let archiver = StubMessageArchiver()
+        let store = RecordingCleanupPlanStore(seeded: SavedCleanupPlan(
+            accountAddress: MailAccount.testAccount.emailAddress.address,
+            scope: .inbox,
+            // The action is literally called "archive messages older than a day", and every
+            // loaded message qualifies. Restoring it must still produce a preview and nothing
+            // more — there is no path from a saved plan to the mutation boundary.
+            selections: [SavedCleanupSelection(senderKey: key, action: .archiveMessagesOlderThan(days: 1))],
+            loadedMessageCount: 20,
+            savedAt: .now
+        ))
+        let provider = StubMailProvider(
+            fetch: .pages([MailMessagePage(messages: messages)]),
+            restorable: .connected(.testAccount),
+            archiver: archiver
+        )
+        let model = InboxSessionModel(
+            provider: provider,
+            planStore: store,
+            fetchRequest: MailFetchRequest(limit: 20)
+        )
+
+        await model.restore().value
+
+        let restored = try #require(model.savedPlan)
+        #expect(restored.usableSelections.first?.action == .archiveMessagesOlderThan(days: 1))
+        #expect(archiver.allRequests.isEmpty, "A restored plan reached the mutation boundary")
+        #expect(model.mutationActivity == nil)
+        #expect(model.undoableArchive == nil)
+    }
+
+    @Test("Archiving acts on one message and leaves every other one alone")
+    @MainActor
+    func archivingIsSingularInPractice() async throws {
+        let messages = ProposalFixtures.promotionalSender(count: 12)
+        let archiver = StubMessageArchiver()
+        let provider = StubMailProvider(
+            fetch: .pages([MailMessagePage(messages: messages)]),
+            archiver: archiver
+        )
+        let model = InboxSessionModel(provider: provider, fetchRequest: MailFetchRequest(limit: 12))
+
+        await model.connect().value
+        let target = messages[3].id
+        await model.archiveMessage(target).value
+
+        let requests = archiver.allRequests
+        #expect(requests.count == 1, "One confirmation produced \(requests.count) mutations")
+        #expect(requests.first?.messageID == target)
+
+        // The other eleven are untouched, and the window still holds them.
+        let key = messages[0].sender.groupingKey
+        let remaining = model.loadedMessages(forSenderKey: key)
+        #expect(remaining.count == 11)
+        #expect(!remaining.contains { $0.id == target })
+    }
+
+    @Test("No Gmail write goes out except the one modify the user confirmed")
+    @MainActor
+    func liveTrafficCarriesExactlyOneMutation() async throws {
+        var stub = GmailMailboxStub(messages: GmailFixtures.mailbox(messageCount: 8))
+        stub.grantedScope = GmailScope.requestedScopeParameter
+        let transport = RecordingHTTPTransport(handler: stub.handler())
+        let provider = GmailProvider(
+            configuration: GmailOAuthConfiguration(clientID: "1234567890-abcdef.apps.googleusercontent.com"),
+            transport: transport,
+            webAuthenticator: FakeWebAuthenticator.granting(),
+            credentialStore: InMemoryCredentialStore(),
+            retryPolicy: .immediate
+        )
+        let model = InboxSessionModel(provider: provider, fetchRequest: MailFetchRequest(limit: 8))
+
+        await model.connect().value
+        let snapshot = try #require(model.state.snapshot)
+        let target = try #require(model.loadedMessages(forSenderKey: snapshot.senders[0].id).first).id
+
+        // Preview everything first, then archive one message, then undo it.
+        for sender in snapshot.senders {
+            for action in PlannedCleanupAction.offered {
+                _ = model.cleanupPlan(for: [CleanupPlanRequest(senderKey: sender.id, action: action)])
+            }
+        }
+        await model.archiveMessage(target).value
+        await model.undoLastArchive().value
+
+        let gmailWrites = transport.requests.filter {
+            ($0.url?.host ?? "").contains("gmail.googleapis.com") && $0.httpMethod != "GET"
+        }
+        #expect(gmailWrites.count == 2, "Expected one archive and one undo, got \(gmailWrites.count) writes")
+
+        for write in gmailWrites {
+            #expect(write.httpMethod == "POST")
+            #expect(write.url?.path().hasSuffix("/messages/\(target.rawValue)/modify") == true)
+            let body = String(decoding: write.httpBody ?? Data(), as: UTF8.self)
+            #expect(body == #"{"removeLabelIds":["INBOX"]}"# || body == #"{"addLabelIds":["INBOX"]}"#)
         }
     }
 
