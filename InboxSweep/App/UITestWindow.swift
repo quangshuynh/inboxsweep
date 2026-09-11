@@ -1,11 +1,13 @@
 #if DEBUG
 import AppKit
+import Observation
 
-/// Puts the window under test on a screen of its own, at a known size, in front of everything else.
+/// Puts the window under test on a screen of its own, at a known size, in front of everything
+/// else, and says out loud whether it got there.
 ///
 /// ### Why this exists
 ///
-/// Two UI cases — the proposal/dry-run journey and the message review — failed for two intervals
+/// Two UI cases (the proposal/dry-run journey and the message review) failed for two intervals
 /// with `Unable to find hit point for ScrollView`. The cause was not the app. Every case that
 /// only *asserted* passed; every case that *clicked* failed, and the runner's own log named the
 /// reason:
@@ -17,11 +19,11 @@ import AppKit
 /// ```
 ///
 /// Those two cover the whole 1,680-point width of the display. With them on screen, **nothing in
-/// InboxSweep is hittable** — measured, not assumed: a probe reported `isHittable == false` for
-/// the sender name, for the *Preview cleanup* button, for the filter picker, and for a line of
-/// text in the footer. That last one matters, because it rules out the explanation the previous
-/// interval reached for. The toolbar was never the problem; a toolbar button is simply one more
-/// control on a window that no click could reach.
+/// InboxSweep is hittable**: measured, not assumed, with a probe that reported `isHittable ==
+/// false` for the sender name, for the *Preview cleanup* button, for the filter picker, and for a
+/// line of text in the footer. That last one matters, because it rules out the explanation the
+/// earlier interval reached for. The toolbar was never the problem; a toolbar button is simply
+/// one more control on a window that no click could reach.
 ///
 /// ### What it does about it
 ///
@@ -34,10 +36,9 @@ import AppKit
 /// - **Full screen**, which is the one that actually works.
 ///
 /// A full-screen macOS window gets a Space of its own. Every other application's windows are on
-/// a different Space, so they are not merely below InboxSweep's window in a z-order — they are
+/// a different Space, so they are not merely below InboxSweep's window in a z-order: they are
 /// not on screen at all, there is nothing for the runner to report as interrupting, and the app
-/// under test is unambiguously the frontmost application. With it, the two long-red cases pass
-/// and every control in the app is hittable.
+/// under test is unambiguously the frontmost application.
 ///
 /// What was tried before and did not work, kept here so it is not tried again: `NSApplication`
 /// activation in both its polite and impolite forms, `orderFrontRegardless()` on every window and
@@ -46,72 +47,155 @@ import AppKit
 /// than through which window is drawn on top), `XCUIApplication.activate()` from the runner, and
 /// clicking a table row rather than the sender's name.
 ///
+/// ### Why Interval 11 rewrote it
+///
+/// The Interval 9 version applied the geometry **once**, on the first `onAppear`, and then
+/// assumed it had worked. It had no way to know, and one measured run of the suite shows that it
+/// does not always work. In `testConfirmedOneClickUnsubscribeIsRecordedCautiously`, launched
+/// immediately after a case that had itself timed out, the sender table existed at t=6.7s, the
+/// sender's name took a further twenty seconds to appear, and then reported `isHittable == false`
+/// for the next twenty until the case failed. That is the Interval 9 symptom exactly, in a suite
+/// that had supposedly fixed it, and the difference is timing: terminating an app that owns a
+/// full-screen Space destroys that Space, and a `toggleFullScreen(_:)` issued while macOS is
+/// still tearing the old one down is dropped silently. The window then stays on the shared Space
+/// with the developer's other windows over it, and every control in the app is unreachable for
+/// the life of that case.
+///
+/// So the placement is now a small state machine rather than a single statement:
+///
+/// - it re-asserts the request, bounded, until the window reports `styleMask.contains(.fullScreen)`
+///   rather than until a timer expires;
+/// - it treats the full-screen notifications as the signal that the transition finished, rather
+///   than assuming the call was synchronous;
+/// - it publishes ``phase``, which ``RootView`` renders as a hidden accessibility element, so a
+///   failing case says *the window never became deterministic* instead of blaming whichever
+///   control the test happened to reach for next.
+///
 /// It is `#if DEBUG`, gated behind an explicit launch argument, and touches nothing but window
-/// geometry, activation, and full-screen state — no provider, no credential store, no view state.
+/// geometry, activation, and full-screen state: no provider, no credential store, no view state.
 /// A Release build does not contain it; a Debug build launched without the argument does not run
 /// it.
 ///
-/// It papers over nothing: a control that is genuinely unreachable — behind a sheet, below a
-/// scroll view's fold — still is, and the case still fails. All this removes from the test is the
+/// It papers over nothing. A control that is genuinely unreachable, behind a sheet or below a
+/// scroll view's fold, still is, and the case still fails. All this removes from the test is the
 /// rest of the desktop.
-enum UITestWindow {
+@MainActor
+@Observable
+final class UITestWindow {
 
     /// Launch argument that asks for the deterministic window.
     ///
     /// The test side of this string is `UITestLaunchArgument` in the UI test target, which cannot
     /// import this one: a UI test drives the app from outside its process.
-    static let launchArgument = "--ui-test-window"
+    nonisolated static let launchArgument = "--ui-test-window"
 
-    /// Large enough for the dashboard's six columns and the widest sheet the app presents —
-    /// ``SenderMessageReviewView`` asks for 900 — and small enough to sit on one display.
+    /// The accessibility identifier ``RootView`` publishes the current phase under.
+    ///
+    /// Present for the whole launch under the argument, with its label carrying
+    /// ``Phase/rawValue``, so a test can tell "the app never launched" from "the app launched and
+    /// its window never became deterministic". The test side of this string is
+    /// `UITestLaunchArgument.windowStateIdentifier`.
+    nonisolated static let stateIdentifier = "uiTest.windowState"
+
+    /// Large enough for the dashboard's six columns and the widest sheet the app presents
+    /// (``SenderMessageReviewView`` asks for 900) and small enough to sit on one display.
     ///
     /// Applied before the full-screen transition, so a window that cannot go full screen for any
     /// reason still comes up at a size the app's own content fits in.
-    static let contentSize = NSSize(width: 1_200, height: 760)
+    nonisolated static let contentSize = NSSize(width: 1_200, height: 760)
 
-    static var isRequested: Bool {
+    /// How long one full-screen transition is given before the request is made again.
+    ///
+    /// Chosen against a measurement rather than a feeling, and the measurement is printed by
+    /// ``logTransition(_:)`` on every instrumented run: across the launches of a full suite the
+    /// `didEnterFullScreen` notification arrives well inside a second of the toggle that asked
+    /// for it. A request that has produced nothing after two seconds has not been slow, it has
+    /// been dropped, and the only thing that recovers a dropped one is asking again.
+    ///
+    /// This is not a timeout on an assertion and it is not a sleep before one. Nothing waits on
+    /// it when the transition works, because the notification ends the wait on the next pass.
+    nonisolated static let retryInterval: Duration = .seconds(2)
+
+    /// How many times the request is re-issued before the app gives up and says so.
+    ///
+    /// Bounded so a Mac that genuinely cannot full-screen the window produces a clear
+    /// ``Phase/unavailable`` rather than a case that hangs until the runner's own timeout.
+    /// Five attempts across ``retryInterval`` is ten seconds, comfortably inside the window the
+    /// suite gives this and far outside anything a working transition needs.
+    nonisolated static let maximumAttempts = 5
+
+    /// How often the deterministic state is re-checked once it has been reached.
+    ///
+    /// Reaching the state is not enough, which is the second thing Interval 11 measured. In
+    /// `testConfirmedOneClickUnsubscribeIsRecordedCautiously` the window reported `ready` at
+    /// t=6.2s and the case ran normally until t=28.6s, at which point a control that had just
+    /// been found existing never became hittable again and had vanished from the accessibility
+    /// tree entirely by t=53s. That is what losing the foreground looks like from the runner's
+    /// side, and nothing in the Interval 9 harness was watching for it: the placement ran once at
+    /// launch and never looked again.
+    ///
+    /// So the state is now **held** as well as reached. Every half second the window is compared
+    /// against ``isDeterministic`` and, only if it has drifted, asked for again. Half a second is
+    /// chosen against the suite's own twenty-second element timeout: a foreground lost and
+    /// recovered inside a second cannot become a failure, and a check that costs one property
+    /// read is not worth spacing out further.
+    ///
+    /// This is not a sleep in front of an assertion. It runs in the app under test, it asserts
+    /// nothing, and on a launch where nothing drifts it performs no work at all beyond the
+    /// comparison.
+    nonisolated static let maintenanceInterval: Duration = .milliseconds(500)
+
+    static let shared = UITestWindow()
+
+    /// How far the deterministic window has got.
+    ///
+    /// Read by ``RootView`` and published to the accessibility tree. The only value a test treats
+    /// as go is ``Phase/ready``.
+    private(set) var phase: Phase = .notRequested
+
+    /// Where the placement has got to, in the order it gets there.
+    enum Phase: String, Sendable {
+
+        /// The launch argument was not given. The app is behaving exactly as it does for a user.
+        case notRequested
+
+        /// Requested, and the scene has not presented a window yet.
+        case waitingForWindow = "waitingForWindow"
+
+        /// A window exists and has been sized, centred, raised, and asked to go full screen.
+        case enteringFullScreen
+
+        /// The window is full screen, key, and belongs to the active application. Go.
+        case ready
+
+        /// The request was made ``maximumAttempts`` times and the window never went full screen.
+        ///
+        /// A real state rather than a silent fallback: the suite fails here, naming this, rather
+        /// than continuing onto a desktop where nothing is hittable and failing somewhere that
+        /// looks like the app's fault.
+        case unavailable
+    }
+
+    nonisolated static var isRequested: Bool {
         ProcessInfo.processInfo.arguments.contains(launchArgument)
     }
 
-    /// Whether the window has already been placed this launch.
-    @MainActor private static var hasPlacedWindow = false
+    /// The placement attempt, held so a second `onAppear` joins it rather than starting a rival.
+    private var placement: Task<Void, Never>?
 
-    /// Sizes, centres, raises, and full-screens the app's windows, if the argument was given.
+    private var observers: [any NSObjectProtocol] = []
+
+    private init() {}
+
+    /// Starts (or rejoins) the placement, if the argument was given.
     ///
-    /// Applied **once**. Re-running the geometry on every state change was tried and left the
-    /// app presenting no window at all while the signed-out screen was still settling.
-    ///
-    /// It reaches for `NSApplication.windows` rather than for the window behind a backing view.
-    /// Going through a backing view is the tidier-looking way to find an `NSWindow` from SwiftUI
-    /// and it was tried first; the window it hands back during launch is not the one the scene
-    /// ends up presenting, and configuring that one left the app windowless too.
-    @MainActor
+    /// Idempotent by construction: the first call starts the state machine, every later call
+    /// finds ``placement`` already running and returns. That matters because `onAppear` is not a
+    /// once-per-launch event, and because the Interval 9 version's `hasPlacedWindow` flag made
+    /// "already tried" and "actually worked" the same state.
     static func applyIfRequested() {
-        guard isRequested, !hasPlacedWindow else { return }
-        hasPlacedWindow = true
-
-        for window in NSApplication.shared.windows {
-            window.setContentSize(contentSize)
-            window.center()
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-            enterFullScreen(window)
-        }
-        forceToForeground()
-    }
-
-    /// Moves one window onto a Space of its own.
-    ///
-    /// `fullScreenPrimary` is inserted rather than assumed: a SwiftUI scene's window carries it
-    /// by default, and a window without it ignores `toggleFullScreen(_:)` silently. The
-    /// `styleMask` check keeps the call idempotent, because toggling a window that is already
-    /// full screen would put it back on the shared Space — which is the state this exists to
-    /// leave.
-    @MainActor
-    private static func enterFullScreen(_ window: NSWindow) {
-        window.collectionBehavior.insert(.fullScreenPrimary)
-        guard !window.styleMask.contains(.fullScreen) else { return }
-        window.toggleFullScreen(nil)
+        guard isRequested else { return }
+        shared.start()
     }
 
     /// Brings the app in front of every other application again.
@@ -122,13 +206,197 @@ enum UITestWindow {
     ///
     /// Secondary to the full-screen Space now rather than the mechanism. Kept because it costs
     /// nothing and covers the window between launch and the full-screen transition finishing.
-    @MainActor
     static func keepFrontmostIfRequested() {
         guard isRequested else { return }
+        shared.raise()
+    }
 
+    // MARK: - The state machine
+
+    private func start() {
+        guard placement == nil else { return }
+        observeFullScreenTransitions()
+        phase = .waitingForWindow
+
+        placement = Task { [weak self] in
+            guard let self else { return }
+            guard await reachDeterministicState() else { return }
+            await holdDeterministicState()
+        }
+    }
+
+    /// Asks for the deterministic window until it reports that it is in it, or gives up saying so.
+    ///
+    /// Bounded by ``maximumAttempts``. Returns whether it got there, so the caller does not start
+    /// holding a state that was never reached.
+    private func reachDeterministicState() async -> Bool {
+        for attempt in 0..<Self.maximumAttempts {
+            if placeAndCheck() { return true }
+
+            // Bounded, and only reached when the window is *not* in the state asked for. A
+            // transition that works ends this loop on the next pass, because the notification
+            // has already flipped the style mask by then.
+            _ = attempt
+            try? await Task.sleep(for: Self.retryInterval)
+            if phase == .ready { return true }
+        }
+
+        // Checked once more before giving up: the last attempt's transition may have landed
+        // while the final wait was running.
+        guard !placeAndCheck() else { return true }
+        phase = .unavailable
+        return false
+    }
+
+    /// Keeps the window in the state for the rest of the launch, re-asking only when it drifts.
+    ///
+    /// Runs until the process ends. It is what makes a foreground stolen halfway through a case a
+    /// half-second interruption rather than a failed test, and it is why ``phase`` is a live
+    /// reading rather than a record of what happened at launch.
+    private func holdDeterministicState() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.maintenanceInterval)
+            guard !Task.isCancelled else { return }
+            if isDeterministic {
+                if phase != .ready { phase = .ready }
+            } else {
+                _ = placeAndCheck()
+            }
+        }
+    }
+
+    /// One attempt: size, centre, raise, full-screen, and report whether the window got there.
+    ///
+    /// It reaches for `NSApplication.windows` rather than for the window behind a backing view.
+    /// Going through a backing view is the tidier-looking way to find an `NSWindow` from SwiftUI
+    /// and it was tried first; the window it hands back during launch is not the one the scene
+    /// ends up presenting, and configuring that one left the app windowless.
+    private func placeAndCheck() -> Bool {
+        let windows = NSApplication.shared.windows.filter(\.canBecomeMain)
+        guard !windows.isEmpty else {
+            phase = .waitingForWindow
+            return false
+        }
+
+        for window in windows {
+            // Only while the window is still on the shared Space. Resizing and centring a window
+            // that is already full screen is at best a no-op and at worst an exit from the Space
+            // this exists to reach.
+            if !window.styleMask.contains(.fullScreen) {
+                window.setContentSize(Self.contentSize)
+                window.center()
+            }
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+            enterFullScreen(window)
+        }
+        forceToForeground()
+
+        if isDeterministic {
+            phase = .ready
+            return true
+        }
+        if phase != .enteringFullScreen { phase = .enteringFullScreen }
+        return false
+    }
+
+    /// Whether the window is in the state the suite depends on.
+    ///
+    /// All three parts are load-bearing. Full screen is what removes the rest of the desktop;
+    /// key and active are what make the runner's hit test resolve through this application.
+    private var isDeterministic: Bool {
+        guard let window = NSApplication.shared.windows.first(where: \.canBecomeMain) else { return false }
+        return window.styleMask.contains(.fullScreen)
+            && window.isKeyWindow
+            && NSRunningApplication.current.isActive
+    }
+
+    /// Moves one window onto a Space of its own.
+    ///
+    /// `fullScreenPrimary` is inserted rather than assumed: a SwiftUI scene's window carries it
+    /// by default, and a window without it ignores `toggleFullScreen(_:)` silently. The
+    /// `styleMask` check keeps the call idempotent, because toggling a window that is already
+    /// full screen would put it back on the shared Space, which is the state this exists to
+    /// leave.
+    private func enterFullScreen(_ window: NSWindow) {
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        guard !window.styleMask.contains(.fullScreen) else { return }
+        requestedFullScreenAt = Date()
+        window.toggleFullScreen(nil)
+    }
+
+    /// When the current full-screen request was made, for ``logTransition(_:)``.
+    private var requestedFullScreenAt: Date?
+
+    /// Prints how long the transition took, or that one arrived without having been asked for.
+    ///
+    /// Diagnostics, in a `#if DEBUG` type behind a launch argument, reaching stderr and nothing
+    /// else. It is what ``retryInterval`` is calibrated against, and it is what turns "the window
+    /// sometimes is not full screen" into a number somebody can argue with. No production code
+    /// path can reach it, and it records nothing about mail.
+    private func logTransition(_ name: Notification.Name) {
+        let elapsed = requestedFullScreenAt.map { Date().timeIntervalSince($0) }
+        let phrase = elapsed.map { String(format: "%.3fs after the request", $0) } ?? "unrequested"
+        let event = name == NSWindow.didEnterFullScreenNotification ? "entered full screen" : "left full screen"
+        FileHandle.standardError.write(Data("[UITestWindow] \(event), \(phrase)\n".utf8))
+        if name == NSWindow.didEnterFullScreenNotification { requestedFullScreenAt = nil }
+    }
+
+    /// Re-checks readiness whenever macOS says a transition finished.
+    ///
+    /// The notifications are the honest end of the wait. `toggleFullScreen(_:)` returns long
+    /// before the Space exists, so a version that trusted the call would report ready while the
+    /// window was still animating, which is the same lie the Interval 9 version told.
+    private func observeFullScreenTransitions() {
+        guard observers.isEmpty else { return }
+
+        // The foreground going is worth acting on at once rather than at the next maintenance
+        // check: everything in the app is unhittable while another application holds it.
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    UITestWindow.shared.raise()
+                }
+            }
+        )
+
+        for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+            observers.append(
+                NotificationCenter.default.addObserver(
+                    forName: name,
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    MainActor.assumeIsolated {
+                        UITestWindow.shared.logTransition(name)
+                        UITestWindow.shared.reassess()
+                    }
+                }
+            )
+        }
+    }
+
+    /// Recomputes ``phase`` after a transition, without starting another attempt.
+    private func reassess() {
+        guard phase != .notRequested else { return }
+        forceToForeground()
+        phase = isDeterministic ? .ready : .enteringFullScreen
+    }
+
+    private func raise() {
+        guard phase != .notRequested else { return }
         forceToForeground()
         for window in NSApplication.shared.windows where window.isVisible {
             window.orderFrontRegardless()
+        }
+        // Reported either way. A ``phase`` that only ever climbed would have told the suite the
+        // window was fine at exactly the moment it was not.
+        if phase == .ready || phase == .enteringFullScreen {
+            phase = isDeterministic ? .ready : .enteringFullScreen
         }
     }
 
@@ -136,11 +404,10 @@ enum UITestWindow {
     ///
     /// `NSApplication.activate()` is the polite form and honours the system's focus rules, which
     /// is right for an app and wrong for this. `NSRunningApplication.activate(options:)` on the
-    /// current process does not ask — though on recent macOS it is refused too when another
+    /// current process does not ask, though on recent macOS it is refused too when another
     /// application holds the foreground, which is why the full-screen Space is what the suite
     /// actually depends on.
-    @MainActor
-    private static func forceToForeground() {
+    private func forceToForeground() {
         NSRunningApplication.current.activate(options: [.activateAllWindows])
     }
 }

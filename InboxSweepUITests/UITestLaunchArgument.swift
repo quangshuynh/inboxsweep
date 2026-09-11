@@ -47,4 +47,35 @@ enum UITestLaunchArgument {
     /// worth asserting.
     static let sampleUnsubscribe = "--sample-unsubscribe"
 
+    /// Gives the synthetic mailbox an in-process archive boundary. Matches
+    /// `SampleArchiving.launchArgument`.
+    ///
+    /// Only meaningful alongside ``sampleData``, and off by default for the same reason
+    /// ``sampleUnsubscribe`` is: an ordinary sample run has no mutation boundary at all, so the
+    /// Archive control is *absent* rather than disabled and a synthetic session cannot reach a
+    /// write even by accident. What it vends is `SampleArchiver`, which changes an in-memory
+    /// label set and has no transport to reach Gmail with.
+    static let sampleArchiving = "--sample-archiving"
+
+    /// Seeds one enabled sender rule for the synthetic mailbox. Matches
+    /// `SampleRules.rulesLaunchArgument`.
+    ///
+    /// Only meaningful alongside ``sampleData``. It seeds an *authorization*, not a capability:
+    /// on its own the sample session has no archive boundary, so the rule is listed, inspectable,
+    /// and inert, which is its own thing worth asserting. Paired with ``sampleArchiving`` it is
+    /// what makes a complete rule pass runnable with no socket opened and no real mail touched.
+    static let sampleRules = "--sample-rules"
+
+    /// The accessibility identifier the app publishes its deterministic-window phase under.
+    ///
+    /// Matches `UITestWindow.stateIdentifier`, and the labels it can carry match
+    /// `UITestWindow.Phase`. Waiting on this is what lets a launch failure say *the window never
+    /// became deterministic* rather than blaming the first control a case reaches for.
+    static let windowStateIdentifier = "uiTest.windowState"
+
+    /// The one phase a case may proceed from: full screen, key, and frontmost.
+    static let windowIsReady = "ready"
+
+    /// The phase meaning the app gave up trying to reach that state.
+    static let windowIsUnavailable = "unavailable"
 }

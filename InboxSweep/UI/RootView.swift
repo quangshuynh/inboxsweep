@@ -19,8 +19,38 @@ struct RootView: View {
             .onChange(of: appModel.session.state) { _, _ in
                 UITestWindow.keepFrontmostIfRequested()
             }
+            .overlay(alignment: .topLeading) { windowStateProbe }
         #endif
     }
+
+    #if DEBUG
+    /// A zero-size element carrying ``UITestWindow/Phase``, for the UI suite to wait on.
+    ///
+    /// Present only under the deterministic-window launch argument, so an ordinary Debug launch
+    /// and every Release launch have nothing extra in their accessibility tree. It draws nothing,
+    /// occupies no space, and is not focusable.
+    ///
+    /// It exists so a failing case can say *which* thing failed. Before it, a window that never
+    /// reached its own Space failed twenty seconds later on whichever control the test reached
+    /// for, with a message naming that control: the suite blamed the app for the desktop. Now the
+    /// launch helper waits on this, and a harness failure reads as one.
+    @ViewBuilder
+    private var windowStateProbe: some View {
+        if UITestWindow.isRequested {
+            // `accessibilityElement(children: .ignore)` is what makes this an element at all.
+            // A `Color` is not one by default, and a version of this that only set an identifier
+            // and a label was published *sometimes*: it survived most launches and vanished on
+            // others, which is the worst possible behaviour for the thing a case waits on. One
+            // point rather than zero for the same reason.
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier(UITestWindow.stateIdentifier)
+                .accessibilityLabel(UITestWindow.shared.phase.rawValue)
+                .allowsHitTesting(false)
+        }
+    }
+    #endif
 
     @ViewBuilder
     private var content: some View {
