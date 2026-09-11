@@ -39,6 +39,9 @@ them. It cannot act on a sender, run a cleanup plan, or delete anything.
   a run where some are refused reports "8 archived, 2 failed" rather than "failed".
 - **Offers Undo that survives quitting the app**, restoring exactly the messages that archive
   confirmed. A real Gmail request, not a local correction.
+- **Archives future mail from one sender you authorized**, through a local rule you create on
+  its own review screen, which runs only while the app is loading mail and never touches
+  protected mail or anything that arrived before the rule.
 - Keeps a small, bounded local record of what it changed, holding message IDs and no mail.
 - Handles signed-out, restoring, connecting, loading, loaded, empty, and error states.
 - Runs entirely against synthetic data when no Google account is configured, so the whole app
@@ -52,8 +55,8 @@ None of the following is implemented, and the UI does not pretend otherwise:
 | --- | --- |
 | Delete, trash, or permanently remove | Mark as read, star, or label |
 | Automatic or bulk unsubscribe | Archive a sender in one click, or across senders |
-| Sender rules, Gmail filters, or blocking | Executing a cleanup plan |
-| AI classification of any message | Automatic or scheduled archiving |
+| Gmail filters, blocking, or anything server-side | Executing a cleanup plan |
+| AI classification of any message | Scheduled or background archiving |
 | Background monitoring or notifications | CI, badges, or releases |
 | Analytics or telemetry | |
 
@@ -70,6 +73,13 @@ standards-defined request, opens the page in your browser, or opens a prepared m
 mail app. It never unsubscribes on its own, never retries, never acts across senders, and never
 creates a rule or a filter. Unlike archiving, it cannot be undone, and the app says so before
 you decide. Full detail in **[Docs/Unsubscribe.md](Docs/Unsubscribe.md)**.
+
+A **sender rule** is the third, and it is the only thing InboxSweep does to a mailbox without
+asking at the time. You create each one yourself, on a screen that prints the exact address it
+matches and the exact thing it will do; it has one action, which is to archive; it runs only
+while the app is loading mail, because nothing in this app runs when the app is closed; it never
+touches mail that arrived before it, and it never archives a message that looks worth keeping.
+It is not a Gmail filter and cannot become one. Full detail in **[Docs/Rules.md](Docs/Rules.md)**.
 
 ## Architecture
 
@@ -257,6 +267,37 @@ confirmation, and press the button, and the confirmation says that only the mess
 changed and that future mail from that sender is unaffected. There is no whole-sender operation
 behind it, and confirming an archive creates no rule. Authorizing future behaviour is a separate
 thing you do deliberately, on its own screen; see [Sender rules](Docs/Rules.md).
+
+## Sender rules
+
+The one standing authorization in the app. Everything else it can do is a single act you
+confirmed; a rule keeps acting, on mail nobody has seen, until you turn it off.
+
+| | |
+| --- | --- |
+| What it matches | One exact normalized address. No domain, prefix, display-name, subject, or similarity match anywhere |
+| What it does | Archives a newly loaded Inbox message. One action, an enum with one case |
+| When it runs | While InboxSweep loads mail, which is when you open it or press Reload. **Never while the app is closed** |
+| What it will not touch | Mail that arrived before the rule, protected mail, mail already out of the Inbox, or a message it has already tried this session |
+| How it runs | One rule at a time, one message at a time, through the same message-level archive request a person pressing Archive makes. At most 50 messages a pass |
+| Undo | **None**, deliberately, and Activity says so. See [Docs/Rules.md](Docs/Rules.md#undo) |
+| Where it lives | A local file on this Mac, account-scoped, at most 25 rules, deleted when you disconnect |
+
+Creating one takes a dedicated review screen and two deliberate presses. InboxSweep may suggest
+that a rule could be useful; the affordance that says so opens the review, and the review creates
+nothing. There is exactly one call site in the app that writes a rule and it is the confirming
+button on that sheet.
+
+A rule's work appears in Activity labelled **by rule**, with the rule named underneath. It says
+*by rule*, never *by Gmail*: InboxSweep sent those requests.
+
+**Rules** is reachable from the dashboard footer, beside Activity. Each row shows what it matches,
+what it does, whether it is on, and what it can actually do right now. Turning one off takes one
+press; deleting one asks first.
+
+The one privacy cost is stated rather than buried: a rules file is the first thing InboxSweep
+writes down that names a **sender**. [Docs/Rules.md](Docs/Rules.md#privacy-the-one-new-thing-on-disk)
+explains why that is unavoidable and how it is bounded.
 
 ## Activity
 
@@ -484,13 +525,22 @@ not been independently audited and makes no anonymity guarantees.
 - A restored window is as old as its label says. InboxSweep never refreshes it on its own and
   there is no background monitoring, so **Reload** is the only thing that fetches current
   mail.
+- **A sender rule does nothing while InboxSweep is closed.** It is not a Gmail filter and the app
+  holds no permission to create one, so matching mail arrives in your Inbox as usual and is
+  archived the next time you open the app or press Reload. If you want mail never to reach your
+  Inbox, that is a filter you make in Gmail.
+- **A rule-driven archive has no Undo.** The app keeps one undoable archive per account, and
+  letting something automatic take that offer would mean losing an undo you meant to keep. The
+  reasoning and the alternative are in [Docs/Rules.md](Docs/Rules.md#undo).
 - Sender observations describe the loaded window only. Loading more messages can change a
   sender's frequency, category set, and unsubscribe count, and it is meant to.
 - The cache is not migrated between schema versions. A version bump discards the stored
   window and the next launch fetches it again.
 - The dashboard sorts through a toolbar picker; the table's column headers are not clickable.
 - Sender detail lists the loaded messages but cannot open one: there is no body to show.
-- Only the inbox is read. `MailboxScope.allMail` exists at the boundary but no UI selects it.
+- Each load reads one scope. The load bar's picker chooses it (Inbox, any of Gmail's four
+  categories, or All mail), and changing it discards the loaded window and reads the new scope,
+  because a window mixing two of them would make every count describe something nobody could name.
 - Gmail label *names* for custom labels are not resolved; unknown labels are carried through
   by their provider-side identifier.
 - A `gmail.metadata` OAuth client stays in Google's "Testing" mode without verification, so
@@ -553,16 +603,17 @@ InboxSweep/               App target
   App/                    Entry point and composition root
   Domain/                 Provider-agnostic models, aggregation, boundaries
     Persistence/          The cache protocol and the window it stores
+    Rules/                Sender rules: the value, the matcher, the store protocol
   Application/            Session state for the UI
   Providers/Gmail/        Gmail adapter (the only Gmail-aware code)
-  Providers/Persistence/  On-disk cache, plan, and mutation-record stores
+  Providers/Persistence/  On-disk cache, plan, mutation-record, and rule stores
   Providers/Sample/       Synthetic mailbox, debug builds only
   Providers/Networking/   HTTPTransport seam
   UI/                     SwiftUI views
   Config/                 Your local OAuth client plist (gitignored)
 InboxSweepTests/          Unit tests, fixtures, and test doubles
 InboxSweepUITests/        Launch and dashboard UI tests
-Docs/                     OAuth setup, session restore, archiving, unsubscribing, activity, release verification
+Docs/                     OAuth setup, session restore, archiving, unsubscribing, rules, activity, release verification
 ```
 
 ## Licence

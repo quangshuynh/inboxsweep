@@ -453,11 +453,18 @@ struct ArchiveSelectionSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("archiveSheet.cancelButton")
 
+                // Deliberately **not** the default action. It was, and that meant a stray
+                // Return anywhere on this sheet archived somebody's mail: the one keystroke
+                // people press to dismiss things was wired to the one control that changes a
+                // mailbox. The unsubscribe review had already reached the same conclusion for
+                // the same reason; this brings the two into line.
+                //
+                // Nothing is harder to do as a result. The button is the largest, most prominent
+                // control on the sheet, and reaching it by keyboard is a Tab away.
                 Button(count == 1 ? "Archive message" : "Archive \(count) messages") {
                     session.archiveSelection(selection)
                 }
                 .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
                 .disabled(!session.canArchive(selection))
                 .accessibilityIdentifier("archiveSheet.confirmButton")
 

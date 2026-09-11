@@ -55,6 +55,11 @@ struct CleanupPlanSheet: View {
             footer
         }
         .frame(minWidth: 620, idealWidth: 720, minHeight: 460, idealHeight: 580)
+        // Escape closes it, which is what every macOS sheet does and what this one did not.
+        // Safe here because closing changes nothing: the only exits from this screen are Done and
+        // Escape, and neither touches a mailbox. The sheets that *can* act keep Escape bound to
+        // their own Cancel, which backs out of the confirmation rather than out of the sheet.
+        .onExitCommand { dismiss() }
         .onAppear(perform: seedActions)
     }
 

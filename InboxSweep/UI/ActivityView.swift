@@ -50,6 +50,11 @@ struct ActivityView: View {
             footer
         }
         .frame(minWidth: 760, idealWidth: 900, minHeight: 460, idealHeight: 580)
+        // Escape closes it, which is what every macOS sheet does and what this one did not.
+        // Safe here because closing changes nothing: the only exits from this screen are Done and
+        // Escape, and neither touches a mailbox. The sheets that *can* act keep Escape bound to
+        // their own Cancel, which backs out of the confirmation rather than out of the sheet.
+        .onExitCommand { dismiss() }
         .task(id: session.mutationActivity?.id) { await reload() }
         // A second trigger for the second kind of entry, so an unsubscribe performed while this
         // screen is open shows up the way an undo does.

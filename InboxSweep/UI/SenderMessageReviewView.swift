@@ -113,6 +113,11 @@ struct SenderMessageReviewView: View {
         // The sheet takes its minimum width, so that is what has to fit all five columns: an
         // audit screen whose "under this plan" column is off the right edge audits nothing.
         .frame(minWidth: 900, idealWidth: 980, minHeight: 480, idealHeight: 620)
+        // Escape closes it, which is what every macOS sheet does and what this one did not.
+        // Safe here because closing changes nothing: the only exits from this screen are Done and
+        // Escape, and neither touches a mailbox. The sheets that *can* act keep Escape bound to
+        // their own Cancel, which backs out of the confirmation rather than out of the sheet.
+        .onExitCommand { dismiss() }
         .sheet(item: $pendingArchive) { frozen in
             ArchiveSelectionSheet(session: session, selection: frozen)
         }
