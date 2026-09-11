@@ -69,6 +69,19 @@ nonisolated protocol MailProvider: MailAccountAuthorizing, MailMessageFetching {
     /// There is no way to pair one account's archiver with another account's window, because
     /// there is no way to hand them to the session separately.
     var messageArchiver: (any MailMessageArchiving)? { get }
+
+    /// The unsubscribe boundary, when this provider has one.
+    ///
+    /// A **second, separate** optional rather than a capability on the archiver, for the reason
+    /// ``MailUnsubscribing`` sets out at length: archiving is a Gmail write and a one-click
+    /// unsubscribe is an HTTP request to a stranger. A provider can have either, both, or
+    /// neither, and the two are switched on independently.
+    ///
+    /// Its absence does not disable *detection*. Reading a sender's unsubscribe metadata is
+    /// domain work over mail that has already been fetched, and it happens on every provider —
+    /// including the synthetic mailbox. This is only about whether the app can send the one
+    /// standards-based request.
+    var unsubscriber: (any MailUnsubscribing)? { get }
 }
 
 nonisolated extension MailProvider {
@@ -78,4 +91,7 @@ nonisolated extension MailProvider {
     /// The default is the safe one on purpose: a new provider is read-only until somebody
     /// deliberately implements a mutation boundary for it.
     var messageArchiver: (any MailMessageArchiving)? { nil }
+
+    /// And cannot send an unsubscribe request unless they say otherwise, for the same reason.
+    var unsubscriber: (any MailUnsubscribing)? { nil }
 }
