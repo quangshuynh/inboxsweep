@@ -1,11 +1,13 @@
 import Foundation
 
-/// A request InboxSweep is willing to send to the Gmail API.
+/// A **read** request InboxSweep is willing to send to the Gmail API.
 ///
-/// The `method` is a constant, not a parameter. Every Gmail API request the app can construct
-/// is a `GET`, and there is no initializer that produces anything else — which is what makes
-/// "this interval cannot modify a mailbox" a property of the code rather than a promise.
-nonisolated struct GmailAPIRequest: Sendable, Equatable {
+/// The `method` is a constant, not a parameter. Every request this type can construct is a
+/// `GET`, and there is no initializer that produces anything else. Writes live in
+/// ``GmailMutationRequest``, which is a different type with a different constant and its own
+/// two-item list of what it can express — so "which requests change something?" is answered by
+/// looking at which type they are, not by reading their URLs.
+nonisolated struct GmailAPIRequest: GmailAuthorizedRequest, Equatable {
     let method = "GET"
     let url: URL
 
@@ -32,6 +34,27 @@ nonisolated enum GmailAPIEndpoint {
     /// `List-Unsubscribe` is recorded as an observation; the app takes no action on it and
     /// never contacts an unsubscribe address.
     static let metadataHeaders = ["From", "Subject", "Date", "List-Unsubscribe"]
+
+    /// A message identifier, encoded so it can only ever be one path segment.
+    ///
+    /// `URL.appending(path:)` passes `/` straight through, so an identifier containing one
+    /// would silently redirect the request to a different endpoint. Identifiers come from
+    /// Gmail's own responses rather than from the user, so this has never been reachable in
+    /// practice — but the request builders are the app's narrowest promise about which
+    /// endpoints it can reach, and a promise that depends on the server behaving is not one
+    /// worth making. Doubly so now that one of those builders performs a write.
+    static func pathSegment(for messageID: MailMessageID) -> String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/")
+        return messageID.rawValue.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+    }
+
+    /// `.../users/me/messages/{id}`, with the identifier confined to its own segment.
+    static func messageURL(messageID: MailMessageID) -> URL {
+        var components = URLComponents(url: base.appending(path: "messages"), resolvingAgainstBaseURL: false)!
+        components.percentEncodedPath += "/" + pathSegment(for: messageID)
+        return components.url!
+    }
 
     /// The signed-in user's own address and mailbox totals.
     static func profile() -> GmailAPIRequest {
@@ -79,10 +102,7 @@ nonisolated enum GmailAPIEndpoint {
     /// `format=metadata` is what keeps bodies and attachments out of the response entirely —
     /// the app could not read a message's contents from this response even by mistake.
     static func messageMetadata(id: MailMessageID) -> GmailAPIRequest {
-        var components = URLComponents(
-            url: base.appending(path: "messages").appending(path: id.rawValue),
-            resolvingAgainstBaseURL: false
-        )!
+        var components = URLComponents(url: messageURL(messageID: id), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "format", value: "metadata")]
             + metadataHeaders.map { URLQueryItem(name: "metadataHeaders", value: $0) }
         return GmailAPIRequest(url: components.url!)

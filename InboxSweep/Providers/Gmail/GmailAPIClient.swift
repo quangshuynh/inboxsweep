@@ -1,10 +1,14 @@
 import Foundation
 
-/// Sends authorized, read-only requests to the Gmail API and decodes the results.
+/// Sends authorized requests to the Gmail API and decodes the results.
 ///
 /// Responsibilities kept here on purpose: attaching the access token, retrying the failures
 /// that are worth retrying, and turning HTTP status codes into ``MailProviderError``. It does
 /// not know what a sender is, and the domain does not know this type exists.
+///
+/// It sends whatever request it is handed, and what it can be handed is the point: reads are
+/// ``GmailAPIRequest`` and the only writes that exist are the two in ``GmailMutationEndpoint``.
+/// This type adds no ability to construct either.
 nonisolated struct GmailAPIClient: Sendable {
 
     /// How the client backs off from throttling and transient provider failures.
@@ -55,6 +59,27 @@ nonisolated struct GmailAPIClient: Sendable {
         try await get(GmailAPIEndpoint.messageMetadata(id: id))
     }
 
+    // MARK: - Mutations
+
+    /// Applies one inbox-label change and returns the message as Gmail reports it afterwards.
+    ///
+    /// Decoding the response is not ceremony: it is how the caller learns what the mailbox
+    /// actually says now, rather than assuming the change landed the way it was asked for.
+    ///
+    /// Retrying a `POST` is safe here specifically because `messages.modify` is idempotent —
+    /// removing a label the message no longer carries is a no-op that returns the same message
+    /// — so a retried throttle or 5xx cannot apply the change twice.
+    func modify(_ request: GmailMutationRequest) async throws -> GmailDTO.Message {
+        let response = try await send(request)
+        do {
+            return try JSONDecoder().decode(GmailDTO.Message.self, from: response.body)
+        } catch {
+            throw MailProviderError.malformedResponse(
+                reason: "Gmail's response didn't match the format InboxSweep expects."
+            )
+        }
+    }
+
     // MARK: - Transport
 
     private func get<Response: Decodable>(_ endpoint: GmailAPIRequest) async throws -> Response {
@@ -68,7 +93,7 @@ nonisolated struct GmailAPIClient: Sendable {
         }
     }
 
-    private func send(_ endpoint: GmailAPIRequest) async throws -> HTTPResponse {
+    private func send(_ endpoint: any GmailAuthorizedRequest) async throws -> HTTPResponse {
         var delay = retryPolicy.initialDelay
         var lastError: MailProviderError = .providerFailure(
             statusCode: 0,
