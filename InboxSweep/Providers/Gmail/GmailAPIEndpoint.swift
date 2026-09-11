@@ -31,9 +31,17 @@ nonisolated enum GmailAPIEndpoint {
 
     /// The headers worth asking for. Anything not listed here is never sent to the app.
     ///
-    /// `List-Unsubscribe` is recorded as an observation; the app takes no action on it and
-    /// never contacts an unsubscribe address.
-    static let metadataHeaders = ["From", "Subject", "Date", "List-Unsubscribe"]
+    /// `List-Unsubscribe-Post` joined the list in Interval 10, and it is worth being precise
+    /// about what that did and did not change. It is a **request-shape** change and nothing
+    /// else: `metadataHeaders` names which headers a `format=metadata` response includes, and
+    /// the `gmail.metadata` scope already covers every one of them. No OAuth scope was added,
+    /// none was widened, and the consent screen asks for exactly what it asked for before —
+    /// which is the answer to requirement 11's "investigate before changing scopes".
+    ///
+    /// Without it the app could see *that* a sender supports unsubscribing and could never see
+    /// that they support the one-click standard, which would leave the only mechanism precise
+    /// enough to act on invisible.
+    static let metadataHeaders = ["From", "Subject", "Date", "List-Unsubscribe", "List-Unsubscribe-Post"]
 
     /// A message identifier, encoded so it can only ever be one path segment.
     ///

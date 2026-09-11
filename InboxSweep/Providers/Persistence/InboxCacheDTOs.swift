@@ -13,7 +13,15 @@ nonisolated enum InboxCacheDTO {
 
     /// Bumped whenever the shape below changes incompatibly. A file written by any other
     /// version is discarded and refetched rather than guessed at.
-    static let schemaVersion = 1
+    ///
+    /// Version 2 carries the parsed unsubscribe metadata each message's headers produced,
+    /// where version 1 carried only a Boolean saying a header had been present. A version-1
+    /// file is discarded, which is the right trade for this particular file and would not be
+    /// for the transaction store: the only cost of discarding a cache is one refetch of mail
+    /// the app can read whenever it likes, and the alternative — reading old entries as
+    /// "header present, values unknown" — would put every cached sender in the ambiguous state
+    /// until the next reload, which reads worse than a reload the user did not notice.
+    static let schemaVersion = 2
 
     /// How dates are written: seconds since the epoch, as a number.
     ///
@@ -67,6 +75,18 @@ nonisolated enum InboxCacheDTO {
         var labels: [String]
         var hasListUnsubscribeHeader: Bool
 
+        /// The parsed `List-Unsubscribe` values, as text this file can hold.
+        ///
+        /// Absent when the message had no header. What goes in is the *parsed* form — a scheme
+        /// and a destination this build already validated, or a recorded refusal — never the
+        /// sender's original header text, which is exactly the string the app refuses to carry
+        /// around. Re-validated on the way back in, so a hand-edited file cannot introduce a
+        /// destination the parser would have refused.
+        var unsubscribeTargets: [UnsubscribeTargetDTO]?
+
+        /// Whether `List-Unsubscribe-Post` declared RFC 8058 one-click semantics.
+        var declaresOneClickPost: Bool?
+
         enum CodingKeys: String, CodingKey {
             case id
             case threadID = "thread_id"
@@ -76,6 +96,38 @@ nonisolated enum InboxCacheDTO {
             case receivedAt = "received_at"
             case labels
             case hasListUnsubscribeHeader = "list_unsubscribe"
+            case unsubscribeTargets = "unsubscribe_targets"
+            case declaresOneClickPost = "unsubscribe_one_click"
+        }
+    }
+
+    /// One parsed unsubscribe value, on disk.
+    ///
+    /// Deliberately not a `Codable` conformance synthesized off ``UnsubscribeTarget`` itself:
+    /// the file format is an adapter concern, and a synthesized enum encoding would tie this
+    /// file to Swift's associated-value layout. Writing it out means a domain rename is a
+    /// compile error here rather than a cache everybody's next launch misreads.
+    struct UnsubscribeTargetDTO: Codable, Equatable {
+        /// `web`, `mail`, or `unsupported`.
+        var kind: String
+        /// The https URL, for `web`.
+        var url: String?
+        /// The address, for `mail`.
+        var address: String?
+        var subject: String?
+        var body: String?
+        /// The refusal reason, for `unsupported`.
+        var reason: String?
+        var scheme: String?
+
+        enum CodingKeys: String, CodingKey {
+            case kind = "k"
+            case url = "u"
+            case address = "a"
+            case subject = "s"
+            case body = "b"
+            case reason = "r"
+            case scheme = "sch"
         }
     }
 
@@ -134,7 +186,11 @@ nonisolated enum InboxCacheDTO {
             subject: message.subject,
             receivedAt: message.receivedAt,
             labels: message.labels.map(MailLabelToken.string(for:)).sorted(),
-            hasListUnsubscribeHeader: message.hasListUnsubscribeHeader
+            hasListUnsubscribeHeader: message.hasListUnsubscribeHeader,
+            unsubscribeTargets: message.unsubscribe.headerWasPresent
+                ? message.unsubscribe.targets.map(unsubscribeTarget(from:))
+                : nil,
+            declaresOneClickPost: message.unsubscribe.declaresOneClickPost ? true : nil
         )
     }
 
@@ -186,8 +242,77 @@ nonisolated enum InboxCacheDTO {
             subject: dto.subject,
             receivedAt: dto.receivedAt,
             labels: Set(dto.labels.map(MailLabelToken.label(for:))),
-            hasListUnsubscribeHeader: dto.hasListUnsubscribeHeader
+            unsubscribe: unsubscribeMetadata(from: dto)
         )
+    }
+
+    /// Rebuilds a message's unsubscribe metadata, re-validating every destination.
+    ///
+    /// An entry that does not survive re-validation is turned into a recorded refusal rather
+    /// than dropped or trusted. This file lives in the app's own container, but it is still the
+    /// one input to the unsubscribe path that does not come from Gmail, and what comes out of
+    /// here can become a URL shown to a user and posted to.
+    private static func unsubscribeMetadata(from dto: Message) -> MessageUnsubscribeMetadata {
+        guard dto.hasListUnsubscribeHeader else { return .absent }
+        guard let entries = dto.unsubscribeTargets else {
+            // A version-1 file, or an entry written before the values were recorded.
+            return .headerPresentUnparsed
+        }
+        return MessageUnsubscribeMetadata(
+            targets: entries.map(unsubscribeTarget(from:)),
+            declaresOneClickPost: dto.declaresOneClickPost ?? false,
+            headerWasPresent: true
+        )
+    }
+
+    private static func unsubscribeTarget(from target: UnsubscribeTarget) -> UnsubscribeTargetDTO {
+        switch target {
+        case .web(let url):
+            return UnsubscribeTargetDTO(kind: "web", url: url.absoluteString)
+        case .mail(let address):
+            return UnsubscribeTargetDTO(
+                kind: "mail",
+                address: address.address,
+                subject: address.subject,
+                body: address.body
+            )
+        case .unsupported(let value):
+            return UnsubscribeTargetDTO(kind: "unsupported", reason: value.reason.rawValue, scheme: value.scheme)
+        }
+    }
+
+    private static func unsubscribeTarget(from dto: UnsubscribeTargetDTO) -> UnsubscribeTarget {
+        switch dto.kind {
+        case "web":
+            guard let raw = dto.url, let url = HTTPSUnsubscribeURL(string: raw) else {
+                return .unsupported(UnsupportedUnsubscribeValue(reason: .malformed))
+            }
+            return .web(url)
+
+        case "mail":
+            guard let address = dto.address,
+                  let parsed = MailtoUnsubscribeAddress(string: mailtoURLString(for: dto, address: address))
+            else {
+                return .unsupported(UnsupportedUnsubscribeValue(reason: .unusableMailAddress))
+            }
+            return .mail(parsed)
+
+        default:
+            let reason = dto.reason.flatMap(UnsupportedUnsubscribeValue.Reason.init(rawValue:)) ?? .malformed
+            return .unsupported(UnsupportedUnsubscribeValue(reason: reason, scheme: dto.scheme))
+        }
+    }
+
+    /// Rebuilds the `mailto:` text so the domain type's own validator re-runs on it.
+    private static func mailtoURLString(for dto: UnsubscribeTargetDTO, address: String) -> String {
+        var components = URLComponents()
+        components.scheme = MailtoUnsubscribeAddress.requiredScheme
+        components.path = address
+        var items: [URLQueryItem] = []
+        if let subject = dto.subject { items.append(URLQueryItem(name: "subject", value: subject)) }
+        if let body = dto.body { items.append(URLQueryItem(name: "body", value: body)) }
+        components.queryItems = items.isEmpty ? nil : items
+        return components.string ?? "mailto:\(address)"
     }
 
     private static func sender(from dto: Sender) -> SenderSummary {

@@ -35,7 +35,12 @@ nonisolated enum GmailMessageNormalizer {
             subject: normalizeSubject(headers["Subject"]),
             receivedAt: receivedDate(internalDate: dto.internalDate, dateHeader: headers["Date"]),
             labels: labels(from: dto.labelIds ?? []),
-            hasListUnsubscribeHeader: headers["List-Unsubscribe"] != nil
+            // Parsed here, at the boundary, rather than carried inwards as text. See
+            // ``ListUnsubscribeParser`` for why the raw header never gets past this line.
+            unsubscribe: ListUnsubscribeParser.metadata(
+                listUnsubscribe: headers["List-Unsubscribe"],
+                listUnsubscribePost: headers["List-Unsubscribe-Post"]
+            )
         )
     }
 

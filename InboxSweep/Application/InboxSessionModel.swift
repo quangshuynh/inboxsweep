@@ -1000,7 +1000,7 @@ final class InboxSessionModel {
                 subject: existing.subject,
                 receivedAt: existing.receivedAt,
                 labels: labels,
-                hasListUnsubscribeHeader: existing.hasListUnsubscribeHeader
+                unsubscribe: existing.unsubscribe
             )
         }
     }
