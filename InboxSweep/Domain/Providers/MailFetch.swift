@@ -8,13 +8,80 @@ nonisolated struct MailPageToken: Hashable, Sendable {
 
 /// Which part of the mailbox to read.
 ///
-/// Only the cases the app actually uses are modelled. Adding scopes we do not need would be
-/// inventing provider capabilities before there is a feature that wants them.
-nonisolated enum MailboxScope: Hashable, Sendable {
-    /// Messages currently in the inbox.
+/// Every case maps to a label the provider already applies — there is no search query here and
+/// there could not be one, because `gmail.metadata` forbids `q=`. Widening the scope to gain
+/// search would mean asking for access to message bodies, which is the one thing this app is
+/// built not to do.
+///
+/// The category cases are **Gmail's own classification**, not the app's. Choosing *Promotions*
+/// asks Gmail for the mail Gmail already filed there; InboxSweep does not decide what belongs.
+nonisolated enum MailboxScope: String, Hashable, Sendable, CaseIterable, Identifiable {
+
+    /// Messages currently in the inbox, whatever category they carry.
     case inbox
+
+    /// Gmail's Promotions category.
+    case promotions
+
+    /// Gmail's Updates category.
+    case updates
+
+    /// Gmail's Social category.
+    case social
+
+    /// Gmail's Forums category.
+    case forums
+
     /// Everything the provider will list, including archived mail.
     case allMail
+
+    var id: String { rawValue }
+
+    /// The scopes offered in the UI, in the order they are shown.
+    ///
+    /// Inbox leads because it is what the app is for. *All mail* sits last because it is the
+    /// one that can take a long time and reach furthest back.
+    static let offered: [MailboxScope] = [.inbox, .promotions, .updates, .social, .forums, .allMail]
+
+    var displayName: String {
+        switch self {
+        case .inbox: "Inbox"
+        case .promotions: "Promotions"
+        case .updates: "Updates"
+        case .social: "Social"
+        case .forums: "Forums"
+        case .allMail: "All mail"
+        }
+    }
+
+    /// The noun a sentence about this scope uses — "your inbox", "your Promotions category".
+    var possessivePhrase: String {
+        switch self {
+        case .inbox: "your inbox"
+        case .allMail: "your mailbox"
+        case .promotions, .updates, .social, .forums: "your \(displayName) category"
+        }
+    }
+
+    /// Whether this scope is one of Gmail's own inbox categories.
+    var isProviderCategory: Bool {
+        switch self {
+        case .promotions, .updates, .social, .forums: true
+        case .inbox, .allMail: false
+        }
+    }
+
+    /// What reading this scope does and does not cover, for the UI to say out loud.
+    var coverageCaveat: String {
+        switch self {
+        case .inbox:
+            "Mail outside the inbox — already archived, sent, or filed under other labels — is not read."
+        case .allMail:
+            "This reaches archived mail as well as the inbox."
+        case .promotions, .updates, .social, .forums:
+            "This is Gmail's own \(displayName) category. InboxSweep reports what Gmail filed there; it does not classify mail itself."
+        }
+    }
 }
 
 /// A bounded request for message metadata.

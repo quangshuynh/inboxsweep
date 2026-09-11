@@ -29,6 +29,7 @@ nonisolated struct CleanupPlanWindow: Hashable, Sendable {
         switch scope {
         case .inbox: "inbox"
         case .allMail: "mailbox"
+        case .promotions, .updates, .social, .forums: "\(scope.displayName) category"
         }
     }
 
@@ -43,19 +44,10 @@ nonisolated struct CleanupPlanWindow: Hashable, Sendable {
                 """
         }
 
-        switch scope {
-        case .inbox:
-            return """
-                These figures cover all \(loadedMessageCount) inbox messages InboxSweep has \
-                loaded. Mail outside the inbox — already archived, sent, or filed under other \
-                labels — was never read and is not counted.
-                """
-        case .allMail:
-            return """
-                These figures cover all \(loadedMessageCount) messages InboxSweep has loaded, \
-                which is everything the provider listed for this window.
-                """
-        }
+        return """
+            These figures cover all \(loadedMessageCount) \(scopeName) messages InboxSweep has \
+            loaded, which is everything the provider listed for this scope. \(scope.coverageCaveat)
+            """
     }
 
     /// A one-line form for a table footer.

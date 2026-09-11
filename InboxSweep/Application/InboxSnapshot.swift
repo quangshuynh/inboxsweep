@@ -15,6 +15,18 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
     /// The order ``senders`` is currently in.
     let sortOrder: SenderSortOrder
 
+    /// Which part of the mailbox this window was read from.
+    ///
+    /// Carried on the snapshot rather than asked of the session, so every number rendered
+    /// beside it is guaranteed to describe the same slice of mail. A header that said
+    /// "Promotions" over counts taken from the inbox would be worse than saying nothing.
+    let scope: MailboxScope
+
+    /// How many pages have been read into this window.
+    ///
+    /// Shown while a deep load runs, so waiting has something to watch that is not a spinner.
+    let loadedPageCount: Int
+
     /// One proposal per sender, keyed by the same grouping key ``senders`` are identified by.
     ///
     /// Derived data, recomputed from the loaded window every time it changes and never
@@ -41,8 +53,10 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
         loadedMessageCount: Int,
         senders: [SenderSummary],
         sortOrder: SenderSortOrder,
+        scope: MailboxScope = .inbox,
         hasMoreMessages: Bool,
         isLoadingMore: Bool,
+        loadedPageCount: Int = 1,
         proposals: [SenderSummary.ID: SenderCleanupProposal] = [:],
         cachedAt: Date? = nil
     ) {
@@ -50,10 +64,43 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
         self.loadedMessageCount = loadedMessageCount
         self.senders = senders
         self.sortOrder = sortOrder
+        self.scope = scope
         self.proposals = proposals
         self.hasMoreMessages = hasMoreMessages
         self.isLoadingMore = isLoadingMore
+        self.loadedPageCount = loadedPageCount
         self.cachedAt = cachedAt
+    }
+
+    // MARK: - Coverage
+    //
+    // How much has actually been analysed, said plainly. Every proposal on the dashboard is
+    // computed from this window and no more, so a screen that implied whole-mailbox coverage
+    // would be misrepresenting the one thing the user needs in order to weigh a suggestion.
+
+    /// "1,000 messages loaded".
+    var coverageHeadline: String {
+        "\(loadedMessageCount.formatted()) \(loadedMessageCount == 1 ? "message" : "messages") loaded"
+    }
+
+    /// Whether the provider has mail beyond what has been read.
+    var hasUnreadDepth: Bool { hasMoreMessages }
+
+    /// What the loaded window does and does not cover, in one sentence.
+    ///
+    /// Never claims completeness unless the provider actually ran out of pages, and never
+    /// calls a scope "your mailbox" when it was a single category.
+    var coverageDetail: String {
+        if hasMoreMessages {
+            return "More messages are available in \(scope.possessivePhrase). Everything on this screen describes the \(loadedMessageCount.formatted()) loaded so far."
+        }
+        return "That is everything InboxSweep could list from \(scope.possessivePhrase). \(scope.coverageCaveat)"
+    }
+
+    /// The progress line shown while pages are still arriving.
+    var loadProgressDescription: String? {
+        guard isLoadingMore else { return nil }
+        return "\(coverageHeadline) from \(loadedPageCount) \(loadedPageCount == 1 ? "page" : "pages")…"
     }
 
     /// Whether what is on screen was restored from disk rather than read this launch.
@@ -102,7 +149,7 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
     }
 
     /// What the loaded window covers, for anything that reports numbers derived from it.
-    func planWindow(scope: MailboxScope) -> CleanupPlanWindow {
+    func planWindow() -> CleanupPlanWindow {
         CleanupPlanWindow(
             loadedMessageCount: loadedMessageCount,
             hasMoreBeyondWindow: hasMoreMessages,
@@ -116,8 +163,10 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
             loadedMessageCount: loadedMessageCount,
             senders: SenderAggregator.sort(senders, by: newOrder),
             sortOrder: newOrder,
+            scope: scope,
             hasMoreMessages: hasMoreMessages,
             isLoadingMore: isLoadingMore,
+            loadedPageCount: loadedPageCount,
             proposals: proposals,
             cachedAt: cachedAt
         )
@@ -129,8 +178,10 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
             loadedMessageCount: loadedMessageCount,
             senders: senders,
             sortOrder: sortOrder,
+            scope: scope,
             hasMoreMessages: hasMoreMessages,
             isLoadingMore: isLoadingMore,
+            loadedPageCount: loadedPageCount,
             proposals: proposals,
             cachedAt: cachedAt
         )

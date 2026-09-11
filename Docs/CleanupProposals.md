@@ -7,9 +7,12 @@ Everything here is computed from message *metadata* — sender addresses, subjec
 Gmail's own labels, and the presence of a `List-Unsubscribe` header. No message body is ever
 requested, no AI is involved, and nothing leaves the Mac.
 
-> **Still read-only.** InboxSweep can recommend and preview. It cannot archive, trash, label,
-> mark, or unsubscribe, and it holds no Gmail permission that would let it. See
-> [Why this is still read-only](#why-this-is-still-read-only).
+> **Still read-only.** InboxSweep can recommend, preview, and let you inspect the messages
+> behind either. It cannot archive, trash, label, mark, or unsubscribe, and it holds no Gmail
+> permission that would let it. See [Why this is still read-only](#why-this-is-still-read-only).
+
+For how a sign-in is stored and restored between launches, see
+[Session restore](SessionRestore.md).
 
 ## What a proposal is
 
@@ -183,29 +186,87 @@ subject reads as a reply.
 You can preview an action for a sender InboxSweep said to Keep. It is a read-only preview and
 you are allowed to look. The plan says so, and still excludes that sender's protected messages.
 
+## Reviewing the messages behind a proposal
+
+A count nobody can check is a claim. Selecting a sender and choosing **Review…** — or
+**Review all…** from inside a preview — opens the loaded messages themselves.
+
+Each row shows the subject, when it arrived, whether it is unread, starred, or marked
+Important, the Gmail category it carries, any protection reason, and — when an action is
+selected — what that action would do with it: *would be affected*, *held back*, or *out of
+scope*.
+
+Sort by newest, oldest, unread first, or subject. Newest and oldest lead because every offered
+action is a question about age, and seeing the list in that order makes "keep only the newest
+five" checkable rather than something to take on trust.
+
+The same information appears inline in the preview, under **Which messages?**, split into
+*Would affect* and *Protected / retained* with the reason beside each retained message.
+
+Per-message verdicts and the counts above them come from a single pass over the same messages,
+so a review can never disagree with the total it sits under. A test asserts this for every
+offered action.
+
+Nothing on the review screen acts. There is no body to show — `MailMessage` has nowhere to hold
+one — the rows are not buttons, and opening a review makes no request of any kind.
+
 ## The loaded window is not your mailbox
 
-Every count in a proposal or a plan describes the messages InboxSweep has **loaded** — 250
-inbox messages by default, extended a page at a time by **Load more messages**. It is not the
-sender's total, and it is not your mailbox.
+Every count in a proposal or a plan describes the messages InboxSweep has **loaded**. It is not
+the sender's total, and it is not your mailbox.
 
-The preview states which case applies:
+### Choosing how much to read
 
-- **More mail beyond the window:** "These figures describe only the 250 messages InboxSweep has
-  loaded from your inbox. There is more mail beyond that window which the app has never read,
-  so the real totals for these senders are higher."
-- **Window exhausted:** "These figures cover all 250 inbox messages InboxSweep has loaded. Mail
-  outside the inbox — already archived, sent, or filed under other labels — was never read and
-  is not counted."
+Two controls decide the window, and the dashboard states the result:
 
-Note that even an exhausted window is only the *inbox*. InboxSweep never claims to have seen
-your whole mailbox, because it has not.
+| Control | What it does |
+| --- | --- |
+| **Read** | Which slice to read: Inbox, Promotions, Updates, Social, Forums, or All mail |
+| **Load** | How deep a **Load deeper** goes: 250, 500, 1,000, or as much as possible |
+| **Load more** | One further page |
+| **Load deeper** | Pages until the chosen depth is met, the provider runs out, or you stop |
+
+Each scope maps to a label Gmail already applies — `INBOX`, `CATEGORY_PROMOTIONS`, and so on.
+There is no search box and there could not be one: `gmail.metadata` rejects the `q=` parameter,
+and widening the scope to gain search would mean asking for access to message bodies. The
+category scopes are **Gmail's own classification**; InboxSweep reports what Gmail filed there
+and does not classify mail itself.
+
+Changing the scope discards the loaded window and reads the new one. A window that mixed scopes
+would make every count on the dashboard describe something you could not name.
+
+### There is a ceiling, and it is not "your whole mailbox"
+
+Gmail's list endpoint returns identifiers only, so every message costs one further metadata
+request. A thousand messages is a thousand requests.
+
+**No depth reads more than 2,500 messages** (`MailboxLoadDepth.safetyLimit`). There is
+deliberately no unbounded option: over a large mailbox that would be tens of thousands of
+requests, which is how an account gets throttled and how a well-meaning button becomes an
+accidental denial of service against its own user. Requests run at bounded concurrency, a page
+budget stops a provider that keeps returning a cursor and no messages, and **Stop** keeps every
+page already read.
+
+### What the dashboard says about coverage
+
+The load bar and the footer state the loaded count and whether there is more:
+
+- **More to come:** "250 messages loaded — More messages are available in your inbox.
+  Everything on this screen describes the 250 loaded so far."
+- **Provider exhausted:** "1,000 messages loaded — That is everything InboxSweep could list
+  from your inbox. Mail outside the inbox — already archived, sent, or filed under other labels
+  — is not read."
+
+The word *everything* appears only once the provider has actually run out of pages, and only
+ever about the scope that was read. An exhausted inbox is still only the inbox.
 
 Two consequences worth knowing:
 
 - **Loading more can change a proposal.** Cadence, volume, and span are all measured over the
   window, so extending it can move a sender from *Review* to *Likely newsletter* — or surface a
-  protective message that moves it to *Keep*.
+  protective message that moves it to *Keep*. Proposals and protection are recomputed from the
+  whole window after every page, so the dashboard always shows the current verdict rather than
+  the first one it happened to compute.
 - **A sender near the bottom of the window is under-counted.** A weekly newsletter going back
   two years contributes only its most recent issues to a 250-message window.
 
@@ -217,8 +278,36 @@ leaving last week's verdicts on screen. The on-disk cache record has nowhere to 
 a reason, or a protection signal, and a safety test asserts that it stays that way.
 
 `CleanupProposalRules.version` is carried on each proposal so the UI and the tests can state
-which ruleset produced what they are showing. It is not a migration key; there is nothing to
-migrate.
+which ruleset produced what they are showing.
+
+### Saved planning choices
+
+What *is* stored is the **choosing**. **Remember these choices** keeps which senders you
+picked and what you chose to preview for each — sender grouping keys and an action identifier,
+nothing more. The keep-newest count and the age cutoff travel inside the action, so they need
+no separate storage.
+
+One file per account, at most one account at a time, owner-only permissions inside the
+sandboxed container, excluded from backups, named by a digest of the address, and deleted when
+you disconnect. A plan written for one account is never offered to another: the file records the
+address it belongs to and is discarded when that does not match.
+
+**A saved plan is not a scheduled one.** Restoring one re-opens a preview. There is no
+execution path in this app for it to trigger, nothing on the record that a schedule could hide
+in, and `SafetyBoundaryTests` asserts that restoring one issues no provider call at all.
+
+Choices go stale, and the app says so rather than quietly correcting:
+
+| What changed | What happens |
+| --- | --- |
+| `CleanupProposalRules.version` | The plan is marked **out of date**. The reasoning you were reading when you chose is not the reasoning on screen now, so the saved actions are not used as seeds. |
+| The scope | Said out loud; the choices still load. |
+| A chosen sender left the loaded window | Dropped from the plan, and counted in the notice. |
+| The window grew or shrank by more than a fifth | Said out loud, with both numbers — the same action reaches a different set of mail. |
+
+The window tolerance is a fifth so that a page of new mail is not an interruption while a deep
+load, which changes what every action reaches, always is. Staleness is re-evaluated after every
+page, so a plan becomes visibly stale as a deep load runs.
 
 ## Why this is still read-only
 
@@ -228,8 +317,12 @@ operates entirely on local data.
 
 `SafetyBoundaryTests` asserts all of it: that no mutating scope is requested, that every Gmail
 request the app can build is a `GET` whose path reaches none of Gmail's mutating operations,
-that building a preview issues no provider call and sends no HTTP request, that a plan is inert
-data, and that no proposal describes a sender in terms the evidence cannot support.
+that every mailbox scope resolves to a read-only Gmail label and smuggles in no search query,
+that building a preview issues no provider call and sends no HTTP request, that reviewing a
+sender's messages issues none either, that a plan and a saved plan are both inert data with
+nowhere for a schedule or an execution to hide, that restoring a saved plan performs nothing,
+that a deeper load is still nothing but `GET`s, and that no proposal describes a sender in terms
+the evidence cannot support.
 
 The order is deliberate. Recommending well is a harder problem than deleting, and it is the one
 worth getting right before anything is allowed to touch a mailbox.

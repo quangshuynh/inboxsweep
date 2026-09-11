@@ -41,7 +41,12 @@ actor SampleMailProvider: MailProvider {
 
     func currentConnection() async -> MailConnection { connection }
 
-    func restoreConnection() async throws -> MailConnection { connection }
+    func restoreConnection() async -> MailRestoreOutcome {
+        // Synthetic mail is never persisted, so there is never anything to restore.
+        connection.account.map(MailRestoreOutcome.restored) ?? .noStoredCredentials
+    }
+
+    func storedAuthorizationState() async -> StoredAuthorizationState { .unknown }
 
     func connect() async throws -> MailAccount {
         connection = .connected(account)
@@ -56,7 +61,9 @@ actor SampleMailProvider: MailProvider {
         guard connection.isConnected else { throw MailProviderError.authorizationExpired }
         try Task.checkCancellation()
 
-        let sorted = messages.sorted { $0.receivedAt > $1.receivedAt }
+        let sorted = messages
+            .filter { Self.matches(request.scope, $0) }
+            .sorted { $0.receivedAt > $1.receivedAt }
         let offset = request.pageToken.flatMap { Int($0.rawValue) } ?? 0
         guard offset < sorted.count else { return .empty }
 
@@ -65,6 +72,19 @@ actor SampleMailProvider: MailProvider {
             messages: Array(sorted[offset..<end]),
             nextPageToken: end < sorted.count ? MailPageToken(String(end)) : nil
         )
+    }
+
+    /// Mirrors what the Gmail adapter's `labelIds` filter does, so the scope picker behaves the
+    /// same way against synthetic mail as against a real mailbox.
+    private static func matches(_ scope: MailboxScope, _ message: MailMessage) -> Bool {
+        switch scope {
+        case .allMail: true
+        case .inbox: message.labels.contains(.inbox)
+        case .promotions: message.labels.contains(.categoryPromotions)
+        case .updates: message.labels.contains(.categoryUpdates)
+        case .social: message.labels.contains(.categorySocial)
+        case .forums: message.labels.contains(.categoryForums)
+        }
     }
 }
 #endif

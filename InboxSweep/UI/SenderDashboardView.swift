@@ -16,11 +16,21 @@ struct SenderDashboardView: View {
     @State private var isInspectorPresented = false
     @State private var isPlanPresented = false
 
+    /// The sender whose loaded messages are being reviewed, if any.
+    @State private var reviewedSender: SenderSummary?
+
     var body: some View {
         VStack(spacing: 0) {
             AccountSummaryHeader(snapshot: snapshot)
+            if let notice = session.notice {
+                SessionNoticeView(notice: notice)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+            }
             Divider()
             filterBar
+            Divider()
+            MailboxLoadBar(snapshot: snapshot, session: session)
             Divider()
             senderTable
             Divider()
@@ -33,7 +43,8 @@ struct SenderDashboardView: View {
                     SenderDetailView(
                         summary: sender,
                         proposal: snapshot.proposal(for: sender.id),
-                        messages: session.loadedMessages(forSenderKey: sender.id)
+                        messages: session.loadedMessages(forSenderKey: sender.id),
+                        onReviewMessages: { reviewedSender = sender }
                     )
                 } else {
                     ContentUnavailableView(
@@ -50,7 +61,21 @@ struct SenderDashboardView: View {
             .inspectorColumnWidth(min: 260, ideal: 340, max: 460)
         }
         .sheet(isPresented: $isPlanPresented) {
-            CleanupPlanSheet(session: session, senderKeys: selectedSenderKeysInDisplayOrder)
+            CleanupPlanSheet(
+                session: session,
+                senderKeys: selectedSenderKeysInDisplayOrder,
+                onReviewSender: { key in
+                    isPlanPresented = false
+                    reviewedSender = snapshot.senders.first { $0.id == key }
+                }
+            )
+        }
+        .sheet(item: $reviewedSender) { sender in
+            SenderMessageReviewView(
+                session: session,
+                summary: sender,
+                proposal: snapshot.proposal(for: sender.id)
+            )
         }
         .accessibilityIdentifier("dashboard.screen")
     }
@@ -98,6 +123,19 @@ struct SenderDashboardView: View {
             if !selectedSenderIDs.isEmpty {
                 Button("Clear selection") { selectedSenderIDs = [] }
                     .buttonStyle(.link)
+            }
+
+            if let savedPlan = session.savedPlan, !savedPlan.isEmpty {
+                Button {
+                    // Resuming *selects* the saved senders and opens the preview. It carries
+                    // nothing out, because there is nothing in this app that could.
+                    selectedSenderIDs = Set(savedPlan.usableSelections.map(\.senderKey))
+                    isPlanPresented = true
+                } label: {
+                    Label("^[\(savedPlan.usableSelections.count) saved sender](inflect: true)", systemImage: "bookmark")
+                }
+                .help("Reopens the preview with the senders and actions you saved. Nothing is carried out.")
+                .accessibilityIdentifier("dashboard.resumeSavedPlanButton")
             }
 
             Button {
@@ -198,32 +236,14 @@ struct SenderDashboardView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            if snapshot.hasMoreMessages {
-                Button {
-                    session.loadMore()
-                } label: {
-                    if snapshot.isLoadingMore {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Loading…")
-                        }
-                    } else {
-                        Text("Load more messages")
-                    }
-                }
-                .disabled(snapshot.isLoadingMore)
-                .accessibilityIdentifier("dashboard.loadMoreButton")
+            Text(snapshot.coverageDetail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("dashboard.coverageFooter")
 
-                if snapshot.isLoadingMore {
-                    Button("Cancel", role: .cancel) { session.cancel() }
-                }
-            } else {
-                Text("All messages in the loaded window are shown.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
+            Spacer(minLength: 12)
 
             Text(PrivacyNotice.summary)
                 .font(.footnote)

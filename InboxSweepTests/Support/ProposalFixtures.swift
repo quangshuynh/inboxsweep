@@ -67,6 +67,11 @@ nonisolated enum ProposalFixtures {
     }
 
     // MARK: - Named senders
+    //
+    // Each named sender uses its own identifier prefix. Gmail's message identifiers are unique
+    // across a mailbox and the session deduplicates by them, so two fixture senders sharing a
+    // prefix would collapse into one window the moment they were combined — which is a
+    // property of the fixtures, not of anything under test.
 
     /// High volume, Gmail Promotions, unsubscribe metadata, entirely unread.
     static func promotionalSender(count: Int = 24) -> [MailMessage] {
@@ -76,7 +81,8 @@ nonisolated enum ProposalFixtures {
             hoursApart: 20,
             labels: [.inbox, .categoryPromotions],
             listUnsubscribe: true,
-            unreadCount: count
+            unreadCount: count,
+            idPrefix: "promo"
         )
     }
 
@@ -88,7 +94,8 @@ nonisolated enum ProposalFixtures {
             hoursApart: 24 * 7,
             labels: [.inbox, .categoryUpdates],
             listUnsubscribe: true,
-            unreadCount: count / 4
+            unreadCount: count / 4,
+            idPrefix: "news"
         )
     }
 
@@ -99,7 +106,8 @@ nonisolated enum ProposalFixtures {
             subjects: neutralSubjects(count, prefix: "Backup completed"),
             hoursApart: 26,
             labels: [.inbox, .categoryUpdates],
-            unreadCount: count
+            unreadCount: count,
+            idPrefix: "notif"
         )
     }
 
@@ -110,7 +118,8 @@ nonisolated enum ProposalFixtures {
             subjects: neutralSubjects(count, prefix: "This week at the café"),
             hoursApart: 24 * 7,
             listUnsubscribe: true,
-            unreadCount: count
+            unreadCount: count,
+            idPrefix: "low"
         )
     }
 }

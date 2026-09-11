@@ -21,6 +21,13 @@ actor GmailProvider: MailProvider {
     private var connection: MailConnection = .disconnected
     private var refreshTask: Task<GmailAccessToken, Error>?
 
+    /// Whether the current authorization made it into the credential store.
+    ///
+    /// Tracked rather than assumed. A write that fails is not worth failing a sign-in over, but
+    /// it decides whether the next launch can restore anything at all, so it is not something
+    /// to find out by discovering the app is signed out again.
+    private var persistenceState: StoredAuthorizationState = .unknown
+
     init(
         configuration: GmailOAuthConfiguration?,
         transport: HTTPTransport = URLSessionHTTPTransport(),
@@ -41,17 +48,29 @@ actor GmailProvider: MailProvider {
 
     func currentConnection() async -> MailConnection { connection }
 
-    func restoreConnection() async throws -> MailConnection {
-        guard configuration != nil else { return .disconnected }
+    func restoreConnection() async -> MailRestoreOutcome {
+        guard configuration != nil else { return .noStoredCredentials }
 
-        // A failure to read the Keychain means "we have nothing", not "the app is broken".
-        guard let stored = (try? credentialStore.load()) ?? nil else { return .disconnected }
+        let stored: GmailStoredCredentials?
+        do {
+            stored = try credentialStore.load()
+        } catch let error as CredentialStoreError {
+            // The distinction this interval exists to draw: the Keychain answering "no" is
+            // not the same as the Keychain having nothing, and only one of them is a normal
+            // first launch.
+            if case .malformedStoredData = error { return .unusable(.storedCredentialsMalformed) }
+            return .unusable(.credentialStoreUnreadable(reason: error.diagnosticDescription))
+        } catch {
+            return .unusable(.credentialStoreUnreadable(reason: "The saved sign-in on this Mac couldn't be read."))
+        }
+
+        guard let stored else { return .noStoredCredentials }
 
         // If the scopes the app needs have changed since the grant was stored, the stored
         // grant is not the one we want. Discard it and ask the user to connect again.
         guard stored.coversRequestedScopes else {
             try? credentialStore.clear()
-            return .disconnected
+            return .unusable(.scopesNoLongerSufficient)
         }
 
         storedCredentials = stored
@@ -60,13 +79,20 @@ actor GmailProvider: MailProvider {
             _ = try await currentAccessToken()
             let account = try await loadAccount()
             connection = .connected(account)
-            return connection
+            persistenceState = .persisted
+            return .restored(account)
         } catch {
             let providerError = MailProviderError.wrapping(error)
-            if providerError.requiresReauthentication { forgetCredentials() }
-            throw providerError
+            guard providerError.requiresReauthentication else {
+                // The grant may well be fine; the network or Gmail is not. Keep it.
+                return .unusable(.providerUnavailable(providerError))
+            }
+            forgetCredentials()
+            return .unusable(.authorizationRevoked)
         }
     }
+
+    func storedAuthorizationState() async -> StoredAuthorizationState { persistenceState }
 
     func connect() async throws -> MailAccount {
         let oauth = try makeOAuthClient()
@@ -93,9 +119,14 @@ actor GmailProvider: MailProvider {
                     accountEmailAddress: account.emailAddress.address
                 )
                 storedCredentials = credentials
-                // Not being able to persist only costs the user a reconnect next launch, so
-                // it must not fail a sign-in that has otherwise succeeded.
-                try? credentialStore.save(credentials)
+                persistenceState = persist(credentials)
+            } else {
+                // Google omits the refresh token when the account has already granted this
+                // client and the grant was not re-prompted. The session works; the next
+                // launch will have nothing to restore from.
+                persistenceState = .notPersisted(
+                    reason: "Google didn't issue a new refresh token for this sign-in, so it can't be saved for next launch."
+                )
             }
 
             connection = .connected(account)
@@ -103,6 +134,7 @@ actor GmailProvider: MailProvider {
         } catch {
             accessToken = nil
             connection = .disconnected
+            persistenceState = .unknown
             throw MailProviderError.wrapping(error)
         }
     }
@@ -190,12 +222,32 @@ actor GmailProvider: MailProvider {
         }
     }
 
+    /// Writes credentials and reports, in the user's terms, whether it worked.
+    ///
+    /// Never throws. Failing to persist costs the user a reconnect next launch; failing the
+    /// sign-in they just completed would cost them the session as well, for no gain.
+    private func persist(_ credentials: GmailStoredCredentials) -> StoredAuthorizationState {
+        do {
+            try credentialStore.save(credentials)
+            return .persisted
+        } catch let error as CredentialStoreError {
+            return .notPersisted(
+                reason: "InboxSweep couldn't save this sign-in to the Keychain, so you'll need to connect again next launch. \(error.diagnosticDescription)"
+            )
+        } catch {
+            return .notPersisted(
+                reason: "InboxSweep couldn't save this sign-in to the Keychain, so you'll need to connect again next launch."
+            )
+        }
+    }
+
     private func forgetCredentials() {
         refreshTask?.cancel()
         refreshTask = nil
         accessToken = nil
         storedCredentials = nil
         connection = .disconnected
+        persistenceState = .unknown
         try? credentialStore.clear()
     }
 }

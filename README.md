@@ -16,8 +16,9 @@ unsubscribe, or send mail.
 
 - Connects a Google account with OAuth 2.0 (authorization code + PKCE, no client secret).
 - Requests exactly one scope: `gmail.metadata` — headers, labels, and dates. Not bodies.
-- Fetches a bounded window of message metadata (250 messages by default) with bounded
-  concurrency, cancellation support, and pagination.
+- Fetches a bounded window of message metadata with bounded concurrency, cancellation support,
+  and pagination — **250 messages by default, up to a documented ceiling of 2,500** — from the
+  Inbox, any of Gmail's four categories, or All mail.
 - Normalizes Gmail's responses into app-owned domain models.
 - Groups messages by sender and shows per-sender counts in a native macOS dashboard.
 - Reports **sender observations** — Gmail's own categories, `List-Unsubscribe` presence,
@@ -103,6 +104,16 @@ Notable decisions:
   instead of leaving stale verdicts on screen. The cache record has nowhere to store one.
 - **Protection runs before the cleanup rules and can only veto.** No amount of bulk-mail
   evidence unlocks a cleanup suggestion for a sender that raised a protection signal.
+- **A failed restore is not the same as a first launch.** `MailRestoreOutcome` has three cases
+  rather than two, so "nothing stored" and "the Keychain refused us" cannot produce the same
+  silent signed-out screen — which is how a credential-persistence bug survived a whole
+  interval. See [Docs/SessionRestore.md](Docs/SessionRestore.md).
+- **Plan counts and the messages behind them come from one pass.** The per-message
+  classification the review screen renders *is* what the entry counts are summed from, so a
+  total can never sit above a list that does not add up to it.
+- **There is no unbounded load.** Every depth is finite and capped, because a message costs a
+  metadata request and an unbounded "load everything" is a denial of service aimed at the
+  user's own quota.
 
 ## Gmail permission
 
@@ -233,6 +244,23 @@ xcodebuild -project InboxSweep.xcodeproj -scheme InboxSweep -configuration Relea
 xcodebuild -project InboxSweep.xcodeproj -scheme InboxSweep -destination 'platform=macOS' test
 ```
 
+The unit tests are hosted by `InboxSweep.app`, so `KeychainCredentialStoreTests` exercises the
+real `SecItem*` path with the app's own bundle identifier and entitlements. It writes only
+synthetic credentials under a test-only service name and deletes them afterwards.
+
+### Check that a sign-in survives a relaunch
+
+A debug-only launch argument writes a synthetic Keychain marker, reports what it found, and
+exits — so cross-launch persistence can be checked without a Google password:
+
+```bash
+InboxSweep.app/Contents/MacOS/InboxSweep --keychain-selfcheck
+```
+
+Run it twice against one build; the second run should say `restored`.
+`--keychain-selfcheck-reset` removes the marker. See
+[Docs/SessionRestore.md](Docs/SessionRestore.md).
+
 No test requires a Google account, a network connection, or real mailbox data. Fixtures use
 RFC 2606 reserved domains (`example.com`, `example.org`, `example.net`) throughout, and the
 persistence tests write to a temporary directory rather than to your own container.
@@ -305,8 +333,13 @@ not been independently audited and makes no anonymity guarantees.
   a sender's proposal, and a long-running newsletter contributes only its recent issues to a
   250-message window. The dry-run preview states which case applies.
 - The dry-run planner offers a fixed set of cutoffs (keep newest 5; 30 and 90 days). There is
-  no way to type an arbitrary one.
-- A previewed plan is not saved. Closing the sheet discards the chosen actions.
+  no way to type an arbitrary one, though a saved plan's file format would carry one.
+- The message review is per sender. There is no way to see every loaded message at once.
+- A saved plan holds sender addresses on disk in the app's container. It is deleted on
+  disconnect, but it is the one place a list of who writes to you is written unencrypted beyond
+  the metadata cache.
+- Keychain behaviour is verified on a development build. A distribution build would use the
+  data protection keychain instead, and that path has not been exercised.
 - The Copy Bundle Resources build phase still contains the target's `Info.plist`, which
   produces one project-level build warning. It predates this interval and is untouched.
 

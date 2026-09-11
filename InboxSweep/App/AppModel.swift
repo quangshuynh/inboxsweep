@@ -25,10 +25,20 @@ final class AppModel {
     /// same file rather than leaving a second one behind.
     private let cache = FileInboxCacheStore()
 
+    /// The store the real session persists preview selections to.
+    ///
+    /// Held here for the same reason ``cache`` is: signing out and back in reuses one file
+    /// rather than leaving a second behind.
+    private let planStore = FileCleanupPlanStore()
+
     init() {
         let configuration = GmailOAuthConfiguration.load()
         isProviderConfigured = configuration != nil
-        session = InboxSessionModel(provider: GmailProvider(configuration: configuration), cache: cache)
+        session = InboxSessionModel(
+            provider: GmailProvider(configuration: configuration),
+            cache: cache,
+            planStore: planStore
+        )
 
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains(Self.sampleDataLaunchArgument) {
@@ -60,7 +70,8 @@ final class AppModel {
         isUsingSampleData = false
         session = InboxSessionModel(
             provider: GmailProvider(configuration: GmailOAuthConfiguration.load()),
-            cache: cache
+            cache: cache,
+            planStore: planStore
         )
     }
     #endif

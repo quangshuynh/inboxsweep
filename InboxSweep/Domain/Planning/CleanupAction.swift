@@ -32,6 +32,34 @@ nonisolated enum PlannedCleanupAction: Hashable, Sendable, Identifiable {
         }
     }
 
+    /// Rebuilds an action from its ``id``.
+    ///
+    /// Exists so a saved plan's file format is the app's own stable vocabulary rather than
+    /// whatever `Codable` synthesizes for an enum with associated values — the same reasoning
+    /// the cache's DTO layer applies. Returns `nil` for anything this build does not recognise,
+    /// so a plan written by a future version is discarded rather than guessed at.
+    init?(id: String) {
+        if id == "review-subscription" {
+            self = .reviewSubscription
+        } else if let days = Self.value(in: id, after: "archive-") {
+            self = .archiveMessagesOlderThan(days: days)
+        } else if let days = Self.value(in: id, after: "trash-") {
+            self = .trashMessagesOlderThan(days: days)
+        } else if let count = Self.value(in: id, after: "keep-newest-") {
+            self = .keepNewest(count: count)
+        } else {
+            return nil
+        }
+    }
+
+    /// The positive integer following `prefix`, or `nil`.
+    private static func value(in id: String, after prefix: String) -> Int? {
+        guard id.hasPrefix(prefix), let value = Int(id.dropFirst(prefix.count)), value > 0 else {
+            return nil
+        }
+        return value
+    }
+
     var displayName: String {
         switch self {
         case .archiveMessagesOlderThan(let days): "Archive messages older than \(days) days"

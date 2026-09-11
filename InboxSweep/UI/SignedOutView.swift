@@ -12,6 +12,9 @@ struct SignedOutView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                if let notice = appModel.session.notice {
+                    SessionNoticeView(notice: notice)
+                }
                 header
                 Divider()
                 permissionSection
