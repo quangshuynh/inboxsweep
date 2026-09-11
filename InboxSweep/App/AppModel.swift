@@ -35,7 +35,10 @@ final class AppModel {
         let configuration = GmailOAuthConfiguration.load()
         isProviderConfigured = configuration != nil
         session = InboxSessionModel(
-            provider: GmailProvider(configuration: configuration),
+            provider: GmailProvider(
+                configuration: configuration,
+                credentialStore: Self.credentialStore()
+            ),
             cache: cache,
             planStore: planStore
         )
@@ -47,9 +50,31 @@ final class AppModel {
         #endif
     }
 
+    /// The store the real provider persists its refresh token to.
+    ///
+    /// Always the Keychain, except under ``ignoreStoredCredentialsLaunchArgument``.
+    private static func credentialStore() -> GmailCredentialStoring {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(ignoreStoredCredentialsLaunchArgument) {
+            return InMemoryCredentialStore()
+        }
+        #endif
+        return KeychainCredentialStore()
+    }
+
     #if DEBUG
     /// Launch argument that starts the app on synthetic data, used by the UI tests.
     static let sampleDataLaunchArgument = "--sample-data"
+
+    /// Launch argument that starts the app with an empty, process-lifetime credential store,
+    /// so the signed-out screen appears whether or not this Mac has a saved sign-in.
+    ///
+    /// The UI test for that screen used to launch the app with no arguments at all, which made
+    /// it pass or fail on whether the developer happened to be connected to Gmail — and, when
+    /// they were, drove a test run through their real mailbox. Nothing else about the launch
+    /// changes: the same provider, the same configuration, the same screen. Only the Keychain
+    /// is left out of it, and the real item is neither read nor written.
+    static let ignoreStoredCredentialsLaunchArgument = "--ignore-stored-credentials"
 
     /// Switches to the synthetic mailbox so the dashboard can be exercised without a Google
     /// account. Debug builds only.
@@ -69,7 +94,10 @@ final class AppModel {
     func useRealProvider() {
         isUsingSampleData = false
         session = InboxSessionModel(
-            provider: GmailProvider(configuration: GmailOAuthConfiguration.load()),
+            provider: GmailProvider(
+                configuration: GmailOAuthConfiguration.load(),
+                credentialStore: Self.credentialStore()
+            ),
             cache: cache,
             planStore: planStore
         )
