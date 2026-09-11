@@ -249,6 +249,10 @@ private struct ActivityRow: View {
             }
         }
         .padding(.vertical, 4)
+        // A container of separately meaningful lines, not one label. Without `.contain`, SwiftUI
+        // is free to merge the row into a single element and a test asking whether the rule
+        // attribution is present would be asking about something that had been folded away.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activity.row")
     }
 

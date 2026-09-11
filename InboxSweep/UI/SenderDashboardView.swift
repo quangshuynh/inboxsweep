@@ -425,57 +425,39 @@ struct SenderDashboardView: View {
     @ViewBuilder
     private var ruleRunBanner: some View {
         if let run = session.ruleRun, run.isWorthShowing {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "wand.and.stars.inverse")
-                    .foregroundStyle(.tint)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    if let archived = run.archivedSummary {
-                        Text(archived)
-                            .font(.callout.weight(.medium))
-                            .accessibilityIdentifier("dashboard.ruleRun.archived")
-                    }
-                    if let protectedNote = run.protectedSummary {
-                        Text(protectedNote)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("dashboard.ruleRun.protected")
-                    }
-                    if let deferred = run.deferredSummary {
-                        Text(deferred)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("dashboard.ruleRun.deferred")
-                    }
-                    if let failure = run.failureSummary {
-                        Text(failure)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("dashboard.ruleRun.failure")
-                    }
-                    if run.archivedCount > 0 {
-                        Text(SenderRuleRun.noUndoNote)
-                            .font(.footnote)
-                            .foregroundStyle(.tertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("dashboard.ruleRun.noUndo")
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                if let archived = run.archivedSummary {
+                    Label(archived, systemImage: "wand.and.stars.inverse")
+                        .font(.callout.weight(.medium))
+                        .accessibilityIdentifier("dashboard.ruleRun.archived")
+                }
+                if let protectedNote = run.protectedSummary {
+                    bannerLine(protectedNote, identifier: "dashboard.ruleRun.protected")
+                }
+                if let deferred = run.deferredSummary {
+                    bannerLine(deferred, identifier: "dashboard.ruleRun.deferred")
+                }
+                if let failure = run.failureSummary {
+                    bannerLine(failure, identifier: "dashboard.ruleRun.failure")
+                }
+                if run.archivedCount > 0 {
+                    bannerLine(SenderRuleRun.noUndoNote, identifier: "dashboard.ruleRun.noUndo")
                 }
 
-                Spacer(minLength: 12)
+                HStack(spacing: 12) {
+                    Button("Rules") { sheet = .rules }
+                        .buttonStyle(.link)
+                        .accessibilityIdentifier("dashboard.ruleRun.rulesButton")
 
-                Button("Rules") { sheet = .rules }
-                    .buttonStyle(.link)
-                    .accessibilityIdentifier("dashboard.ruleRun.rulesButton")
+                    Button("Dismiss") { session.dismissRuleRun() }
+                        .buttonStyle(.link)
+                        .help("Hides this summary. It changes nothing, and the details stay in Activity.")
+                        .accessibilityIdentifier("dashboard.ruleRun.dismissButton")
 
-                Button("Dismiss") { session.dismissRuleRun() }
-                    .buttonStyle(.link)
-                    .help("Hides this summary. It changes nothing, and the details stay in Activity.")
-                    .accessibilityIdentifier("dashboard.ruleRun.dismissButton")
+                    Spacer(minLength: 0)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
             // `.contain` rather than the default. An identifier on a stack of `Text`s invites
@@ -485,6 +467,32 @@ struct SenderDashboardView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("dashboard.ruleRun")
         }
+    }
+
+    /// One wrapping sentence in the banner, bounded.
+    ///
+    /// ### Why the line limit, and why this is a `VStack` at all
+    ///
+    /// The first version put the sentences and the two buttons in one `HStack`. Measured by hand
+    /// on the sample mailbox, that broke the dashboard outright: the header, the filter bar, and
+    /// the load bar were pushed off the top of the window and the sender table was left clipped
+    /// mid-row. Wrapping `Text`s laid out against whatever width two buttons leave over report an
+    /// enormous intrinsic height, and the surrounding `VStack` honours it.
+    ///
+    /// Stacking vertically removes the competition entirely, and the line limit bounds what a
+    /// long sentence can cost even so. A truncated line is not a loss here: every one of these is
+    /// also in Activity, in full.
+    ///
+    /// It was found by hand because the UI suite could not run on this machine; a case asserting
+    /// that `dashboard.coverageHeadline` is still present after a rule pass would have caught it.
+    private func bannerLine(_ text: String, identifier: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier(identifier)
     }
 
     /// The in-content way into Rules, beside Activity and for the same reason.

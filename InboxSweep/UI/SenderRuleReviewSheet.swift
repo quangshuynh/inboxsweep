@@ -60,17 +60,24 @@ struct SenderRuleReviewSheet: View {
             footer
         }
         .frame(minWidth: 560, idealWidth: 620, minHeight: 480, idealHeight: 600)
-        .accessibilityIdentifier("ruleReview.screen")
+        // Escape backs out, the same as the Cancel button below, which is what every other sheet
+        // in the app does. Safe at either step: nothing has been created until the confirming
+        // press, and `isConfirming` is view state with nothing behind it.
+        .onExitCommand { dismiss() }
     }
 
     // MARK: - Sections
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // On the title, not on the root container: an identified container is one SwiftUI is
+            // free to merge, and measured, that swallowed this sheet's footer buttons while
+            // leaving its scrolling sections addressable. See ``SenderRulesView`` for the same
+            // note and the same three failing cases.
             Text("Create a rule for \(review.senderDisplayValue)")
                 .font(.title3.weight(.semibold))
                 .lineLimit(2)
-                .accessibilityIdentifier("ruleReview.title")
+                .accessibilityIdentifier("ruleReview.screen")
 
             Text("Nothing is created until you confirm below.")
                 .font(.callout)

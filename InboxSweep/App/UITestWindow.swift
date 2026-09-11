@@ -287,7 +287,7 @@ final class UITestWindow {
         // at all; see ``retryInterval``.
         guard !isTransitioning else { return false }
 
-        let windows = NSApplication.shared.windows.filter(\.canBecomeMain)
+        let windows = NSApplication.shared.windows.filter(Self.isPlaceable)
         guard !windows.isEmpty else {
             phase = .waitingForWindow
             return false
@@ -304,6 +304,25 @@ final class UITestWindow {
         // Placing all of them is harmless, because an app of this shape has one window a user can
         // see and the rest ignore the treatment.
         for window in windows {
+            // **The single most important line in this file.**
+            //
+            // SwiftUI autosaves the window's frame into the app's own `NSUserDefaults`, and a
+            // window that was full screen when the process ended saves a full-screen frame. The
+            // Space that frame belonged to is gone by the next launch, and macOS then brings the
+            // app up with **no window at all**: not off-screen, not behind something, absent.
+            //
+            // Measured, and it is what blocked this suite for an afternoon. Every case failed
+            // with the app process alive, its accessibility tree holding a menu bar and nothing
+            // else, and `System Events` agreeing there were zero windows. It reproduced with this
+            // whole harness disabled, which is what finally ruled the harness out; deleting
+            // `quang.InboxSweep` from `defaults` fixed it instantly, and the suite went green.
+            //
+            // Clearing the autosave name means a launch under this argument neither reads a saved
+            // frame nor writes one. An ordinary launch is untouched and still remembers where the
+            // user left the window: the poison is only ever produced by the full-screen state
+            // this file asks for, so this is exactly where it should be cleaned up.
+            window.setFrameAutosaveName("")
+
             // Only while the window is still on the shared Space. Resizing and centring one that
             // is already full screen is at best a no-op and at worst an exit from the Space this
             // exists to reach.
@@ -344,9 +363,30 @@ final class UITestWindow {
     /// what the runner's hit test resolves to.
     private var isDeterministic: Bool {
         guard NSRunningApplication.current.isActive else { return false }
+        // A sheet is key while it is up, and a sheet is never full screen, so the question has to
+        // be asked of the window the sheet is attached to rather than of whatever is key.
         return NSApplication.shared.windows.contains {
-            $0.canBecomeMain && $0.isKeyWindow && $0.styleMask.contains(.fullScreen)
+            Self.isPlaceable($0) && $0.styleMask.contains(.fullScreen) && ($0.isKeyWindow || $0.attachedSheet != nil)
         }
+    }
+
+    /// Whether this is a window the placement may touch.
+    ///
+    /// **Sheets are excluded, and that exclusion is the whole of one bug.** A sheet is an
+    /// `NSWindow` that `canBecomeMain`, so the Interval 9 filter matched it. That was harmless
+    /// while the placement ran exactly once, at launch, before any sheet existed. It stopped
+    /// being harmless the moment this file grew a loop that holds the state for the life of the
+    /// process: every half second it was calling `setContentSize`, `center()`, and
+    /// `toggleFullScreen(_:)` on whatever sheet happened to be up.
+    ///
+    /// Measured. A case that had just asserted six things about the rule review sheet then failed
+    /// to find the button in its footer, and the accessibility tree in the failure showed the app
+    /// back on the dashboard with no sheet at all. Three cases failed that way, and several
+    /// earlier "the element is no longer in the accessibility tree" failures have the same shape.
+    ///
+    /// `parent` covers child windows generally; `isSheet` covers the case that matters.
+    private nonisolated static func isPlaceable(_ window: NSWindow) -> Bool {
+        window.canBecomeMain && !window.isSheet && window.parent == nil
     }
 
     /// Moves one window onto a Space of its own.
@@ -476,7 +516,12 @@ final class UITestWindow {
     private func raise() {
         guard phase != .notRequested else { return }
         forceToForeground()
-        for window in NSApplication.shared.windows where window.isVisible {
+        // Sheets excluded here for the same reason the placement excludes them, and it is the
+        // same bug twice: `orderFrontRegardless()` on a sheet orders it independently of the
+        // window it is attached to, and a sheet that has been separated from its parent is a
+        // sheet that goes away. This runs on every session state change and on every resignation
+        // of the foreground, so with a sheet on screen it fired constantly.
+        for window in NSApplication.shared.windows where window.isVisible && Self.isPlaceable(window) {
             window.orderFrontRegardless()
         }
         // Reported either way. A ``phase`` that only ever climbed would have told the suite the

@@ -223,7 +223,18 @@ final class InboxSweepUITests: XCTestCase {
     ) -> Bool {
         front(app)
         guard element.waitForExistence(timeout: Self.elementTimeout) else {
-            XCTFail("\(description) never appeared", file: file, line: line)
+            // The tree is included because "the button never appeared" is rarely about the
+            // button. Measured: three cases failed on a footer button while the failure's own
+            // tree showed the app back on the dashboard with no sheet at all, which is what
+            // pointed at the placement loop re-configuring sheet windows. Truncated, because a
+            // full macOS accessibility tree is thousands of lines and the first few hundred say
+            // which screen is actually on.
+            XCTFail(
+                "\(description) never appeared. What the app is showing: "
+                + String(app.debugDescription.prefix(2500)),
+                file: file,
+                line: line
+            )
             return false
         }
 

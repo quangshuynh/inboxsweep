@@ -61,33 +61,52 @@ struct SenderMessageReviewView: View {
     /// screen's own rows, and re-checked against the sender when a set is frozen, so nothing
     /// left over from a re-sort or a reload can smuggle another sender's mail into a set.
     @State private var selectedMessageIDs: Set<MailMessage.ID> = []
-
-    /// The frozen set a confirmation is open for.
+    /// The sheet this screen is presenting, if any.
     ///
-    /// Separate from ``selectedMessageIDs`` so that ticking rows never, by itself, puts the app
-    /// one keystroke away from a mutation. Pressing the button is what fills this in, and what
-    /// goes in is a copy that the table underneath can no longer change.
-    @State private var pendingArchive: ArchiveSelectionSnapshot?
+    /// **One `@State` and one `.sheet` modifier**, rather than one of each per destination, for
+    /// the reason ``SenderDashboardView`` records after hitting it first: stacking `.sheet`
+    /// modifiers on a single view is not something SwiftUI honours. Two happened to work here,
+    /// and adding a third for the rule review broke it in a way that read as a layout problem
+    /// rather than a presentation one, with the sheet's own sections rendering and its footer
+    /// buttons never resolving.
+    ///
+    /// Each case is a different decision about different mail, which is why they are sheets at
+    /// all: this screen is about the messages already here, while unsubscribing and a rule are
+    /// both about mail that has not arrived. Ticking rows never, by itself, puts the app one
+    /// keystroke away from a mutation: pressing a button is what fills this in, and what goes in
+    /// is a copy the table underneath can no longer change.
+    @State private var sheet: Sheet?
 
     /// Said when a frozen set could not be built because the window moved under the selection.
     @State private var selectionIsStale = false
 
-    /// The rule review, when the user has opened it.
-    ///
-    /// A sheet rather than a section, for the same reason the unsubscribe options are one: it is
-    /// a different decision about different mail. This screen is about the messages already here;
-    /// a rule is about the ones that have not arrived. Opening it creates nothing.
-    @State private var isShowingRuleReview = false
+    /// The sheets this screen can present.
+    private enum Sheet: Identifiable {
 
-    /// The unsubscribe options screen, when the user has opened it.
-    ///
-    /// A separate sheet rather than a section of this one, because the two answer different
-    /// questions about different mail: this screen is about the messages already here, and that
-    /// one is about the ones that have not arrived. Presenting it from here is a convenience,
-    /// since the user is looking at this sender, not a suggestion that unsubscribing is part of
-    /// the
-    /// archive flow.
-    @State private var isShowingUnsubscribeOptions = false
+        /// The confirmation for a frozen set of messages. The app's only route to a write.
+        case archive(ArchiveSelectionSnapshot)
+
+        /// What this sender's own headers say about unsubscribing.
+        case unsubscribeOptions
+
+        /// What a rule for this sender would be. **Frozen when the button is pressed**, not
+        /// re-derived while the sheet is on screen: a review that re-derived itself on every body
+        /// evaluation would be a different decision every frame, which is the opposite of what
+        /// freezing is for.
+        case ruleReview(SenderRuleReviewSnapshot)
+
+        /// Why a rule could not be reviewed, when one could not be.
+        case ruleUnavailable
+
+        var id: String {
+            switch self {
+            case .archive(let selection): "archive-\(selection.id)"
+            case .unsubscribeOptions: "unsubscribeOptions"
+            case .ruleReview(let review): "ruleReview-\(review.id)"
+            case .ruleUnavailable: "ruleUnavailable"
+            }
+        }
+    }
 
     /// The preselection that was actually applied, kept so the banner can say what it did.
     ///
@@ -118,19 +137,15 @@ struct SenderMessageReviewView: View {
         // Escape, and neither touches a mailbox. The sheets that *can* act keep Escape bound to
         // their own Cancel, which backs out of the confirmation rather than out of the sheet.
         .onExitCommand { dismiss() }
-        .sheet(item: $pendingArchive) { frozen in
-            ArchiveSelectionSheet(session: session, selection: frozen)
-        }
-        .sheet(isPresented: $isShowingUnsubscribeOptions) {
-            UnsubscribeOptionsSheet(session: session, summary: summary)
-        }
-        .sheet(isPresented: $isShowingRuleReview) {
-            // Derived here and handed over. `makeSenderRuleReview` reads the loaded window and
-            // returns a value; it writes nothing, and the sheet's own confirming button is the
-            // only thing in the app that creates a rule.
-            if let review = session.makeSenderRuleReview(forSenderKey: summary.id) {
+        .sheet(item: $sheet) { destination in
+            switch destination {
+            case .archive(let frozen):
+                ArchiveSelectionSheet(session: session, selection: frozen)
+            case .unsubscribeOptions:
+                UnsubscribeOptionsSheet(session: session, summary: summary)
+            case .ruleReview(let review):
                 SenderRuleReviewSheet(session: session, review: review)
-            } else {
+            case .ruleUnavailable:
                 RuleUnavailableSheet(session: session, summary: summary)
             }
         }
@@ -336,7 +351,8 @@ struct SenderMessageReviewView: View {
     private var ruleControl: some View {
         if let existing = session.rule(forSenderKey: summary.id) {
             Button {
-                isShowingRuleReview = true
+                // A sender that already has a rule opens Rules rather than a second review.
+                sheet = .ruleUnavailable
             } label: {
                 Label(existing.isEnabled ? "Rule is on" : "Rule is off", systemImage: "wand.and.stars.inverse")
             }
@@ -344,7 +360,11 @@ struct SenderMessageReviewView: View {
             .accessibilityIdentifier("messageReview.existingRuleButton")
         } else {
             Button {
-                isShowingRuleReview = true
+                // Frozen here, once, and handed to the sheet. `makeSenderRuleReview` reads the
+                // loaded window and returns a value; it writes nothing, and the sheet's own
+                // confirming button is the only thing in the app that creates a rule.
+                sheet = session.makeSenderRuleReview(forSenderKey: summary.id)
+                    .map(Sheet.ruleReview) ?? .ruleUnavailable
             } label: {
                 Label("Create archive rule…", systemImage: "wand.and.stars.inverse")
             }
@@ -365,7 +385,7 @@ struct SenderMessageReviewView: View {
     private var unsubscribeControl: some View {
         if unsubscribeOpportunity.availability.camesFromListHeader {
             Button {
-                isShowingUnsubscribeOptions = true
+                sheet = .unsubscribeOptions
             } label: {
                 Label("Unsubscribe…", systemImage: "envelope.badge.shield.half.filled")
             }
@@ -478,7 +498,7 @@ struct SenderMessageReviewView: View {
                     )
                     if let frozen {
                         selectionIsStale = false
-                        pendingArchive = frozen
+                        sheet = .archive(frozen)
                     } else {
                         // Refused rather than narrowed. A confirmation for "the ones that are
                         // still there" would be a confirmation of a set nobody approved.

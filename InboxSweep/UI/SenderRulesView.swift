@@ -37,7 +37,6 @@ struct SenderRulesView: View {
         // Escape, and neither touches a mailbox. The sheets that *can* act keep Escape bound to
         // their own Cancel, which backs out of the confirmation rather than out of the sheet.
         .onExitCommand { dismiss() }
-        .accessibilityIdentifier("rules.screen")
         .confirmationDialog(
             pendingDeletion.map { "Delete the rule for \($0.senderDisplayValue)?" } ?? "",
             isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }),
@@ -62,9 +61,15 @@ struct SenderRulesView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // The screen identifier lives on the title rather than on the root container, which
+            // is what ``SenderMessageReviewView`` and ``ActivityView`` already do. On the root it
+            // behaves differently: SwiftUI is free to treat an identified container as one
+            // element, and measured, that swallowed this screen's **footer** while leaving the
+            // scrolling list addressable. Three cases failed looking for a Done button that was
+            // plainly on screen.
             Text("Rules")
                 .font(.title3.weight(.semibold))
-                .accessibilityIdentifier("rules.title")
+                .accessibilityIdentifier("rules.screen")
 
             Text("""
                 Rules are the only thing InboxSweep does to your mail without asking first, and \
