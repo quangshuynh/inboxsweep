@@ -3,7 +3,16 @@ import SwiftUI
 @main
 struct InboxSweepApp: App {
 
-    @State private var appModel = AppModel()
+    @State private var appModel: AppModel
+
+    init() {
+        // Runs before any window exists and exits the process when it runs at all, so a
+        // credential self-check costs one launch rather than a whole app session.
+        #if DEBUG
+        CredentialStoreSelfCheck.runIfRequested()
+        #endif
+        _appModel = State(initialValue: AppModel())
+    }
 
     var body: some Scene {
         WindowGroup {
