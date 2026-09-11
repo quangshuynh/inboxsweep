@@ -1236,6 +1236,280 @@ struct SafetyBoundaryTests {
         ]))
     }
 
+    // MARK: - Unsubscribe is a second capability, not a wider first one
+
+    @Test("Unsubscribing added no Gmail scope, and none of the prohibited ones")
+    func unsubscribeAddsNoGmailScope() {
+        // The claim requirement 11 of this interval asks to be proved rather than asserted:
+        // the app gained the ability to unsubscribe and asks Google for exactly what it asked
+        // for before. It can, because a one-click unsubscribe does not touch Gmail at all.
+        #expect(GmailScope.requested == [
+            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.modify",
+        ])
+
+        for scope in GmailScope.prohibited {
+            #expect(!GmailScope.requested.contains(scope))
+        }
+        // Named individually, because these are the four somebody would reach for if they tried
+        // to implement mailto unsubscribe by *sending* the mail.
+        for sendingScope in [
+            "https://www.googleapis.com/auth/gmail.send",
+            "https://www.googleapis.com/auth/gmail.compose",
+            "https://www.googleapis.com/auth/gmail.insert",
+            "https://www.googleapis.com/auth/gmail.settings.basic",
+        ] {
+            #expect(GmailScope.prohibited.contains(sendingScope))
+            #expect(!GmailScope.requestedScopeParameter.contains(sendingScope))
+        }
+    }
+
+    @Test("No Gmail mutation endpoint is reachable from the unsubscribe boundary")
+    func unsubscribeReachesNoGmailEndpoint() {
+        // The mutating surface did not grow. There are still exactly two mutating Gmail
+        // requests, they are still the two INBOX label changes, and unsubscribe is not among
+        // them — because unsubscribe is not a Gmail operation.
+        #expect(GmailMutationEndpoint.allRequestBuilders().count == 2)
+
+        for request in GmailMutationEndpoint.allRequestBuilders() {
+            let body = String(data: request.body, encoding: .utf8) ?? ""
+            #expect(!body.lowercased().contains("unsubscribe"))
+            #expect(!request.url.absoluteString.lowercased().contains("unsubscribe"))
+            #expect(!request.url.absoluteString.contains("settings"))
+            #expect(!request.url.absoluteString.contains("filters"))
+        }
+
+        // And the one-click request goes to the endpoint from the header, never to Google.
+        let endpoint = HTTPSUnsubscribeURL(string: "https://lists.example/u/abc")!
+        let unsubscribeRequest = OneClickUnsubscribeClient.urlRequest(for: endpoint)
+        // Bound to a local rather than written inline: `#expect(!(x ?? "").contains(y))` folds
+        // into a Void-typed expression that swift-testing reports as a failure whatever the
+        // values are. Worth a line to avoid, and worth the note so it is not re-inlined.
+        let unsubscribeURL = unsubscribeRequest.url?.absoluteString ?? ""
+        #expect(unsubscribeRequest.url?.host == "lists.example")
+        #expect(!unsubscribeURL.contains("googleapis"))
+    }
+
+    @Test("The unsubscribe boundary offers inspection and one standard request, and nothing else")
+    func unsubscribeBoundaryIsNarrow() {
+        // Enumerated by hand, because the point is the *absence* of a third method. A protocol
+        // that grew an `openPage`, a `sendMail`, a `createRule`, or a generic `perform` would
+        // be a different promise, and it should be argued about in a test rather than found in
+        // somebody's subscriptions.
+        let boundary: any MailUnsubscribing = RecordingUnsubscriber()
+        _ = boundary.unsubscribeCapability
+        _ = boundary.submitOneClickUnsubscribe
+
+        // Nothing here can express a rule, a filter, or a bulk operation.
+        let request = OneClickUnsubscribeRequest(
+            endpoint: HTTPSUnsubscribeURL(string: "https://lists.example/u")!,
+            accountAddress: "someone@example.com"
+        )
+        let properties = Set(Mirror(reflecting: request).children.compactMap(\.label))
+        #expect(properties == ["endpoint", "accountAddress", "operationID"])
+        #expect(properties.isDisjoint(with: [
+            "senderKey", "senders", "messageIDs", "rule", "filter", "schedule", "applyToFuture", "all",
+        ]))
+    }
+
+    @Test("No Google access token can reach an unsubscribe host, because they share no object")
+    func noGoogleTokenReachesAnUnsubscribeHost() async throws {
+        // Driven end to end: a real provider, a real connect that mints a token, a real load,
+        // and then a one-click unsubscribe — with a *separate* recording transport under the
+        // unsubscribe client, so everything it sends is inspectable.
+        let unsubscribeTransport = RecordingHTTPTransport { _, _ in HTTPResponse(statusCode: 200) }
+        let gmailTransport = RecordingHTTPTransport(
+            handler: GmailMailboxStub(messages: [
+                GmailFixtures.SyntheticMessage(
+                    id: "u1",
+                    listUnsubscribe: "<https://lists.example/u/abc>",
+                    listUnsubscribePost: "List-Unsubscribe=One-Click"
+                )
+            ]).handler()
+        )
+        let provider = GmailProvider(
+            configuration: GmailOAuthConfiguration(clientID: "1234567890-abcdef.apps.googleusercontent.com"),
+            transport: gmailTransport,
+            webAuthenticator: FakeWebAuthenticator.granting(),
+            credentialStore: InMemoryCredentialStore(),
+            retryPolicy: .immediate,
+            unsubscriber: OneClickUnsubscribeClient(transport: unsubscribeTransport)
+        )
+
+        let account = try await provider.connect()
+        let page = try await provider.fetchMessages(MailFetchRequest(limit: 1))
+        let endpoint = try #require(page.messages[0].unsubscribe.oneClickURL)
+
+        let unsubscriber = try #require(provider.unsubscriber)
+        _ = try await unsubscriber.submitOneClickUnsubscribe(
+            OneClickUnsubscribeRequest(endpoint: endpoint, accountAddress: account.emailAddress.address)
+        )
+
+        // Gmail's transport really did carry a bearer token, so the check below is meaningful.
+        #expect(gmailTransport.requests.contains { $0.value(forHTTPHeaderField: "Authorization")?.hasPrefix("Bearer ") == true })
+
+        // The unsubscribe transport carried one request, to the sender's host, with nothing on
+        // it. No Authorization header, no cookie, no Google token anywhere in it, and not the
+        // user's own address.
+        #expect(unsubscribeTransport.requestCount == 1)
+        let sent = try #require(unsubscribeTransport.requests.first)
+        #expect(sent.url?.host == "lists.example")
+        #expect(sent.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(sent.value(forHTTPHeaderField: "Cookie") == nil)
+        #expect(Set((sent.allHTTPHeaderFields ?? [:]).keys) == ["Content-Type"])
+
+        let everythingSent = [
+            sent.url?.absoluteString ?? "",
+            String(data: sent.httpBody ?? Data(), encoding: .utf8) ?? "",
+            (sent.allHTTPHeaderFields ?? [:]).map { "\($0.key):\($0.value)" }.joined(separator: " "),
+        ].joined(separator: " ")
+
+        for token in gmailTransport.requests.compactMap({ $0.value(forHTTPHeaderField: "Authorization") }) {
+            #expect(!everythingSent.contains(token))
+            #expect(!everythingSent.contains(token.replacingOccurrences(of: "Bearer ", with: "")))
+        }
+        #expect(!everythingSent.contains(account.emailAddress.address))
+        #expect(!everythingSent.contains("u1"), "A Gmail message identifier must not reach a third party")
+
+        // And nothing went the other way either: no Gmail request was aimed at the sender's host.
+        #expect(gmailTransport.requests.allSatisfy { ($0.url?.host ?? "").hasSuffix("googleapis.com") })
+    }
+
+    @Test("Only a validated HTTPS URL can be executed, and there is no other way to make one")
+    func onlyValidatedHTTPSURLsAreExecutable() {
+        // The one-click request's initializer takes an `HTTPSUnsubscribeURL`, not a `URL` and
+        // not a `String`. So the question "could something post to an http:// or javascript:
+        // destination?" is answered by whether one of those can be constructed at all.
+        #expect(HTTPSUnsubscribeURL(string: "http://lists.example/u") == nil)
+        #expect(HTTPSUnsubscribeURL(string: "javascript:alert(1)") == nil)
+        #expect(HTTPSUnsubscribeURL(string: "file:///etc/passwd") == nil)
+        #expect(HTTPSUnsubscribeURL(string: "data:text/html,x") == nil)
+        #expect(HTTPSUnsubscribeURL(string: "mailto:a@lists.example") == nil)
+        #expect(HTTPSUnsubscribeURL(string: "inboxsweep://x") == nil)
+
+        // And the mechanism that carries one can only be built from one.
+        let mechanism = UnsubscribeMechanism.oneClick(HTTPSUnsubscribeURL(string: "https://lists.example/u")!)
+        #expect(mechanism.webURL?.url.scheme == "https")
+    }
+
+    @Test("Nothing in the app creates a rule, a filter, or a schedule for a sender")
+    func unsubscribeCreatesNoRule() {
+        // Interval 10 is the one where somebody might reasonably wonder. It does not: the record
+        // it writes has nowhere to hold a rule, and neither does the frozen review.
+        let record = UnsubscribeActionRecord(
+            id: UUID(),
+            accountAddress: "someone@example.com",
+            mechanism: .oneClick,
+            outcome: .requestAccepted,
+            destinationHost: "lists.example",
+            occurredAt: .now
+        )
+        let recordProperties = Set(Mirror(reflecting: record).children.compactMap(\.label))
+        #expect(recordProperties.isDisjoint(with: [
+            "rule", "filter", "schedule", "isEnabled", "autoRun", "appliesToFutureMessages", "blocked",
+        ]))
+
+        // Gmail's own settings and filter APIs are not merely unused — the scopes that would be
+        // needed to reach them are on the prohibited list.
+        #expect(GmailScope.prohibited.contains("https://www.googleapis.com/auth/gmail.settings.basic"))
+        #expect(GmailScope.prohibited.contains("https://www.googleapis.com/auth/gmail.settings.sharing"))
+        for request in GmailAPIEndpoint.allRequestBuilders() {
+            #expect(!request.url.absoluteString.contains("settings"))
+            #expect(!request.url.absoluteString.contains("filters"))
+        }
+    }
+
+    @Test("There is no execute-all unsubscribe, and no way to express one")
+    func noBulkUnsubscribeExists() {
+        // A review names one sender's one mechanism, and the boundary takes one endpoint. There
+        // is no collection anywhere in the chain that a bulk unsubscribe could be built out of.
+        let review = UnsubscribeReviewSnapshot(
+            accountAddress: "someone@example.com",
+            senderKey: "news@lists.example",
+            senderDisplayValue: "News",
+            sourceMessageID: MailMessageID("m1"),
+            scope: .inbox,
+            opportunity: .none(sender: EmailAddressParser.parse("news@lists.example"), loadedMessageCount: 1),
+            mechanism: .webPage(HTTPSUnsubscribeURL(string: "https://lists.example/u")!),
+            frozenAt: .now
+        )
+
+        let properties = Set(Mirror(reflecting: review).children.compactMap(\.label))
+        #expect(properties.isDisjoint(with: ["senderKeys", "senders", "mechanisms", "reviews", "all", "batch"]))
+        // `alternatives` is a list of *other mechanisms for this one sender*, offered so the
+        // choice is visible. It is not a list of things that happen.
+        #expect(review.alternatives.count <= 1)
+    }
+
+    @Test("No unsubscribe happens in the background, and nothing is retried without being asked")
+    func noBackgroundOrRetriedUnsubscribe() {
+        #expect(UnsubscribeRetryPolicy.automaticRetries == 0)
+        #expect(!UnsubscribeRetryPolicy.allowsBackgroundRetry)
+        #expect(UnsubscribeRetryPolicy.explanation.contains("never retries on its own"))
+        #expect(UnsubscribeRetryPolicy.explanation.contains("never sends one in the background"))
+
+        // The redirect policy is the one place a request is re-sent at all, and it is bounded,
+        // method-preserving, and https-only.
+        #expect(UnsubscribeRedirectPolicy.maximumRedirects == 3)
+        #expect(UnsubscribeRedirectPolicy.methodPreservingStatuses == [307, 308])
+        #expect(UnsubscribeRedirectPolicy.methodChangingStatuses == [301, 302, 303])
+    }
+
+    @Test("A whole detection pass over a mailbox reaches no unsubscribe host at all")
+    @MainActor
+    func detectingAcrossAMailboxSendsNothing() async throws {
+        // The end-to-end version of "detection is free": a real provider over a recording
+        // transport, a full load, and then every sender on the dashboard read for unsubscribe
+        // opportunities. Every request made is a Gmail GET.
+        let messages = (1...12).map { index in
+            GmailFixtures.SyntheticMessage(
+                id: "m\(index)",
+                from: "sender\(index % 4)@lists.example",
+                listUnsubscribe: "<https://lists.example/u/\(index)>",
+                listUnsubscribePost: index.isMultiple(of: 2) ? "List-Unsubscribe=One-Click" : nil
+            )
+        }
+        let transport = RecordingHTTPTransport(handler: GmailMailboxStub(messages: messages).handler())
+        let provider = GmailProvider(
+            configuration: GmailOAuthConfiguration(clientID: "1234567890-abcdef.apps.googleusercontent.com"),
+            transport: transport,
+            webAuthenticator: FakeWebAuthenticator.granting(),
+            credentialStore: InMemoryCredentialStore(),
+            retryPolicy: .immediate,
+            unsubscriber: OneClickUnsubscribeClient(
+                transport: RecordingHTTPTransport { _, _ in
+                    Issue.record("Detection must not reach the unsubscribe transport")
+                    return HTTPResponse(statusCode: 500)
+                }
+            )
+        )
+
+        let model = InboxSessionModel(provider: provider, urlOpener: RecordingURLOpener())
+        await model.connect().value
+
+        let snapshot = try #require(model.state.snapshot)
+        for sender in snapshot.senders {
+            let opportunity = model.unsubscribeOpportunity(forSenderKey: sender.id)
+            // Reading it fully — including freezing a review, which is also a read.
+            _ = opportunity.evidence
+            _ = opportunity.mechanisms
+            _ = model.makeUnsubscribeReview(forSenderKey: sender.id)
+        }
+
+        #expect(!snapshot.senders.isEmpty)
+        #expect(transport.requests.allSatisfy { ($0.url?.host ?? "").hasSuffix("googleapis.com") })
+        // Every *mailbox* request is a GET. The one non-GET in a full connect is the OAuth token
+        // exchange, which goes to Google's own token endpoint — asserted separately by
+        // `theOnlyNonGETCallsAreToGoogleTokenEndpoints`, and excluded by host here rather than
+        // by loosening the claim.
+        #expect(
+            transport.requests
+                .filter { ($0.url?.host ?? "").hasSuffix("gmail.googleapis.com") }
+                .allSatisfy { $0.httpMethod == "GET" }
+        )
+        #expect(transport.requests(matching: "lists.example").isEmpty)
+    }
+
     // MARK: - Activity
 
     @Test("Making the history visible added no way to reach a mailbox")

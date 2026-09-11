@@ -50,6 +50,14 @@ actor StubMailProvider: MailProvider {
     /// `nonisolated let` so it is the same object for the life of the provider: the session
     /// reads it once at construction, exactly as it does with the real adapter.
     nonisolated let messageArchiver: (any MailMessageArchiving)?
+
+    /// The unsubscribe boundary this provider vends, or `nil` for one that cannot send a
+    /// one-click request.
+    ///
+    /// Independent of ``messageArchiver``, exactly as it is on the real adapter — so a test can
+    /// describe a provider that can archive and not unsubscribe, or the reverse, and find out
+    /// whether the session keeps the two apart.
+    nonisolated let unsubscriber: (any MailUnsubscribing)?
     /// What ``disconnect()`` reports, so a test can drive the sign-out notices without needing
     /// a Keychain that refuses.
     private var disconnectOutcome: MailDisconnectOutcome = .complete
@@ -60,11 +68,13 @@ actor StubMailProvider: MailProvider {
         restorable: MailConnection = .disconnected,
         restoreOutcome: MailRestoreOutcome? = nil,
         authorizationState: StoredAuthorizationState = .unknown,
-        archiver: (any MailMessageArchiving)? = nil
+        archiver: (any MailMessageArchiving)? = nil,
+        unsubscriber: (any MailUnsubscribing)? = nil
     ) {
         self.connectBehavior = connect
         self.fetchBehavior = fetch
         self.messageArchiver = archiver
+        self.unsubscriber = unsubscriber
         self.restoreOutcome = restoreOutcome
             ?? restorable.account.map(MailRestoreOutcome.restored)
             ?? .noStoredCredentials
