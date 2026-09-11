@@ -50,7 +50,7 @@ final class AppModel {
         isUsingSampleData = true
         session = InboxSessionModel(
             provider: SampleMailProvider(),
-            fetchRequest: MailFetchRequest(limit: 40)
+            fetchRequest: MailFetchRequest(limit: 60)
         )
         session.connect()
     }

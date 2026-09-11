@@ -20,7 +20,7 @@ actor SampleMailProvider: MailProvider {
 
     init(
         messages: [MailMessage] = SampleMailbox.messages(),
-        pageSize: Int = 40,
+        pageSize: Int = 60,
         account: MailAccount = SampleMailbox.account
     ) {
         self.messages = messages

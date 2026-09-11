@@ -15,6 +15,13 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
     /// The order ``senders`` is currently in.
     let sortOrder: SenderSortOrder
 
+    /// One proposal per sender, keyed by the same grouping key ``senders`` are identified by.
+    ///
+    /// Derived data, recomputed from the loaded window every time it changes and never
+    /// persisted — see ``CleanupProposalRules/version``. A dictionary rather than a parallel
+    /// array so re-sorting ``senders`` cannot put a row next to somebody else's proposal.
+    let proposals: [SenderSummary.ID: SenderCleanupProposal]
+
     /// Whether the provider has more messages beyond the loaded window.
     let hasMoreMessages: Bool
 
@@ -36,12 +43,14 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
         sortOrder: SenderSortOrder,
         hasMoreMessages: Bool,
         isLoadingMore: Bool,
+        proposals: [SenderSummary.ID: SenderCleanupProposal] = [:],
         cachedAt: Date? = nil
     ) {
         self.account = account
         self.loadedMessageCount = loadedMessageCount
         self.senders = senders
         self.sortOrder = sortOrder
+        self.proposals = proposals
         self.hasMoreMessages = hasMoreMessages
         self.isLoadingMore = isLoadingMore
         self.cachedAt = cachedAt
@@ -66,6 +75,41 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
         senders.reduce(0) { $0 + $1.unreadCount }
     }
 
+    // MARK: - Proposals
+
+    /// The proposal for a sender, when one has been computed.
+    ///
+    /// Optional rather than a defaulted value: a missing proposal is a bug worth seeing in the
+    /// UI as an absence, not one papered over with an invented "keep".
+    func proposal(for senderKey: SenderSummary.ID) -> SenderCleanupProposal? {
+        proposals[senderKey]
+    }
+
+    /// The senders a filter admits, in the current sort order.
+    ///
+    /// Senders with no proposal are shown only by ``ProposalFilter/all``, so a narrowing
+    /// filter can never quietly include something the rules never looked at.
+    func senders(matching filter: ProposalFilter) -> [SenderSummary] {
+        guard filter != .all else { return senders }
+        return senders.filter { sender in
+            proposals[sender.id].map(filter.matches) ?? false
+        }
+    }
+
+    /// How many senders a filter admits, for the count beside a filter control.
+    func senderCount(matching filter: ProposalFilter) -> Int {
+        filter == .all ? senders.count : senders(matching: filter).count
+    }
+
+    /// What the loaded window covers, for anything that reports numbers derived from it.
+    func planWindow(scope: MailboxScope) -> CleanupPlanWindow {
+        CleanupPlanWindow(
+            loadedMessageCount: loadedMessageCount,
+            hasMoreBeyondWindow: hasMoreMessages,
+            scope: scope
+        )
+    }
+
     func replacingSortOrder(_ newOrder: SenderSortOrder) -> InboxSnapshot {
         InboxSnapshot(
             account: account,
@@ -74,6 +118,7 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
             sortOrder: newOrder,
             hasMoreMessages: hasMoreMessages,
             isLoadingMore: isLoadingMore,
+            proposals: proposals,
             cachedAt: cachedAt
         )
     }
@@ -86,6 +131,7 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
             sortOrder: sortOrder,
             hasMoreMessages: hasMoreMessages,
             isLoadingMore: isLoadingMore,
+            proposals: proposals,
             cachedAt: cachedAt
         )
     }

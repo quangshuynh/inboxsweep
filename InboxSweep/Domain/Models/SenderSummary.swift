@@ -7,10 +7,11 @@ import Foundation
 /// summary that quietly implied full-mailbox totals would mislead the user at exactly the
 /// moment they are deciding what to do about a sender.
 ///
-/// Notably absent: any judgement. InboxSweep does not decide that a sender is a newsletter,
-/// is noisy, or is worth removing. Every field below is something the mailbox already said —
+/// Notably absent: any judgement. Every field below is something the mailbox already said —
 /// a count, a date, a header that was present, a label the provider had already applied — and
-/// nothing here combines them into a score or a recommendation.
+/// nothing here combines them into a score or a recommendation. That separation is deliberate:
+/// ``SenderCleanupProposal`` is where the app draws conclusions, and keeping it a distinct
+/// type means the facts on the dashboard can always be read without the verdict beside them.
 nonisolated struct SenderSummary: Identifiable, Hashable, Sendable {
 
     /// The sender these messages came from.

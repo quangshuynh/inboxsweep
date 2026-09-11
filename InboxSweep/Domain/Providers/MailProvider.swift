@@ -29,7 +29,9 @@ nonisolated protocol MailAccountAuthorizing: Sendable {
 ///
 /// There is no counterpart to this protocol for *writing*. The app exposes no operation to
 /// delete, archive, label, mark, move, or send mail, and the absence is structural: no such
-/// method exists to call. See `SafetyBoundaryTests` for the assertions that keep it that way.
+/// method exists to call. The cleanup planner names such actions in order to describe them and
+/// reaches this boundary not at all. See `SafetyBoundaryTests` for the assertions that keep it
+/// that way.
 nonisolated protocol MailMessageFetching: Sendable {
 
     /// Fetches one page of message metadata.

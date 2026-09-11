@@ -1,21 +1,26 @@
 import SwiftUI
 
-/// The connected dashboard: who sent the loaded mail, and how much of it.
+/// The connected dashboard: who sent the loaded mail, what InboxSweep makes of it, and why.
 ///
 /// Every number on this screen describes the *loaded window*, not the whole mailbox, and the
-/// header says so. There is no action here that touches mail — the only buttons load more of
-/// it, re-read it, or disconnect the app.
+/// header says so. Nothing here touches mail: the buttons load more of it, re-read it, preview
+/// what a cleanup *would* reach, or disconnect the app.
 struct SenderDashboardView: View {
 
     let snapshot: InboxSnapshot
     let session: InboxSessionModel
 
-    @State private var selectedSenderID: SenderSummary.ID?
+    /// Multi-selection, because a cleanup preview is a question about several senders at once.
+    @State private var selectedSenderIDs: Set<SenderSummary.ID> = []
+    @State private var filter: ProposalFilter = .all
     @State private var isInspectorPresented = false
+    @State private var isPlanPresented = false
 
     var body: some View {
         VStack(spacing: 0) {
             AccountSummaryHeader(snapshot: snapshot)
+            Divider()
+            filterBar
             Divider()
             senderTable
             Divider()
@@ -24,76 +29,172 @@ struct SenderDashboardView: View {
         .toolbar { toolbarContent }
         .inspector(isPresented: $isInspectorPresented) {
             Group {
-                if let sender = selectedSender {
+                if let sender = inspectedSender {
                     SenderDetailView(
                         summary: sender,
+                        proposal: snapshot.proposal(for: sender.id),
                         messages: session.loadedMessages(forSenderKey: sender.id)
                     )
                 } else {
-                    ContentUnavailableView("No sender selected", systemImage: "person.crop.circle")
+                    ContentUnavailableView(
+                        selectedSenderIDs.isEmpty ? "No sender selected" : "\(selectedSenderIDs.count) senders selected",
+                        systemImage: "person.crop.circle",
+                        description: Text(
+                            selectedSenderIDs.isEmpty
+                                ? "Select a sender to see the reasoning behind its proposal."
+                                : "Select a single sender to see its reasoning, or preview a cleanup for all of them."
+                        )
+                    )
                 }
             }
-            .inspectorColumnWidth(min: 240, ideal: 300, max: 420)
+            .inspectorColumnWidth(min: 260, ideal: 340, max: 460)
+        }
+        .sheet(isPresented: $isPlanPresented) {
+            CleanupPlanSheet(session: session, senderKeys: selectedSenderKeysInDisplayOrder)
         }
         .accessibilityIdentifier("dashboard.screen")
     }
 
-    private var selectedSender: SenderSummary? {
-        snapshot.senders.first { $0.id == selectedSenderID }
+    // MARK: - Derived state
+
+    private var visibleSenders: [SenderSummary] {
+        snapshot.senders(matching: filter)
     }
 
-    private var senderTable: some View {
-        Table(snapshot.senders, selection: $selectedSenderID) {
-            TableColumn("Sender") { summary in
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(summary.sender.displayValue)
-                        .lineLimit(1)
-                    if let address = summary.sender.secondaryDisplayValue {
-                        Text(address)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+    /// The reasoning inspector answers a question about *one* sender, so it appears only when
+    /// exactly one is selected rather than picking an arbitrary member of a multi-selection.
+    private var inspectedSender: SenderSummary? {
+        guard selectedSenderIDs.count == 1, let id = selectedSenderIDs.first else { return nil }
+        return snapshot.senders.first { $0.id == id }
+    }
+
+    /// Selected senders in the order they appear on screen, so the preview reads top to bottom
+    /// the way the table does rather than in a set's arbitrary order.
+    private var selectedSenderKeysInDisplayOrder: [SenderSummary.ID] {
+        snapshot.senders.map(\.id).filter(selectedSenderIDs.contains)
+    }
+
+    // MARK: - Filter bar
+
+    private var filterBar: some View {
+        HStack(spacing: 12) {
+            Picker("Show", selection: $filter) {
+                ForEach(ProposalFilter.allCases) { option in
+                    Label(option.displayName, systemImage: option.symbolName)
+                        .tag(option)
                 }
             }
-            .width(min: 200, ideal: 300)
+            .pickerStyle(.menu)
+            .fixedSize()
+            .accessibilityIdentifier("dashboard.filterPicker")
 
-            TableColumn("Messages") { summary in
-                Text(summary.messageCount, format: .number)
-                    .monospacedDigit()
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .width(min: 70, ideal: 80)
+            Text("^[\(visibleSenders.count) sender](inflect: true)")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
 
-            TableColumn("Unread") { summary in
-                Text(summary.unreadCount, format: .number)
-                    .monospacedDigit()
-                    .foregroundStyle(summary.unreadCount > 0 ? .primary : .tertiary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .width(min: 60, ideal: 70)
+            Spacer()
 
-            TableColumn("Starred") { summary in
-                Text(summary.starredCount, format: .number)
-                    .monospacedDigit()
-                    .foregroundStyle(summary.starredCount > 0 ? .primary : .tertiary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+            if !selectedSenderIDs.isEmpty {
+                Button("Clear selection") { selectedSenderIDs = [] }
+                    .buttonStyle(.link)
             }
-            .width(min: 60, ideal: 70)
 
-            TableColumn("Latest") { summary in
-                Text(summary.newestReceivedAt, format: .relative(presentation: .named))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            Button {
+                isPlanPresented = true
+            } label: {
+                Label("Preview cleanup", systemImage: "eye")
             }
-            .width(min: 100, ideal: 130)
+            .disabled(selectedSenderIDs.isEmpty)
+            .help("Shows what a cleanup would reach for the selected senders. Nothing is changed and nothing is sent to Gmail.")
+            .accessibilityIdentifier("dashboard.previewCleanupButton")
         }
-        .tableStyle(.inset)
-        .accessibilityIdentifier("dashboard.senderTable")
-        .onChange(of: selectedSenderID) { _, newValue in
-            isInspectorPresented = newValue != nil
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Table
+
+    @ViewBuilder
+    private var senderTable: some View {
+        if visibleSenders.isEmpty {
+            ContentUnavailableView(
+                "Nothing to show",
+                systemImage: filter.symbolName,
+                description: Text(filter.emptyStateDescription)
+            )
+            .frame(maxHeight: .infinity)
+            .accessibilityIdentifier("dashboard.emptyFilter")
+        } else {
+            Table(visibleSenders, selection: $selectedSenderIDs) {
+                TableColumn("Sender") { summary in
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(summary.sender.displayValue)
+                            .lineLimit(1)
+                        if let address = summary.sender.secondaryDisplayValue {
+                            Text(address)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .width(min: 170, ideal: 240)
+
+                TableColumn("Proposal") { summary in
+                    if let proposal = snapshot.proposal(for: summary.id) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            ProposalBadge(proposal: proposal)
+                            ProposalStrengthLabel(strength: proposal.strength, isCompact: true)
+                        }
+                    } else {
+                        Text("—").foregroundStyle(.tertiary)
+                    }
+                }
+                .width(min: 160, ideal: 200)
+
+                TableColumn("Why") { summary in
+                    if let reason = snapshot.proposal(for: summary.id)?.reasons.first {
+                        Text(reason.text)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .help(reason.text)
+                    }
+                }
+                .width(min: 180, ideal: 280)
+
+                TableColumn("Messages") { summary in
+                    Text(summary.messageCount, format: .number)
+                        .monospacedDigit()
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .width(min: 70, ideal: 80)
+
+                TableColumn("Unread") { summary in
+                    Text(summary.unreadCount, format: .number)
+                        .monospacedDigit()
+                        .foregroundStyle(summary.unreadCount > 0 ? .primary : .tertiary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .width(min: 60, ideal: 70)
+
+                TableColumn("Latest") { summary in
+                    Text(summary.newestReceivedAt, format: .relative(presentation: .named))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .width(min: 100, ideal: 120)
+            }
+            .tableStyle(.inset)
+            .accessibilityIdentifier("dashboard.senderTable")
+            .onChange(of: selectedSenderIDs) { _, newValue in
+                isInspectorPresented = newValue.count == 1
+            }
         }
     }
+
+    // MARK: - Footer
 
     private var footer: some View {
         HStack(spacing: 12) {
@@ -127,7 +228,7 @@ struct SenderDashboardView: View {
             Text(PrivacyNotice.summary)
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
-                .help("InboxSweep has no ability to delete, archive, or modify mail in this version.")
+                .help("InboxSweep suggests and previews. It has no ability to delete, archive, or modify mail in this version.")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -178,7 +279,7 @@ struct SenderDashboardView: View {
 private struct DashboardPreview: View {
     @State private var session = InboxSessionModel(
         provider: SampleMailProvider(),
-        fetchRequest: MailFetchRequest(limit: 40)
+        fetchRequest: MailFetchRequest(limit: 60)
     )
 
     var body: some View {
@@ -189,7 +290,7 @@ private struct DashboardPreview: View {
                 ProgressView()
             }
         }
-        .frame(width: 980, height: 620)
+        .frame(width: 1100, height: 640)
         .task { await session.connect().value }
     }
 }

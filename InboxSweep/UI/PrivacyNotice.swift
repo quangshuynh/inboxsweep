@@ -31,6 +31,13 @@ nonisolated enum PrivacyNotice {
                 """
         ),
         Point(
+            symbol: "wand.and.sparkles",
+            text: """
+                Suggestions are worked out on this Mac from the details already fetched, using \
+                fixed rules you can read. Nothing is sent anywhere to produce one.
+                """
+        ),
+        Point(
             symbol: "nosign",
             text: "No message is sent to an AI service, and there is no analytics or telemetry of any kind."
         ),

@@ -36,14 +36,15 @@ struct SignedOutView: View {
                 .font(.largeTitle.bold())
                 .accessibilityIdentifier("signedOut.title")
 
-            Text("See who is filling up your inbox.")
+            Text("See who is filling up your inbox, and what to do about it.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
 
             Text("""
-                InboxSweep groups your mail by sender so you can see, at a glance, which senders \
-                account for the most messages. This version only looks — it recommends nothing and \
-                changes nothing. Deciding what to do about a sender stays with you.
+                InboxSweep groups your mail by sender, says which senders look worth cleaning up \
+                and why, and can show you what a cleanup would affect before anything happens. \
+                It changes nothing: this version can recommend and preview, but it has no way to \
+                archive, delete, or alter your mail. Deciding what to do stays with you.
                 """)
                 .font(.body)
                 .foregroundStyle(.secondary)

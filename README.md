@@ -38,8 +38,7 @@ None of the following is implemented, and the UI does not pretend otherwise:
 | Not implemented | |
 | --- | --- |
 | Delete, trash, or archive | Mark as read, star, or label |
-| Unsubscribe (of any kind) | Bulk actions on senders |
-| Newsletter/promotion classification | "Useless sender" or cleanup scoring |
+| Unsubscribe (of any kind) | Executing any cleanup at all |
 | AI classification of any message | Cleanup rules or scheduling |
 | Background monitoring or notifications | Storage-savings estimates |
 | Analytics or telemetry | CI, badges, or releases |
@@ -93,6 +92,17 @@ Notable decisions:
 - **Malformed `From` headers cannot crash the app.** Parsing is total; senders with no
   readable address collapse into a single anonymous "Unknown sender" group rather than
   fragmenting the list, and that group never borrows one of their display names.
+- **Facts and verdicts are separate types.** `SenderSummary` carries counts and dates and no
+  judgement; `SenderCleanupProposal` carries the judgement and the sentences behind it. The
+  dashboard can therefore always be read without the verdict beside it, and a safety test
+  asserts no scoring leaks back down into the facts.
+- **The proposal engine is pure and has no clock.** The same loaded window always produces the
+  same proposals, with the same reasons in the same order. Only the dry-run planner takes a
+  date, and it is passed in.
+- **Proposals are recomputed, never persisted.** A rules change takes effect on the next launch
+  instead of leaving stale verdicts on screen. The cache record has nowhere to store one.
+- **Protection runs before the cleanup rules and can only veto.** No amount of bulk-mail
+  evidence unlocks a cleanup suggestion for a sender that raised a protection signal.
 
 ## Gmail permission
 
@@ -108,8 +118,10 @@ app every message body.
 
 The app never requests `gmail.modify`, `gmail.send`, `gmail.compose`, `gmail.insert`,
 `gmail.labels`, `gmail.settings.*`, or `https://mail.google.com/`. `SafetyBoundaryTests`
-asserts this, and separately asserts that every Gmail API request the app can construct is a
-`GET`.
+asserts this; that every Gmail API request the app can construct is a `GET`; that no such
+request's path reaches one of Gmail's mutating operations (`modify`, `trash`, `batchDelete`,
+`send`, `settings`, and the rest); and that building a cleanup preview issues no provider call
+and sends no HTTP request at all.
 
 One practical consequence of the narrower scope: Gmail rejects search queries (`q=`) under
 `gmail.metadata`. The fetch layer works within that limit rather than widening the scope.
@@ -237,7 +249,9 @@ Claims below describe what this version actually does. Nothing more is implied.
 
 - **Read-only access.** The one scope requested cannot change a mailbox, and the app contains
   no code path that writes to one.
-- **No message is altered, moved, or deleted.** There is no feature to do so.
+- **No message is altered, moved, or deleted.** There is no feature to do so. The cleanup
+  planner produces a description of what an action *would* reach; building one makes no
+  request of any kind, and there is no control anywhere that carries one out.
 - **Metadata only.** Message requests use `format=metadata` with four named headers (`From`,
   `Subject`, `Date`, `List-Unsubscribe`). Bodies and attachments are never requested and there
   is nowhere in the domain model to put them.
@@ -283,6 +297,18 @@ not been independently audited and makes no anonymity guarantees.
   only accounts listed as test users can sign in during development.
 - The macOS deployment target inherited from the project template is 26.5, which is unusually
   high for a shipping app. Nothing in the code requires it.
+- **Proposals are only as good as a keyword list.** Protection is decided by matching literal
+  phrases in subject lines, so it will miss a bank whose subjects are opaque and will flag a
+  newsletter about tax software. Every protection warning shows the evidence behind it for
+  exactly this reason. See [Docs/CleanupProposals.md](Docs/CleanupProposals.md).
+- **Proposals describe the loaded window, not the mailbox.** Loading more messages can change
+  a sender's proposal, and a long-running newsletter contributes only its recent issues to a
+  250-message window. The dry-run preview states which case applies.
+- The dry-run planner offers a fixed set of cutoffs (keep newest 5; 30 and 90 days). There is
+  no way to type an arbitrary one.
+- A previewed plan is not saved. Closing the sheet discards the chosen actions.
+- The Copy Bundle Resources build phase still contains the target's `Info.plist`, which
+  produces one project-level build warning. It predates this interval and is untouched.
 
 ## Repository layout
 
