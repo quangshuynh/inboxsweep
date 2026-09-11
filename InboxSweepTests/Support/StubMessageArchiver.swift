@@ -38,10 +38,23 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
     /// The address this archiver considers itself authenticated for.
     private var authenticatedAddress: String
 
+    /// Behaviour for individual messages, overriding the blanket one.
+    ///
+    /// The basis for every partial-failure case: a set where message three is rate-limited and
+    /// the rest succeed is the shape this suite has to be able to describe.
+    private var behaviorByMessage: [MailMessageID: Behavior] = [:]
+
     private var recordedArchiveRequests: [MailArchiveRequest] = []
     private var recordedUndoRequests: [MailArchiveRequest] = []
     private var recordedUpgradeCallCount = 0
     private var recordedCapabilityCallCount = 0
+
+    /// How many requests are with this archiver right now, and the most there have ever been.
+    ///
+    /// Tracked so "a set is sent one message at a time" is asserted rather than assumed. A
+    /// high-water mark above one would mean the executor had started fanning out.
+    private var inFlight = 0
+    private var peakInFlight = 0
 
     init(
         capability: MailMutationCapability = .granted,
@@ -77,6 +90,11 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
         lock.withLock { recordedArchiveRequests + recordedUndoRequests }
     }
 
+    /// The most requests that were ever with this archiver at the same time.
+    ///
+    /// One, for every run this app can produce. `SafetyBoundaryTests` pins it there.
+    var peakConcurrentRequests: Int { lock.withLock { peakInFlight } }
+
     // MARK: - Programming
 
     func setCapability(_ capability: MailMutationCapability) {
@@ -93,6 +111,20 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
 
     func setAuthenticatedAddress(_ address: String) {
         lock.withLock { authenticatedAddress = address }
+    }
+
+    /// Programs one message, leaving every other one on the blanket behaviour.
+    func setBehavior(_ behavior: Behavior, forMessage messageID: MailMessageID) {
+        lock.withLock { behaviorByMessage[messageID] = behavior }
+    }
+
+    /// Resumes once at least `count` requests have been handed to this archiver.
+    ///
+    /// Replaces spinning on `Task.yield()` in tests that need to act in the middle of a run.
+    func waitForRequests(atLeast count: Int) async {
+        while lock.withLock({ recordedArchiveRequests.count + recordedUndoRequests.count }) < count {
+            await Task.yield()
+        }
     }
 
     // MARK: - MailMessageArchiving
@@ -120,13 +152,19 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
     }
 
     func archive(_ request: MailArchiveRequest) async throws -> MailArchiveReceipt {
-        lock.withLock { recordedArchiveRequests.append(request) }
-        return try await perform(.archive, request, behavior: lock.withLock { archiveBehavior })
+        let behavior = lock.withLock {
+            recordedArchiveRequests.append(request)
+            return behaviorByMessage[request.messageID] ?? archiveBehavior
+        }
+        return try await perform(.archive, request, behavior: behavior)
     }
 
     func restoreToInbox(_ request: MailArchiveRequest) async throws -> MailArchiveReceipt {
-        lock.withLock { recordedUndoRequests.append(request) }
-        return try await perform(.restoreToInbox, request, behavior: lock.withLock { undoBehavior })
+        let behavior = lock.withLock {
+            recordedUndoRequests.append(request)
+            return behaviorByMessage[request.messageID] ?? undoBehavior
+        }
+        return try await perform(.restoreToInbox, request, behavior: behavior)
     }
 
     // MARK: - Internals
@@ -136,6 +174,12 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
         _ request: MailArchiveRequest,
         behavior: Behavior
     ) async throws -> MailArchiveReceipt {
+        lock.withLock {
+            inFlight += 1
+            peakInFlight = max(peakInFlight, inFlight)
+        }
+        defer { lock.withLock { inFlight -= 1 } }
+
         // The real adapter checks this before anything else, so the stub does too — otherwise a
         // session test could pass while relying on a boundary that never validated anything.
         guard request.accountAddress == lock.withLock({ authenticatedAddress }) else {

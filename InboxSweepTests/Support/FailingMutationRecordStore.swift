@@ -1,25 +1,25 @@
 import Foundation
 @testable import InboxSweep
 
-/// A record store that refuses to write, for the one outcome that must not be reported as a
+/// A transaction store that refuses to write, for the one outcome that must not be reported as a
 /// remote failure: Gmail changed the mailbox and this Mac could not write that down.
 nonisolated final class FailingMutationRecordStore: MailMutationRecording, @unchecked Sendable {
 
     static let refusalReason = "InboxSweep couldn't write the record to this Mac."
 
     private let lock = NSLock()
-    private var attempted: [MailMutationRecord] = []
+    private var attempted: [MailMutationTransaction] = []
 
     /// Everything it was asked to store, even though it stored none of it.
-    var attemptedRecords: [MailMutationRecord] { lock.withLock { attempted } }
+    var attemptedTransactions: [MailMutationTransaction] { lock.withLock { attempted } }
 
     init() {}
 
-    func record(_ record: MailMutationRecord) async -> MutationRecordOutcome {
-        lock.withLock { attempted.append(record) }
+    func record(_ transaction: MailMutationTransaction) async -> MutationRecordOutcome {
+        lock.withLock { attempted.append(transaction) }
         return .notStored(reason: Self.refusalReason)
     }
 
-    func records(for account: MailAccount) async -> [MailMutationRecord] { [] }
+    func transactions(for account: MailAccount) async -> [MailMutationTransaction] { [] }
     func clear(for account: MailAccount) async {}
 }

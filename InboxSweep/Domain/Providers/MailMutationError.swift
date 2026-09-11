@@ -10,7 +10,7 @@ import Foundation
 /// Associated values are short, already-sanitized strings. No case carries a token, an
 /// authorization code, a raw Gmail response body, a subject, or an address — these are shown
 /// on screen.
-nonisolated enum MailMutationError: Error, Equatable, Sendable {
+nonisolated enum MailMutationError: Error, Hashable, Sendable {
 
     /// This provider has no way to change a mailbox. Re-authorizing would not help.
     case notSupported
@@ -33,6 +33,14 @@ nonisolated enum MailMutationError: Error, Equatable, Sendable {
     /// The message is not part of the window currently on screen, so there is nothing to act
     /// on and nothing to reconcile afterwards.
     case messageNotInLoadedWindow
+
+    /// The confirmed set no longer describes the mailbox it was frozen against.
+    ///
+    /// Separate from ``messageNotInLoadedWindow`` because it is about a *set*: one of the
+    /// messages the user reviewed has moved, left the window, or stopped belonging to the
+    /// sender the review was for. Acting on what is left would be acting on a different set
+    /// than the one confirmed, so the whole operation is refused and re-reviewed instead.
+    case selectionChanged
 
     /// The provider no longer has this message — it was moved or deleted elsewhere.
     case messageNoLongerAvailable
@@ -62,7 +70,26 @@ nonisolated enum MailMutationError: Error, Equatable, Sendable {
         switch self {
         case .rateLimited, .network, .rejectedByProvider, .cancelled: true
         case .notSupported, .permissionRequired, .permissionDeclined, .authorizationExpired,
-             .accountChanged, .messageNotInLoadedWindow, .messageNoLongerAvailable: false
+             .accountChanged, .messageNotInLoadedWindow, .selectionChanged,
+             .messageNoLongerAvailable: false
+        }
+    }
+
+    /// Whether hitting this on one message means every remaining message in a set would hit it
+    /// too.
+    ///
+    /// The distinction is whether the failure is about *this message* or about *the session*. A
+    /// message Gmail no longer has, a throttle, a dropped connection — those say nothing about
+    /// the next message, so the run continues and each one gets its own answer. A withdrawn
+    /// grant or a swapped account is true of every message at once, and sending eleven more
+    /// requests that are all going to be refused the same way would be eleven pointless writes
+    /// against somebody's quota.
+    var endsTheRun: Bool {
+        switch self {
+        case .notSupported, .permissionRequired, .permissionDeclined, .authorizationExpired,
+             .accountChanged, .cancelled: true
+        case .messageNotInLoadedWindow, .selectionChanged, .messageNoLongerAvailable,
+             .rateLimited, .network, .rejectedByProvider: false
         }
     }
 
@@ -77,7 +104,8 @@ nonisolated enum MailMutationError: Error, Equatable, Sendable {
     /// Whether the user has to look at a fresh window before trying again.
     var requiresReview: Bool {
         switch self {
-        case .accountChanged, .messageNotInLoadedWindow, .messageNoLongerAvailable: true
+        case .accountChanged, .messageNotInLoadedWindow, .selectionChanged,
+             .messageNoLongerAvailable: true
         default: false
         }
     }
@@ -93,6 +121,7 @@ nonisolated extension MailMutationError: LocalizedError {
         case .authorizationExpired: "InboxSweep needs permission again"
         case .accountChanged: "The connected account changed"
         case .messageNotInLoadedWindow: "That message isn't in the loaded window any more"
+        case .selectionChanged: "The messages you reviewed have changed"
         case .messageNoLongerAvailable: "Gmail no longer has that message"
         case .rateLimited: "Gmail is busy with this account"
         case .network: "Couldn't reach Gmail"
@@ -121,6 +150,11 @@ nonisolated extension MailMutationError: LocalizedError {
             """
         case .messageNotInLoadedWindow:
             "The window was reloaded since you chose it, so InboxSweep can't be sure it's still the same message. Nothing was changed."
+        case .selectionChanged:
+            """
+            At least one message you confirmed is no longer where it was when you reviewed it, so \
+            InboxSweep refused to act on a different set than the one you approved. Nothing was changed.
+            """
         case .messageNoLongerAvailable:
             "It was probably deleted or moved somewhere else. Nothing was changed."
         case .rateLimited:
@@ -140,6 +174,7 @@ nonisolated extension MailMutationError: LocalizedError {
         case .permissionRequired, .permissionDeclined: "Grant the extra permission when you're ready, then try again."
         case .authorizationExpired: "Connect your account again to continue."
         case .accountChanged, .messageNotInLoadedWindow: "Reload, open the sender again, and pick the message."
+        case .selectionChanged: "Reload, open the sender again, and choose the messages again."
         case .messageNoLongerAvailable: "Reload to see what's actually in your inbox now."
         case .rateLimited: "Wait a moment and try again."
         case .network: "Check your internet connection, then reload to confirm what Gmail has before trying again."

@@ -35,7 +35,7 @@ final class AppModel {
     ///
     /// Held here alongside the other stores for the same reason: one file, reused across a
     /// sign-out and back in, rather than a second one left behind.
-    private let mutationRecords = FileMutationRecordStore()
+    private let mutationRecords = FileMutationTransactionStore()
 
     init() {
         let configuration = GmailOAuthConfiguration.load()
