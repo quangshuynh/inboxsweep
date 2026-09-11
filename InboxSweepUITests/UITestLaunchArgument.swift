@@ -16,13 +16,16 @@ enum UITestLaunchArgument {
     /// `AppModel.ignoreStoredCredentialsLaunchArgument`.
     static let ignoreStoredCredentials = "--ignore-stored-credentials"
 
-    /// Pins the window to a fixed size, centres it, and raises it above other applications.
-    /// Matches `UITestWindow.launchArgument`.
+    /// Pins the window to a fixed size, centres it, raises it above other applications, and puts
+    /// it full screen. Matches `UITestWindow.launchArgument`.
     ///
-    /// Every case here passes it. Without it a case is measuring the developer's desktop: the
-    /// window comes up wherever it was last left, other applications' windows lie over it, and a
-    /// click on a covered control fails with an error that names InboxSweep's scroll view rather
-    /// than the window that is actually in the way.
+    /// Every case here passes it, and every case that clicks anything **depends** on it. Without
+    /// it a case is measuring the developer's desktop: the window comes up wherever it was last
+    /// left, other applications' windows lie over it, and every control in the app reports
+    /// `isHittable == false` — a click then fails with an error naming InboxSweep's scroll view
+    /// rather than the windows that are actually in the way. Full screen is what fixes that: it
+    /// gives the window a Space of its own, where there is no other application's window to be
+    /// behind.
     static let deterministicWindow = "--ui-test-window"
 
 }
