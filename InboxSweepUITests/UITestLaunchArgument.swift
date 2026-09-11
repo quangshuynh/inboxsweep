@@ -24,4 +24,5 @@ enum UITestLaunchArgument {
     /// click on a covered control fails with an error that names InboxSweep's scroll view rather
     /// than the window that is actually in the way.
     static let deterministicWindow = "--ui-test-window"
+
 }

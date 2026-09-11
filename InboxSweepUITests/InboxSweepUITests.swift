@@ -211,6 +211,50 @@ final class InboxSweepUITests: XCTestCase {
         )
     }
 
+    /// Activity has a way in from the dashboard, and nothing on that screen can change a mailbox.
+    ///
+    /// ### Why this case stops at the button
+    ///
+    /// It asserts the entry point and not the journey, which is less than it should be. The
+    /// reason is specific and was measured rather than assumed: **XCUITest cannot click a
+    /// SwiftUI toolbar button in this app at all.** Toolbar items report `isHittable == false`,
+    /// the runner falls back to synthesising a click at the element's centre, and nothing
+    /// happens. That is not new and not about Activity — ``dashboard.disconnectButton`` behaves
+    /// identically, and it predates this interval by five of them. It is also not the occlusion
+    /// problem this class describes above: with every other application's window hidden, the
+    /// runner reported no interrupting elements, clicked the button, and the app did not react.
+    ///
+    /// Two ways out were tried and rejected. A debug launch argument that opened Activity at
+    /// launch does not work either — a `.sheet` whose item is already set when the view first
+    /// appears never presents, because SwiftUI presents on the *transition* — and moving the
+    /// control out of the toolbar to suit the test would be letting the test design the app.
+    ///
+    /// So the screen behind this button is covered where it can be covered honestly: the
+    /// wording, counts, states, and undo rules are `MutationHistoryTests` and
+    /// `ActivityHistoryTests`, and the screen itself was verified by hand — it opens, shows the
+    /// empty state, and states its scope and its retention. See `Docs/Activity.md`.
+    @MainActor
+    func testActivityIsReachableAndCannotChangeAnything() {
+        let app = launchSampleApp()
+
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15), "The dashboard should load from sample data")
+
+        XCTAssertTrue(
+            app.buttons["dashboard.activityButton"].waitForExistence(timeout: 5),
+            "The dashboard should offer a way into Activity"
+        )
+
+        // Activity is not open, and nothing about having a way into it puts a mutation control
+        // on the dashboard. The synthetic mailbox vends no mutation boundary at all, so this is
+        // the app's guarantee that a sample run cannot reach a write even by accident.
+        XCTAssertFalse(app.descendants(matching: .any)["activity.screen"].exists)
+        XCTAssertFalse(app.buttons["activity.undoButton"].exists)
+        XCTAssertFalse(app.buttons["Archive"].exists)
+        XCTAssertFalse(app.buttons["Delete"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
+    }
+
     /// Opening the messages behind a sender's proposal, which is what makes a count checkable.
     @MainActor
     func testSenderMessagesCanBeReviewed() {

@@ -14,11 +14,36 @@ struct SenderDashboardView: View {
     @State private var selectedSenderIDs: Set<SenderSummary.ID> = []
     @State private var filter: ProposalFilter = .all
     @State private var isInspectorPresented = false
-    @State private var isPlanPresented = false
-    @State private var isActivityPresented = false
 
-    /// The sender whose loaded messages are being reviewed, if any.
-    @State private var reviewedSender: SenderSummary?
+    /// The sheet on screen, if any.
+    ///
+    /// **One** `@State` and **one** `.sheet` modifier, rather than one of each per destination.
+    /// Stacking `.sheet` modifiers on a single view is not something SwiftUI honours: two
+    /// happened to work, and adding a third for Activity made the new one silently never
+    /// present — the button was there, the click landed, and nothing opened. An enum makes the
+    /// exclusivity explicit, which is what it was all along: this screen shows at most one sheet.
+    @State private var sheet: Sheet?
+
+    /// The sheets the dashboard can present.
+    private enum Sheet: Identifiable {
+
+        /// The dry-run preview for the selected senders.
+        case cleanupPlan
+
+        /// What InboxSweep has changed in this mailbox.
+        case activity
+
+        /// One sender's loaded messages.
+        case messageReview(SenderSummary)
+
+        var id: String {
+            switch self {
+            case .cleanupPlan: "cleanupPlan"
+            case .activity: "activity"
+            case .messageReview(let summary): "messageReview-\(summary.id)"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,7 +70,7 @@ struct SenderDashboardView: View {
                         summary: sender,
                         proposal: snapshot.proposal(for: sender.id),
                         messages: session.loadedMessages(forSenderKey: sender.id),
-                        onReviewMessages: { reviewedSender = sender }
+                        onReviewMessages: { sheet = .messageReview(sender) }
                     )
                 } else {
                     ContentUnavailableView(
@@ -61,25 +86,28 @@ struct SenderDashboardView: View {
             }
             .inspectorColumnWidth(min: 260, ideal: 340, max: 460)
         }
-        .sheet(isPresented: $isPlanPresented) {
-            CleanupPlanSheet(
-                session: session,
-                senderKeys: selectedSenderKeysInDisplayOrder,
-                onReviewSender: { key in
-                    isPlanPresented = false
-                    reviewedSender = snapshot.senders.first { $0.id == key }
-                }
-            )
-        }
-        .sheet(isPresented: $isActivityPresented) {
-            ActivityView(session: session)
-        }
-        .sheet(item: $reviewedSender) { sender in
-            SenderMessageReviewView(
-                session: session,
-                summary: sender,
-                proposal: snapshot.proposal(for: sender.id)
-            )
+        .sheet(item: $sheet) { destination in
+            switch destination {
+            case .cleanupPlan:
+                CleanupPlanSheet(
+                    session: session,
+                    senderKeys: selectedSenderKeysInDisplayOrder,
+                    onReviewSender: { key in
+                        // Replaces this sheet rather than opening a second one beside it.
+                        sheet = snapshot.senders.first { $0.id == key }.map(Sheet.messageReview)
+                    }
+                )
+
+            case .activity:
+                ActivityView(session: session)
+
+            case .messageReview(let sender):
+                SenderMessageReviewView(
+                    session: session,
+                    summary: sender,
+                    proposal: snapshot.proposal(for: sender.id)
+                )
+            }
         }
         .accessibilityIdentifier("dashboard.screen")
     }
@@ -134,7 +162,7 @@ struct SenderDashboardView: View {
                     // Resuming *selects* the saved senders and opens the preview. It carries
                     // nothing out, because there is nothing in this app that could.
                     selectedSenderIDs = Set(savedPlan.usableSelections.map(\.senderKey))
-                    isPlanPresented = true
+                    sheet = .cleanupPlan
                 } label: {
                     Label("^[\(savedPlan.usableSelections.count) saved sender](inflect: true)", systemImage: "bookmark")
                 }
@@ -143,7 +171,7 @@ struct SenderDashboardView: View {
             }
 
             Button {
-                isPlanPresented = true
+                sheet = .cleanupPlan
             } label: {
                 Label("Preview cleanup", systemImage: "eye")
             }
@@ -278,7 +306,7 @@ struct SenderDashboardView: View {
             // question somebody asks about the mailbox in front of them, and it should be
             // answerable without hunting. It opens a reader — see ``ActivityView``.
             Button {
-                isActivityPresented = true
+                sheet = .activity
             } label: {
                 Label("Activity", systemImage: "clock.arrow.circlepath")
             }
