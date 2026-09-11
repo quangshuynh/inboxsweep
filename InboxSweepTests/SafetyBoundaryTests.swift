@@ -1762,4 +1762,181 @@ struct SafetyBoundaryTests {
             }
         }
     }
+
+    // MARK: - Sender rules
+    //
+    // Interval 11 gave the app its first standing authorization: a rule that archives one
+    // sender's future mail without asking at the time. Everything in this section is about the
+    // verbs it deliberately does not have, and about the distance between noticing something and
+    // being allowed to act on it.
+
+    @Test("A rule has exactly one action, and it is not any of the ones it must never have")
+    func rulesHaveOneAction() {
+        // An enum with one case rather than a parameter, so a second verb is an edit here.
+        #expect(SenderRule.Action.allCases == [.archiveNewInboxMail])
+
+        let forbidden = [
+            "unsubscribe", "delete", "trash", "spam", "report", "block", "forward", "reply",
+            "send", "compose", "markread", "markunread", "star", "label", "filter", "mute",
+        ]
+        for action in SenderRule.Action.allCases {
+            for verb in forbidden {
+                #expect(
+                    !action.rawValue.lowercased().contains(verb),
+                    "A rule action can express \(verb): \(action.rawValue)"
+                )
+            }
+        }
+    }
+
+    @Test("A rule cannot unsubscribe, and says so where somebody would read it")
+    func rulesCannotUnsubscribe() {
+        // Structural first: the one action is archiving, so there is no case to construct that
+        // would reach the unsubscribe boundary, and a rule carries nothing that could.
+        let rule = SenderRule(
+            accountAddress: "someone@example.com",
+            senderKey: "news@example.com",
+            senderDisplayValue: "News",
+            createdAt: .now
+        )
+        let propertyNames = Set(Mirror(reflecting: rule).children.compactMap(\.label))
+        #expect(propertyNames == [
+            "id", "accountAddress", "senderKey", "senderDisplayValue", "action", "isEnabled",
+            "createdAt",
+        ])
+        #expect(propertyNames.isDisjoint(with: [
+            "unsubscribe", "unsubscribeURL", "endpoint", "destination", "mechanism", "url",
+            "provider", "archiver", "unsubscriber", "request", "schedule", "interval",
+        ]))
+
+        // And stated, because the promise is worth making to the person granting it. Interval 10
+        // established that unsubscribing is authorized once per action, after reading a
+        // destination; a sender rule must not become a way around that.
+        #expect(SenderRule.Action.boundaryNote.contains("never unsubscribes"))
+    }
+
+    @Test("A rule cannot create a Gmail filter, because no request in the app can")
+    func rulesCannotCreateGmailFilters() {
+        // The scope that would be needed does not exist in the app and is named as prohibited.
+        #expect(GmailScope.prohibited.contains("https://www.googleapis.com/auth/gmail.settings.basic"))
+        #expect(!GmailScope.requested.contains("https://www.googleapis.com/auth/gmail.settings.basic"))
+
+        // And there is still no request builder that could reach one. A rule executes through
+        // the same two mutating requests that existed before rules did.
+        #expect(GmailMutationEndpoint.allRequestBuilders().count == 2)
+        for request in GmailMutationEndpoint.allRequestBuilders() {
+            let url = request.url.absoluteString.lowercased()
+            #expect(!url.contains("settings"))
+            #expect(!url.contains("filters"))
+            #expect(!url.contains("forwarding"))
+        }
+    }
+
+    @Test("Rules add no Gmail scope and no new verb on the mutation boundary")
+    func rulesAddNoProviderCapability() {
+        #expect(GmailScope.requested == [
+            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.modify",
+        ])
+
+        let boundaryMethodNames = ["archiveCapability", "authorizeArchiving", "archive", "restoreToInbox"]
+        #expect(boundaryMethodNames.count == 4, "The mutation boundary gained or lost a method")
+        for name in boundaryMethodNames {
+            for verb in ["rule", "sender", "filter", "auto", "schedule", "batch", "all"] {
+                #expect(
+                    !name.lowercased().contains(verb),
+                    "The mutation boundary gained something for rules: \(name)"
+                )
+            }
+        }
+    }
+
+    @Test("A stored rule holds an address and nothing else about anybody's mail")
+    func storedRulesHoldNoMail() {
+        let rule = SenderRule(
+            accountAddress: "someone@example.com",
+            senderKey: "news@example.com",
+            senderDisplayValue: "News",
+            createdAt: .now
+        )
+        let entryProperties = Set(
+            Mirror(reflecting: SenderRuleDTO.entry(from: rule)).children.compactMap(\.label)
+        )
+
+        // The account address is written once at the top of the file, not onto every entry, and
+        // nothing here describes a message. A rule is an instruction, not a log: there is no
+        // record of what it has matched, no count, and no message identifier.
+        #expect(entryProperties == [
+            "id", "senderKey", "senderDisplayValue", "action", "isEnabled", "createdAt",
+        ])
+        #expect(entryProperties.isDisjoint(with: [
+            "subject", "subjects", "body", "snippet", "messageIDs", "matchCount", "lastRunAt",
+            "accountAddress", "query", "labels",
+        ]))
+    }
+
+    @Test("A rule read back with an action this build does not know is dropped, not approximated")
+    func unknownRuleActionsAreRefused() {
+        let entry = SenderRuleDTO.Entry(
+            id: UUID().uuidString,
+            senderKey: "news@example.com",
+            senderDisplayValue: "News",
+            action: "deleteEverythingForever",
+            isEnabled: true,
+            createdAt: .now
+        )
+        // Running the one action this build happens to have, in place of one it does not
+        // recognise, would be performing a verb the user authorized something else for.
+        #expect(SenderRuleDTO.rule(from: entry, accountAddress: "someone@example.com") == nil)
+
+        // The unknown-sender bucket is refused for a different reason: it is not an identity.
+        let unknownSender = SenderRuleDTO.Entry(
+            id: UUID().uuidString,
+            senderKey: EmailAddress.unknownGroupingKey,
+            senderDisplayValue: "Unknown sender",
+            action: SenderRule.Action.archiveNewInboxMail.rawValue,
+            isEnabled: true,
+            createdAt: .now
+        )
+        #expect(SenderRuleDTO.rule(from: unknownSender, accountAddress: "someone@example.com") == nil)
+    }
+
+    @Test("A mailbox that changed in Gmail does not fabricate a rule entry in Activity")
+    @MainActor
+    func externalChangesFabricateNoRuleActivity() async {
+        // A message that is already out of the Inbox when InboxSweep loads it. Somebody archived
+        // it in Gmail, or a Gmail filter did. A rule matching that sender must find nothing to do,
+        // and — the part that matters — must not write a transaction claiming InboxSweep did it.
+        let archiver = StubMessageArchiver()
+        let records = EphemeralMutationRecordStore()
+        let alreadyArchived = MailMessage(
+            id: MailMessageID("m-external"),
+            sender: EmailAddressParser.parse("news@example.com"),
+            subject: "Archived in Gmail, not here",
+            receivedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            labels: [.categoryPromotions]
+        )
+        let provider = StubMailProvider(
+            fetch: .pages([MailMessagePage(messages: [alreadyArchived])]),
+            archiver: archiver
+        )
+        let session = InboxSessionModel(
+            provider: provider,
+            mutationRecords: records,
+            ruleStore: EphemeralSenderRuleStore(rules: [
+                SenderRule(
+                    accountAddress: MailAccount.testAccount.emailAddress.address,
+                    senderKey: "news@example.com",
+                    senderDisplayValue: "News",
+                    createdAt: Date(timeIntervalSince1970: 1_600_000_000)
+                )
+            ]),
+            fetchRequest: MailFetchRequest(limit: 10, scope: .allMail)
+        )
+        await session.connect().value
+
+        #expect(archiver.archiveRequests.isEmpty, "A rule sent a request for a message not in the Inbox")
+        #expect(await session.activityHistory().isEmpty, "A rule invented an Activity entry for an external change")
+        #expect(session.ruleRun == nil)
+    }
 }

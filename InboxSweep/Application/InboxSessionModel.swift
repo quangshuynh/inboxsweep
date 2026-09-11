@@ -475,6 +475,12 @@ final class InboxSessionModel {
                 await ruleStore.clear(for: connectedAccount)
             }
             reset()
+            // Cleared here rather than in `reset()`, which runs on every reload. A message this
+            // session has already tried must stay tried across a reload, or a rule whose message
+            // Gmail refused would send a fresh request every time somebody pressed Reload, which
+            // is the retry loop this feature must not have. Disconnecting is a different thing:
+            // the account is gone, and so is everything remembered about its mail.
+            ruleAttemptedMessageIDs = [:]
             state = .signedOut
             // A sign-out that did not fully take is the one thing about disconnecting worth
             // interrupting the user for: the window says signed out either way, and only this
@@ -2190,7 +2196,6 @@ final class InboxSessionModel {
         senderRules = []
         ruleRun = nil
         ruleWriteWarning = nil
-        ruleAttemptedMessageIDs = [:]
     }
 }
 
