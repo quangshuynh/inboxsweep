@@ -30,15 +30,45 @@ final class InboxSessionModel {
         }
     }
 
+    /// Which part of the mailbox is being read.
+    ///
+    /// Changing it discards the loaded window and reads the new scope, because a window that
+    /// mixed scopes would make every count on the dashboard describe something the user could
+    /// not name. Assigning the same value does nothing.
+    var scope: MailboxScope {
+        didSet {
+            guard scope != oldValue else { return }
+            guard let account else { return }
+            run { [self] in await loadFirstPage(for: account) }
+        }
+    }
+
+    /// How much of the scope a deep load reads.
+    ///
+    /// A preference, not an action: setting it changes what ``loadToDepth()`` will do and never
+    /// starts a fetch by itself, so a stray click on a picker cannot cost two thousand
+    /// requests.
+    var loadDepth: MailboxLoadDepth
+
     private let provider: any MailProvider
     private let cache: any InboxCacheStoring
-    private let fetchRequest: MailFetchRequest
     private let now: @Sendable () -> Date
 
     /// The loaded window, kept so that re-sorting and paging do not need a round trip.
     private var messages: [MailMessage] = []
+
+    /// Identifiers already in ``messages``.
+    ///
+    /// Gmail can list the same message on two sides of a page boundary, and the fetcher only
+    /// deduplicates *within* a page. Without this, a sender's count would creep upwards on
+    /// deep loads for no reason the user could see.
+    private var loadedMessageIDs: Set<MailMessageID> = []
+
     private var nextPageToken: MailPageToken?
     private var activeTask: Task<Void, Never>?
+
+    /// How many pages have been read into the current window, for the progress line.
+    private var loadedPageCount = 0
 
     /// When the loaded window was written to the cache, or `nil` when it came from the
     /// provider during this launch. Shown in the header so a window restored from disk is
@@ -49,14 +79,29 @@ final class InboxSessionModel {
         provider: any MailProvider,
         cache: any InboxCacheStoring = EphemeralInboxCache(),
         fetchRequest: MailFetchRequest = MailFetchRequest(),
+        loadDepth: MailboxLoadDepth = .firstPage,
         sortOrder: SenderSortOrder = .messageVolume,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.provider = provider
         self.cache = cache
-        self.fetchRequest = fetchRequest
+        self.firstPageRequest = fetchRequest
+        self.scope = fetchRequest.scope
+        self.loadDepth = loadDepth
         self.sortOrder = sortOrder
         self.now = now
+    }
+
+    /// The shape of the *first* page: its size, and the scope a new session starts on.
+    ///
+    /// Kept because callers — previews, the sample mailbox, tests — configure a first-page size
+    /// that is not the app's default. The scope on it is only the starting value; ``scope`` is
+    /// what a load actually uses.
+    private let firstPageRequest: MailFetchRequest
+
+    /// The request for the first page of the current scope.
+    private var currentFirstPageRequest: MailFetchRequest {
+        MailFetchRequest(limit: firstPageRequest.limit, scope: scope)
     }
 
     /// The provider's display name, for UI copy.
@@ -149,29 +194,81 @@ final class InboxSessionModel {
     /// Fetches the next page and merges it into the current window.
     @discardableResult
     func loadMore() -> Task<Void, Never> {
-        guard case .loaded(let snapshot) = state,
-              let pageToken = nextPageToken,
-              !snapshot.isLoadingMore
+        loadPages(upToTotal: messages.count + loadDepth.pageSize, pageSize: loadDepth.pageSize)
+    }
+
+    /// Keeps reading pages until ``loadDepth`` is satisfied, the provider runs out, or the
+    /// user cancels.
+    ///
+    /// The window grows page by page and the dashboard is republished after each one, so the
+    /// user watches the message count climb rather than staring at a spinner — and so the
+    /// proposals on screen reflect the evidence loaded *so far* rather than appearing all at
+    /// once at the end.
+    @discardableResult
+    func loadToDepth() -> Task<Void, Never> {
+        loadPages(upToTotal: loadDepth.messageLimit, pageSize: loadDepth.pageSize)
+    }
+
+    /// Reads pages until the window holds `upToTotal` messages or the provider is exhausted.
+    ///
+    /// Bounded three ways, all of them on purpose: by the target count, by
+    /// ``MailboxLoadDepth/safetyLimit``, and by a page budget that stops a provider which keeps
+    /// handing back a cursor and no messages from looping forever.
+    private func loadPages(upToTotal: Int, pageSize: Int) -> Task<Void, Never> {
+        guard case .loaded(let startingSnapshot) = state,
+              nextPageToken != nil,
+              !startingSnapshot.isLoadingMore
         else { return .alreadyFinished }
 
+        let target = min(upToTotal, MailboxLoadDepth.safetyLimit)
+        guard messages.count < target else { return .alreadyFinished }
+
         return run { [self] in
-            state = .loaded(snapshot.settingLoadingMore(true))
-            do {
-                let page = try await provider.fetchMessages(fetchRequest.nextPage(after: pageToken))
-                try Task.checkCancellation()
-                messages.append(contentsOf: page.messages)
-                nextPageToken = page.nextPageToken
-                await publishSnapshot(for: snapshot.account)
-            } catch {
-                // The already-loaded window is still valid and still useful, so a failed
-                // *additional* page returns to it rather than throwing it away.
-                state = .loaded(snapshot.settingLoadingMore(false))
-                let providerError = MailProviderError.wrapping(error)
-                if providerError.requiresReauthentication {
-                    reset()
-                    state = .failed(providerError, account: snapshot.account)
+            let account = startingSnapshot.account
+            state = .loaded(startingSnapshot.settingLoadingMore(true))
+
+            // One more page than the target could possibly need. A provider that returns an
+            // empty page with a cursor is unusual, but "unusual" is not a reason to let a
+            // loop run unbounded against somebody's account.
+            let pageBudget = Int((Double(target) / Double(pageSize)).rounded(.up)) + 1
+
+            for _ in 0..<pageBudget {
+                guard messages.count < target, let pageToken = nextPageToken else { break }
+                guard !Task.isCancelled else { break }
+
+                do {
+                    let page = try await provider.fetchMessages(
+                        MailFetchRequest(limit: pageSize, pageToken: pageToken, scope: scope)
+                    )
+                    try Task.checkCancellation()
+
+                    let added = append(page.messages)
+                    nextPageToken = page.nextPageToken
+                    loadedPageCount += 1
+
+                    // Publish even when a page was entirely duplicates: the cursor moved, and
+                    // a dashboard that froze mid-load would look like a hang.
+                    await publishSnapshot(for: account, isLoadingMore: messages.count < target && nextPageToken != nil, persist: false)
+
+                    if added == 0, page.messages.isEmpty { break }
+                } catch is CancellationError {
+                    break
+                } catch {
+                    // The already-loaded window is still valid and still useful, so a failed
+                    // *additional* page returns to it rather than throwing it away.
+                    let providerError = MailProviderError.wrapping(error)
+                    if providerError.requiresReauthentication {
+                        reset()
+                        state = .failed(providerError, account: account)
+                        return
+                    }
+                    break
                 }
             }
+
+            // A cancelled deep load keeps every page it managed to read; the alternative is
+            // throwing away work the user already waited for.
+            await publishSnapshot(for: account, isLoadingMore: false, persist: true)
         }
     }
 
@@ -226,7 +323,7 @@ final class InboxSessionModel {
     /// which is the property `SafetyBoundaryTests` pins down.
     func cleanupPlan(for requests: [CleanupPlanRequest]) -> CleanupPlan {
         guard case .loaded(let snapshot) = state else {
-            return .empty(window: CleanupPlanWindow(loadedMessageCount: 0, hasMoreBeyondWindow: false, scope: fetchRequest.scope))
+            return .empty(window: CleanupPlanWindow(loadedMessageCount: 0, hasMoreBeyondWindow: false, scope: scope))
         }
 
         var messagesBySender: [SenderSummary.ID: [MailMessage]] = [:]
@@ -238,7 +335,7 @@ final class InboxSessionModel {
             requests: requests,
             messagesBySender: messagesBySender,
             proposals: snapshot.proposals,
-            window: snapshot.planWindow(scope: fetchRequest.scope),
+            window: snapshot.planWindow(),
             referenceDate: now()
         )
     }
@@ -260,8 +357,10 @@ final class InboxSessionModel {
         guard let cached = await cache.load(for: account), !cached.messages.isEmpty else { return false }
         guard !Task.isCancelled else { return false }
 
-        messages = cached.messages
+        reset()
+        append(cached.messages)
         nextPageToken = cached.nextPageToken
+        loadedPageCount = cached.messages.isEmpty ? 0 : 1
         restoredFromCacheAt = cached.savedAt
 
         // Summaries are derived data stored beside their source. Trust them when they still
@@ -281,8 +380,10 @@ final class InboxSessionModel {
                 loadedMessageCount: messages.count,
                 senders: senders,
                 sortOrder: sortOrder,
+                scope: scope,
                 hasMoreMessages: nextPageToken != nil,
                 isLoadingMore: false,
+                loadedPageCount: loadedPageCount,
                 proposals: proposals,
                 cachedAt: cached.savedAt
             )
@@ -295,11 +396,12 @@ final class InboxSessionModel {
         state = .loading(account)
 
         do {
-            let page = try await provider.fetchMessages(fetchRequest)
+            let page = try await provider.fetchMessages(currentFirstPageRequest)
             try Task.checkCancellation()
-            messages = page.messages
+            _ = append(page.messages)
             nextPageToken = page.nextPageToken
-            await publishSnapshot(for: account)
+            loadedPageCount = 1
+            await publishSnapshot(for: account, isLoadingMore: false, persist: true)
         } catch {
             let providerError = MailProviderError.wrapping(error)
             if providerError.requiresReauthentication { reset() }
@@ -307,15 +409,45 @@ final class InboxSessionModel {
         }
     }
 
-    /// Aggregates off the main actor, publishes the result, and stores it for the next launch.
+    /// Merges `incoming` into the window, skipping anything already loaded.
+    ///
+    /// Returns how many were genuinely new, which is what tells a deep load whether a page was
+    /// worth anything. Order is preserved: a message keeps the position the provider first
+    /// listed it in, so extending the window never reshuffles what is already on screen.
+    @discardableResult
+    private func append(_ incoming: [MailMessage]) -> Int {
+        var added = 0
+        for message in incoming where loadedMessageIDs.insert(message.id).inserted {
+            messages.append(message)
+            added += 1
+        }
+        return added
+    }
+
+    /// Aggregates off the main actor, publishes the result, and — when asked — stores it.
     ///
     /// Aggregation is linear in the loaded window, which stays small enough to be quick — but
     /// it grows with every page, so it is kept off the actor that draws the window.
-    private func publishSnapshot(for account: MailAccount) async {
+    ///
+    /// Proposals are recomputed here, from the *whole* window, every single time. That is what
+    /// makes a deep load change its mind honestly: a sender who looked like a cleanup candidate
+    /// over one page can become protected over five, and the dashboard must show the second
+    /// verdict rather than the first one it happened to compute.
+    ///
+    /// `persist` is false for the intermediate pages of a deep load. Writing the cache after
+    /// every page would mean ten file writes for one user action, and the final write covers
+    /// everything the earlier ones would have.
+    private func publishSnapshot(
+        for account: MailAccount,
+        isLoadingMore: Bool,
+        persist: Bool
+    ) async {
         let senders = await aggregate(messages)
         let proposals = await makeProposals(senders: senders, messages: messages)
 
-        guard !Task.isCancelled else { return }
+        // A cancelled load still publishes what it read — dropping it would throw away pages
+        // the user waited for — but it never claims to still be loading.
+        let stillLoading = isLoadingMore && !Task.isCancelled
 
         state = .loaded(
             InboxSnapshot(
@@ -323,14 +455,18 @@ final class InboxSessionModel {
                 loadedMessageCount: messages.count,
                 senders: senders,
                 sortOrder: sortOrder,
+                scope: scope,
                 hasMoreMessages: nextPageToken != nil,
-                isLoadingMore: false,
+                isLoadingMore: stillLoading,
+                loadedPageCount: loadedPageCount,
                 proposals: proposals,
                 // Sticky: appending a page to a restored window does not make the pages
                 // underneath it fresh, and only a full reload clears this.
                 cachedAt: restoredFromCacheAt
             )
         )
+
+        guard persist else { return }
 
         await cache.save(
             CachedInbox(
@@ -365,7 +501,9 @@ final class InboxSessionModel {
 
     private func reset() {
         messages = []
+        loadedMessageIDs = []
         nextPageToken = nil
+        loadedPageCount = 0
         restoredFromCacheAt = nil
     }
 }

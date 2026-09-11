@@ -27,6 +27,8 @@ struct SenderDashboardView: View {
             Divider()
             filterBar
             Divider()
+            MailboxLoadBar(snapshot: snapshot, session: session)
+            Divider()
             senderTable
             Divider()
             footer
@@ -203,32 +205,14 @@ struct SenderDashboardView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            if snapshot.hasMoreMessages {
-                Button {
-                    session.loadMore()
-                } label: {
-                    if snapshot.isLoadingMore {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Loading…")
-                        }
-                    } else {
-                        Text("Load more messages")
-                    }
-                }
-                .disabled(snapshot.isLoadingMore)
-                .accessibilityIdentifier("dashboard.loadMoreButton")
+            Text(snapshot.coverageDetail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("dashboard.coverageFooter")
 
-                if snapshot.isLoadingMore {
-                    Button("Cancel", role: .cancel) { session.cancel() }
-                }
-            } else {
-                Text("All messages in the loaded window are shown.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
+            Spacer(minLength: 12)
 
             Text(PrivacyNotice.summary)
                 .font(.footnote)

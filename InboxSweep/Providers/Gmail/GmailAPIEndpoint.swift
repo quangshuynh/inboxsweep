@@ -46,11 +46,12 @@ nonisolated enum GmailAPIEndpoint {
         var components = URLComponents(url: base.appending(path: "messages"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "maxResults", value: String(limit))]
 
-        switch scope {
-        case .inbox:
-            items.append(URLQueryItem(name: "labelIds", value: "INBOX"))
-        case .allMail:
-            break
+        // `labelIds` is the only filter `gmail.metadata` permits — `q=` is rejected under this
+        // scope — so every scope the app offers has to be expressible as a label Gmail already
+        // applies. That is a constraint worth keeping: it means the app can only ask for slices
+        // Gmail itself defined, never ones it invented from message content.
+        if let labelID = labelID(for: scope) {
+            items.append(URLQueryItem(name: "labelIds", value: labelID))
         }
 
         if let pageToken {
@@ -59,6 +60,18 @@ nonisolated enum GmailAPIEndpoint {
 
         components.queryItems = items
         return GmailAPIRequest(url: components.url!)
+    }
+
+    /// Gmail's label identifier for a scope, or `nil` when the scope filters nothing.
+    static func labelID(for scope: MailboxScope) -> String? {
+        switch scope {
+        case .inbox: "INBOX"
+        case .promotions: "CATEGORY_PROMOTIONS"
+        case .updates: "CATEGORY_UPDATES"
+        case .social: "CATEGORY_SOCIAL"
+        case .forums: "CATEGORY_FORUMS"
+        case .allMail: nil
+        }
     }
 
     /// Fetches metadata for a single message.
@@ -77,11 +90,8 @@ nonisolated enum GmailAPIEndpoint {
 
     /// Every request builder above, for the safety-boundary tests to enumerate.
     static func allRequestBuilders() -> [GmailAPIRequest] {
-        [
-            profile(),
-            listMessages(limit: 100, pageToken: nil, scope: .inbox),
-            listMessages(limit: 100, pageToken: MailPageToken("token"), scope: .allMail),
-            messageMetadata(id: MailMessageID("message-id")),
-        ]
+        [profile(), messageMetadata(id: MailMessageID("message-id"))]
+            + MailboxScope.allCases.map { listMessages(limit: 100, pageToken: nil, scope: $0) }
+            + MailboxScope.allCases.map { listMessages(limit: 100, pageToken: MailPageToken("token"), scope: $0) }
     }
 }

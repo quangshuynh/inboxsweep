@@ -62,6 +62,21 @@ struct InboxSessionCacheTests {
         )
     }
 
+    /// A second page of *different* messages.
+    ///
+    /// Distinct identifiers on purpose: the session deduplicates across page boundaries, so a
+    /// second page that repeated the first would correctly add nothing and this fixture would
+    /// be testing the deduplicator rather than the cache.
+    private func secondFreshPage(nextPageToken: String? = nil) -> MailMessagePage {
+        MailMessagePage(
+            messages: [
+                message("11", from: "alerts@example.org", hours: 7),
+                message("12", from: "alerts@example.org", hours: 6),
+            ],
+            nextPageToken: nextPageToken.map(MailPageToken.init)
+        )
+    }
+
     // MARK: - Restoring from the cache
 
     @Test("A relaunch shows the stored window without re-reading the mailbox")
@@ -256,7 +271,7 @@ struct InboxSessionCacheTests {
     func savesTheExtendedWindow() async throws {
         let cache = RecordingInboxCache()
         let model = InboxSessionModel(
-            provider: StubMailProvider(fetch: .pages([freshPage(nextPageToken: "page-2"), freshPage()])),
+            provider: StubMailProvider(fetch: .pages([freshPage(nextPageToken: "page-2"), secondFreshPage()])),
             cache: cache
         )
 
