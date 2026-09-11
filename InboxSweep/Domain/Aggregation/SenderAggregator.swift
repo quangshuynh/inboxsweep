@@ -139,7 +139,7 @@ nonisolated enum SenderAggregator {
         }
 
         /// The mean gap between consecutive dated messages, or `nil` when there is no gap to
-        /// measure — one message, or several that all arrived at the same instant.
+        /// measure, one message, or several that all arrived at the same instant.
         private var averageInterval: TimeInterval? {
             guard datedCount > 1 else { return nil }
             let span = newestDatedAt.timeIntervalSince(oldestDatedAt)

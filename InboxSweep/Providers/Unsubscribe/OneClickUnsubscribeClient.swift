@@ -14,7 +14,7 @@ import Foundation
 /// That is the whole request. Read the list of what is *not* in it, because that list is the
 /// feature:
 ///
-/// - **No `Authorization` header.** This client has never seen a Google access token — it is
+/// - **No `Authorization` header.** This client has never seen a Google access token: it is
 ///   not given one, there is no parameter for one, and it shares no type with the Gmail API
 ///   client that holds one. A token cannot reach a sender's server by mistake because there is
 ///   no path along which it could travel.
@@ -35,7 +35,7 @@ nonisolated struct OneClickUnsubscribeClient: MailUnsubscribing {
     private let transport: any HTTPTransport
 
     /// The transport is injected, and in production it is
-    /// ``UnsubscribeHTTPTransport`` — *not* the one the Gmail adapter uses.
+    /// ``UnsubscribeHTTPTransport``, *not* the one the Gmail adapter uses.
     ///
     /// Separate objects rather than a shared one with different headers: a shared transport
     /// would be one place where a Gmail request and an unsubscribe request could be confused
@@ -86,7 +86,7 @@ nonisolated struct OneClickUnsubscribeClient: MailUnsubscribing {
             case .stopAtMethodChange:
                 // The request was delivered; the endpoint is pointing at a page. Reported as a
                 // receipt carrying the 3xx, which the outcome turns into "request sent" rather
-                // than "accepted" — the one place in the app where those two differ in wording.
+                // than "accepted": the one place in the app where those two differ in wording.
                 return OneClickUnsubscribeReceipt(
                     host: endpoint.host,
                     statusCode: response.statusCode,
@@ -105,8 +105,8 @@ nonisolated struct OneClickUnsubscribeClient: MailUnsubscribing {
 
     /// Builds the request. The only place in the app that constructs one.
     ///
-    /// `static` and `internal` so a test can assert on the exact `URLRequest` — method, URL,
-    /// body, content type, and the headers that are absent — without a transport in the way.
+    /// `static` and `internal` so a test can assert on the exact `URLRequest`: method, URL,
+    /// body, content type, and the headers that are absent, without a transport in the way.
     static func urlRequest(for endpoint: HTTPSUnsubscribeURL) -> URLRequest {
         var request = URLRequest(url: endpoint.url)
         request.httpMethod = OneClickUnsubscribeBody.method
@@ -145,7 +145,7 @@ nonisolated struct OneClickUnsubscribeClient: MailUnsubscribing {
 ///
 /// ### Why this is a type and not an omission
 ///
-/// The Gmail adapter retries — a 429 or a 503 on a read is a reason to wait and ask again, and
+/// The Gmail adapter retries: a 429 or a 503 on a read is a reason to wait and ask again, and
 /// ``GmailAPIClient`` does. Copying that here would have been the natural thing to do and would
 /// have been wrong. A one-click unsubscribe is a `POST` to somebody else's server; the standard
 /// says nothing about whether it is idempotent, the endpoint's own implementation is unknown,
@@ -153,7 +153,7 @@ nonisolated struct OneClickUnsubscribeClient: MailUnsubscribing {
 /// authorization they gave once.
 ///
 /// So there is no backoff, no jitter, no attempt counter, and no queue. One confirmation is one
-/// request. A failure is reported to the user, who can decide to ask again — which is a new,
+/// request. A failure is reported to the user, who can decide to ask again, which is a new,
 /// explicit action, recorded as its own entry.
 ///
 /// Naming it makes the absence deliberate and testable rather than an oversight somebody
@@ -169,7 +169,7 @@ nonisolated enum UnsubscribeRetryPolicy {
     /// Why, in a sentence the UI can show.
     static let explanation = """
         InboxSweep sends an unsubscribe request once. It never retries on its own and never sends \
-        one in the background — a repeat would be a second request to the sender under permission \
+        one in the background: a repeat would be a second request to the sender under permission \
         you gave once. If one fails, you decide whether to ask again.
         """
 }

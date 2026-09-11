@@ -25,7 +25,7 @@ import Foundation
 /// app's whole authority over a mailbox is adding or removing `INBOX` on one named message
 /// (``MailMessageArchiving``), and a rule must not be the thing that widens it. Automatic
 /// deletion, trashing, spam reporting, marking read, forwarding, replying, blocking, arbitrary
-/// labelling, and — emphatically — automatic unsubscribing are all absent, and absent in the
+/// labelling, and (emphatically) automatic unsubscribing are all absent, and absent in the
 /// strong sense: there is no case to construct, so there is no code path to reach.
 ///
 /// ### The privacy cost, stated rather than buried
@@ -187,7 +187,7 @@ nonisolated extension SenderRule.Action {
     /// any other way, and in particular it is not permission to unsubscribe.
     static let boundaryNote = """
         A rule only archives. It never deletes, trashes, marks, labels, forwards, or replies to \
-        anything, and it never unsubscribes you from anything — unsubscribing always needs you to \
+        anything, and it never unsubscribes you from anything: unsubscribing always needs you to \
         review a destination and confirm it, every time.
         """
 }

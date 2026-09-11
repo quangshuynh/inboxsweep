@@ -3,7 +3,7 @@ import Foundation
 /// One completed set mutation, durably enough recorded that its undo survives quitting the app.
 ///
 /// This is the upgrade of the single-message record the previous interval wrote. The purpose is
-/// still correctness and visibility, in that order — but "correctness" now has to reach across a
+/// still correctness and visibility, in that order, but "correctness" now has to reach across a
 /// relaunch, because the offer to undo a twelve-message archive is worth more than the offer to
 /// undo one message and a user who quits the app is not saying "never mind".
 ///
@@ -12,13 +12,13 @@ import Foundation
 /// ``succeededMessageIDs`` holds the messages the provider *confirmed*, and nothing else. That
 /// is what makes undo safe to restore blindly: every identifier in here is a message this app
 /// really did take out of somebody's inbox, so putting them back is undoing exactly what was
-/// done. A partial run therefore produces a transaction for its successful subset — eight IDs
-/// for eight archived messages — and the four that failed are counted, not named, because there
+/// done. A partial run therefore produces a transaction for its successful subset, eight IDs
+/// for eight archived messages, and the four that failed are counted, not named, because there
 /// is nothing to undo about a message that never changed.
 ///
 /// ### What is deliberately absent
 ///
-/// No subject, no sender, no date received, no labels, no body — the last of which
+/// No subject, no sender, no date received, no labels, no body: the last of which
 /// ``MailMessage`` has nowhere to hold in the first place. The mailbox cache already holds the
 /// metadata for every message in the loaded window, so copying subjects in here would put the
 /// same mailbox content in a second file for no gain. A transaction *names* messages; the
@@ -29,7 +29,7 @@ import Foundation
 /// The same records answer "what has InboxSweep changed in my mailbox?" on the Activity screen.
 /// That is a second job for one file rather than a second file, deliberately: a separate audit
 /// store would be the same identifiers written twice, free to disagree with the transactions
-/// undo actually acts on. It does mean the record has to survive being *used* — a partial undo
+/// undo actually acts on. It does mean the record has to survive being *used*: a partial undo
 /// narrows ``succeededMessageIDs`` so the remaining offer is accurate, and
 /// ``confirmedMessageCount`` is what keeps the history from being rewritten underneath it.
 ///
@@ -39,7 +39,7 @@ import Foundation
 /// perform.
 ///
 /// This is not analytics. Nothing here is aggregated, scored, or sent anywhere, and the store
-/// keeps a bounded, deterministic number of entries per account — see ``MailMutationHistory``.
+/// keeps a bounded, deterministic number of entries per account; see ``MailMutationHistory``.
 nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
 
     /// The logical mutation this transaction is for.
@@ -55,7 +55,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// different mailbox. Checked again before an undo is offered *and* before it is sent.
     let accountAddress: String
 
-    /// The messages the provider confirmed **and that are still in that state** — the only ones
+    /// The messages the provider confirmed **and that are still in that state**: the only ones
     /// an undo may name.
     ///
     /// Narrows when an undo partially succeeds: the messages that came back are no longer
@@ -76,7 +76,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// screen counts from.
     ///
     /// It exists because ``succeededMessageIDs`` is a live list and history is not. Archive ten
-    /// of ten, undo four of them, and the identifier list is down to six — so a screen counting
+    /// of ten, undo four of them, and the identifier list is down to six, so a screen counting
     /// that list would say "archived 6 of 10", which is a partial archive that never happened.
     /// The archive confirmed ten. Four of them were later put back, and that is a different
     /// sentence about a different operation.
@@ -104,7 +104,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
 
     /// - Parameter confirmedMessageCount: How many the operation confirmed when it ran. Defaults
     ///   to the number of identifiers, which is correct for every transaction that has not since
-    ///   been partly undone — and is what a record written before this field existed means.
+    ///   been partly undone, and is what a record written before this field existed means.
     ///   Never allowed to be smaller than the list it describes.
     init(
         id: UUID,
@@ -134,7 +134,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// Where a transaction sits in the undo lifecycle.
     ///
     /// An explicit stored state rather than something inferred at read time, because the
-    /// inference would have to be re-derived identically in every place that reads the file —
+    /// inference would have to be re-derived identically in every place that reads the file,
     /// and the one place it mattered would eventually get it wrong.
     nonisolated enum UndoState: String, Hashable, Sendable, CaseIterable {
 
@@ -150,7 +150,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
         /// to somebody's mailbox, and the audit history is the reason the file exists at all.
         case superseded
 
-        /// It was never undoable — a restore, or an archive that confirmed nothing.
+        /// It was never undoable: a restore, or an archive that confirmed nothing.
         case notUndoable
     }
 
@@ -161,7 +161,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
 
     /// How many messages this transaction can still undo.
     ///
-    /// The *live* count, which is not the same as what the operation did — see
+    /// The *live* count, which is not the same as what the operation did; see
     /// ``confirmedMessageCount``. Use this to describe an undo offer and that one to describe
     /// history.
     var succeededCount: Int { succeededMessageIDs.count }
@@ -185,7 +185,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
 
     /// The single message, when this transaction named exactly one.
     ///
-    /// A set of one is the ordinary case — a user archiving a single message — and this is what
+    /// A set of one is the ordinary case (a user archiving a single message) and this is what
     /// lets the confirmation sheet and the tests talk about it in the singular without
     /// special-casing the whole model.
     var messageID: MailMessageID? {
@@ -223,7 +223,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// Where this transaction stands, as the Activity screen needs to say it.
     ///
     /// One value derived in one place, rather than each screen re-deriving it out of
-    /// ``undoState``, ``operation``, and three counts — which is how two screens end up
+    /// ``undoState``, ``operation``, and three counts, which is how two screens end up
     /// disagreeing about whether an archive was undone.
     ///
     /// Every case describes something InboxSweep *attempted or was told about*. There is no case
@@ -244,7 +244,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
         /// Some of this archive's messages have been put back and some have not.
         case undoPartiallyCompleted
 
-        /// A restore — the record of an undo, which is not itself undoable.
+        /// A restore: the record of an undo, which is not itself undoable.
         case restore
 
         /// An operation the provider confirmed nothing for. Nothing changed, so there is nothing
@@ -258,7 +258,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
 
         switch undoState {
         case .undoable:
-            // A narrowed offer — some already put back, some not — is both at once, and the
+            // A narrowed offer (some already put back, some not) is both at once, and the
             // partial reading is the more informative of the two.
             return isPartiallyUndone ? .undoPartiallyCompleted : .undoAvailable
         case .undone:
@@ -282,7 +282,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// The same transaction with its undo offer narrowed to the messages still archived.
     ///
     /// What a partial undo produces. The identifiers shrink to those that did *not* come back,
-    /// so a second undo asks Gmail only about messages that are still out of the inbox — and
+    /// so a second undo asks Gmail only about messages that are still out of the inbox, and
     /// ``confirmedMessageCount``, ``selectedMessageCount``, and ``occurredAt`` are carried
     /// through untouched, because none of them is a statement about now. The archive still
     /// archived what it archived.
@@ -317,7 +317,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// twelve-message undo quietly disappearing because they pressed Reload and two newsletters
     /// arrived.
     ///
-    /// The alternative — a second, parallel undo offer — is a bigger change to the lifecycle than
+    /// The alternative (a second, parallel undo offer) is a bigger change to the lifecycle than
     /// this feature earns, and a screen offering two undos is a screen where somebody presses the
     /// wrong one.
     ///
@@ -422,7 +422,7 @@ nonisolated enum MailMutationOrigin: Hashable, Sendable {
 ///
 /// Reported rather than swallowed, because the one thing this distinction protects is the
 /// sentence "your messages were archived but this Mac couldn't write that down". Reporting a
-/// confirmed remote change as a failure — which is what a silent local error would lead to —
+/// confirmed remote change as a failure (which is what a silent local error would lead to)
 /// would be telling the user the opposite of what happened to their mailbox.
 ///
 /// It matters more than it did for a single message: the undo offer is now *read back from this
@@ -454,7 +454,7 @@ nonisolated protocol MailMutationRecording: Sendable {
     /// ``MailMutationTransaction/id``.
     ///
     /// Replacing rather than appending is what makes this safe to call more than once for one
-    /// logical mutation — a repeated completion updates the transaction it already wrote — and
+    /// logical mutation (a repeated completion updates the transaction it already wrote) and
     /// it is also how the undo lifecycle is persisted: superseding one and marking another
     /// undone are both just writes of an already-known ID.
     func record(_ transaction: MailMutationTransaction) async -> MutationRecordOutcome
@@ -468,8 +468,8 @@ nonisolated protocol MailMutationRecording: Sendable {
     /// Writes an unsubscribe entry, replacing any earlier one with the same identifier.
     ///
     /// A **separate method** rather than a `record(_ entry: some ActivityRecord)` that took
-    /// either. The two kinds of entry have different shapes, different lifecycles, and — the
-    /// part that matters — different powers: a transaction can be read back and turned into
+    /// either. The two kinds of entry have different shapes, different lifecycles, and, the
+    /// part that matters, different powers: a transaction can be read back and turned into
     /// requests that put messages back in an inbox, and an unsubscribe entry can be read back
     /// and turned into nothing at all, because it has no inverse. A single generic method would
     /// have invited a single generic handler for both.
@@ -486,8 +486,8 @@ nonisolated extension MailMutationRecording {
 
     /// Unsubscribe history is optional for a store to implement.
     ///
-    /// Defaulted so a store written for archive history alone — and the test doubles that are —
-    /// keeps compiling and keeps reporting honestly: nothing stored, and a write that says so.
+    /// Defaulted so a store written for archive history alone, and the test doubles that are
+    /// exactly that, keep compiling and keeps reporting honestly: nothing stored, and a write that says so.
     func record(_ entry: UnsubscribeActionRecord) async -> MutationRecordOutcome {
         .notStored(reason: "This mailbox doesn't keep a record of unsubscribe actions.")
     }
@@ -500,7 +500,7 @@ nonisolated extension MailMutationRecording {
     /// "at most one undoable transaction per account" is a single rule enforced in a single
     /// place regardless of which store is underneath.
     ///
-    /// Defensive about `undoable` appearing more than once — which the writer never produces,
+    /// Defensive about `undoable` appearing more than once, which the writer never produces,
     /// but a hand-edited or half-written file could. The newest wins and the rest are ignored
     /// rather than the app offering two undos it cannot both honour.
     func latestUndoableTransaction(for account: MailAccount) async -> MailMutationTransaction? {
@@ -511,7 +511,7 @@ nonisolated extension MailMutationRecording {
 
 /// A transaction store that keeps everything in memory and nothing on disk.
 ///
-/// The default, so persistence is opted into rather than assumed — and what the synthetic
+/// The default, so persistence is opted into rather than assumed, and what the synthetic
 /// mailbox runs on, since invented mail has no business leaving a trail in a real container.
 nonisolated final class EphemeralMutationRecordStore: MailMutationRecording, @unchecked Sendable {
 

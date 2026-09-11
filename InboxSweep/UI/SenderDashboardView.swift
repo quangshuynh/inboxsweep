@@ -20,7 +20,7 @@ struct SenderDashboardView: View {
     /// **One** `@State` and **one** `.sheet` modifier, rather than one of each per destination.
     /// Stacking `.sheet` modifiers on a single view is not something SwiftUI honours: two
     /// happened to work, and adding a third for Activity made the new one silently never
-    /// present — the button was there, the click landed, and nothing opened. An enum makes the
+    /// present: the button was there, the click landed, and nothing opened. An enum makes the
     /// exclusivity explicit, which is what it was all along: this screen shows at most one sheet.
     @State private var sheet: Sheet?
 
@@ -100,8 +100,8 @@ struct SenderDashboardView: View {
                         onReviewMessages: { sheet = .messageReview(sender) },
                         // Offered whether or not this session can write. The button's job is to
                         // move the user into a review state, which it does either way, and the
-                        // review screen is the honest place to say whether archiving is available
-                        // — it offers **Enable archiving…** on a read-only grant and nothing at
+                        // review screen is the honest place to say whether archiving is
+                        // available: it offers **Enable archiving…** on a read-only grant and
                         // all on the synthetic mailbox. Gating it here and not on the dry-run row
                         // would also have made two identically-worded controls behave differently.
                         onReviewCleanup: { openCleanupReview(for: sender, under: suggestedAction(for: sender.id)) },
@@ -190,7 +190,7 @@ struct SenderDashboardView: View {
 
     /// The action a sender-level entry point previews when nothing else has chosen one.
     ///
-    /// The same seed the preview itself uses — the sender's own proposal — so pressing **Review
+    /// The same seed the preview itself uses (the sender's own proposal) so pressing **Review
     /// messages to archive…** in the inspector and pressing it on that sender's preview row start
     /// from the same action rather than from two different defaults.
     private func suggestedAction(for key: SenderSummary.ID) -> PlannedCleanupAction {
@@ -297,7 +297,9 @@ struct SenderDashboardView: View {
                             ProposalStrengthLabel(strength: proposal.strength, isCompact: true)
                         }
                     } else {
-                        Text("—").foregroundStyle(.tertiary)
+                        // "None", not a dash glyph: a screen reader reads a word and cannot
+                        // read a horizontal line, and this column is about an absence.
+                        Text("None").foregroundStyle(.tertiary)
                     }
                 }
                 .width(min: 160, ideal: 200)
@@ -358,7 +360,7 @@ struct SenderDashboardView: View {
 
             // `fixedSize` and the layout priority are what keep this control *present*. A footer
             // is a row of text competing for one line, and without them the link is the thing
-            // that gets compressed when the coverage sentence or the privacy note is long —
+            // that gets compressed when the coverage sentence or the privacy note is long,
             // squeezed to nothing on a narrow window, and intermittently unfindable in a UI test
             // while the coverage line is still saying "loading". A route into Activity that
             // disappears when a sentence beside it grows is not a route.
@@ -374,7 +376,7 @@ struct SenderDashboardView: View {
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
                 .lineLimit(2)
-                .help("InboxSweep suggests and previews. The only change it can make is archiving one message you open and confirm, from a sender's message review — nothing on this screen changes your mail.")
+                .help("InboxSweep suggests and previews. The only change it can make is archiving one message you open and confirm, from a sender's message review. Nothing on this screen changes your mail.")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -384,7 +386,7 @@ struct SenderDashboardView: View {
     ///
     /// ### Why a second route exists
     ///
-    /// Because a toolbar is a place a control can be *hard to reach* — for a UI test driving the
+    /// Because a toolbar is a place a control can be *hard to reach*, for a UI test driving the
     /// window from outside, and for anybody whose window is narrow enough that macOS collapses the
     /// toolbar into an overflow menu. "What has this app changed?" is a question worth being able
     /// to answer from the content itself, which is where the user is already looking.
@@ -476,6 +478,11 @@ struct SenderDashboardView: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
+            // `.contain` rather than the default. An identifier on a stack of `Text`s invites
+            // SwiftUI to merge the whole banner into one element, and a test asking whether the
+            // no-undo sentence is present would then be asking about something that had been
+            // folded away. This banner is a container of separately meaningful lines.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("dashboard.ruleRun")
         }
     }
@@ -520,7 +527,7 @@ struct SenderDashboardView: View {
         ToolbarItemGroup(placement: .primaryAction) {
             // Beside Reload rather than buried in the footer: "what has this app changed?" is a
             // question somebody asks about the mailbox in front of them, and it should be
-            // answerable without hunting. It opens a reader — see ``ActivityView``.
+            // answerable without hunting. It opens a reader; see ``ActivityView``.
             Button {
                 sheet = .activity
             } label: {

@@ -5,7 +5,7 @@ import Foundation
 ///
 /// All addresses use the RFC 2606 reserved domains (`example.com`, `example.org`,
 /// `example.net`), which can never belong to anyone, and every unsubscribe destination is under
-/// the reserved `.example` TLD — which is not merely unregistered but unregistrable, so a bug
+/// the reserved `.example` TLD, which is not merely unregistered but unregistrable, so a bug
 /// that sent a request from a sample run could not reach anybody's server. No part of this file
 /// is derived from a real mailbox.
 nonisolated enum SampleMailbox {
@@ -59,7 +59,7 @@ nonisolated enum SampleMailbox {
 
         add(
             from: "\"The Daily Digest\" <newsletter@example.com>",
-            subjects: (1...18).map { "The Daily Digest — issue \(120 + $0)" },
+            subjects: (1...18).map { "The Daily Digest, issue \(120 + $0)" },
             hoursAgoStart: 2,
             hoursApart: 24,
             unreadEvery: 2,

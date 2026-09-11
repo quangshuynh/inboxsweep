@@ -9,8 +9,8 @@ import Testing
 /// The bug these exist for: the handler used to be a closure literal written inside a
 /// `@MainActor` class, so it inherited main-actor isolation, and the compiler guarded its body
 /// with an executor precondition. AuthenticationServices calls back from its own XPC queue, so
-/// that precondition failed — `_dispatch_assert_queue_fail`, "BUG IN CLIENT OF LIBDISPATCH" —
-/// *before* the first line of the handler ran, which is why hopping to the main actor inside
+/// that precondition failed with `_dispatch_assert_queue_fail`, "BUG IN CLIENT OF
+/// LIBDISPATCH", *before* the first line of the handler ran, which is why hopping to the main actor inside
 /// the handler could not have saved it.
 ///
 /// Every test here therefore delivers its result from a queue that is not the main queue, and
@@ -27,7 +27,7 @@ struct WebAuthenticationCallbackTests {
         _ error: (any Error)? = nil
     ) {
         // A global queue, so there is no Swift task, no actor and no main queue underneath
-        // the handler — exactly the context AuthenticationServices calls back from.
+        // the handler: exactly the context AuthenticationServices calls back from.
         DispatchQueue.global(qos: .userInitiated).async {
             handler(callbackURL, error)
         }
@@ -135,7 +135,7 @@ struct WebAuthenticationCallbackTests {
 
             // A real attempt can race the framework's callback against the task being
             // cancelled. `CheckedContinuation` traps on a second resume, so this test failing
-            // to crash — and returning the *first* result — is the assertion.
+            // to crash (and returning the *first* result) is the assertion.
             DispatchQueue.concurrentPerform(iterations: 32) { iteration in
                 if iteration == 0 {
                     handler(redirect, nil)

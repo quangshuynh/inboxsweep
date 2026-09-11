@@ -3,8 +3,8 @@ import Foundation
 
 /// An in-memory cache that records what the session asked of it.
 ///
-/// Lets the session tests describe relaunch behaviour — "this launch read the stored window
-/// and made no request" — without touching the file system, while ``InboxCacheStoreTests``
+/// Lets the session tests describe relaunch behaviour: "this launch read the stored window
+/// and made no request", without touching the file system, while ``InboxCacheStoreTests``
 /// covers the real file format separately.
 actor RecordingInboxCache: InboxCacheStoring {
 

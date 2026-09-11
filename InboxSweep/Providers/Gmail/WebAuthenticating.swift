@@ -5,7 +5,7 @@ import Foundation
 /// Presents an OAuth consent screen and returns the URL the provider redirects back to.
 ///
 /// Abstracted so sign-in can be driven by a fake in tests. It is also the only place in the
-/// app that shows Google's UI — InboxSweep never renders a password field of its own, and the
+/// app that shows Google's UI: InboxSweep never renders a password field of its own, and the
 /// user's Google credentials are typed into Google's page, not into this app.
 nonisolated protocol WebAuthenticating: Sendable {
     func authenticate(url: URL, callbackScheme: String) async throws -> URL
@@ -23,7 +23,7 @@ nonisolated struct WebAuthenticationSessionPresenter: WebAuthenticating {
 /// The split of isolation here is the whole point of this type. Creating, presenting and
 /// cancelling the session are main-actor work, because they are AppKit work: the session
 /// shows a window, and it asks this object for the window to show it over. The *callback* is
-/// not main-actor work, and must not be treated as if it were —
+/// not main-actor work, and must not be treated as if it were;
 /// ``WebAuthenticationCallback/sessionCompletionHandler()`` explains why. Everything the
 /// callback produces re-enters this class only after `run()` resumes, which is back on the
 /// main actor by construction.
@@ -41,7 +41,7 @@ private final class WebAuthenticationSessionRunner: NSObject, ASWebAuthenticatio
     func run() async throws -> URL {
         let callback = WebAuthenticationCallback()
 
-        // Runs on the main actor whichever way `run()` exits — returned, thrown or cancelled —
+        // Runs on the main actor whichever way `run()` exits: returned, thrown or cancelled,
         // so the window is always dismissed and the session always released exactly once.
         defer { tearDown() }
 

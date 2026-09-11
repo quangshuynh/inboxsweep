@@ -3,7 +3,7 @@ import Foundation
 /// The OAuth client identity InboxSweep signs in with.
 ///
 /// InboxSweep uses a Google OAuth client of the *iOS/macOS* type, which has **no client
-/// secret** — authorization is protected by PKCE instead. That is a deliberate choice: a
+/// secret**: authorization is protected by PKCE instead. That is a deliberate choice: a
 /// desktop app cannot keep a secret from the person running it, and having no secret means
 /// there is nothing secret-shaped that could be committed to this repository by accident.
 ///
@@ -20,7 +20,7 @@ nonisolated struct GmailOAuthConfiguration: Hashable, Sendable {
     /// e.g. `1234567890-abcdef.apps.googleusercontent.com`
     let clientID: String
 
-    /// The custom URL scheme Google will redirect back to — the client ID's reverse-DNS form.
+    /// The custom URL scheme Google will redirect back to: the client ID's reverse-DNS form.
     let callbackScheme: String
 
     /// The full redirect URI sent in the authorization request.
@@ -75,7 +75,7 @@ nonisolated extension GmailOAuthConfiguration {
 
     /// Explains, in the UI, what is missing and roughly how to fix it.
     static let missingConfigurationReason = """
-        No Google OAuth client ID was found. Add one by following Docs/OAuthSetup.md — either \
+        No Google OAuth client ID was found. Add one by following Docs/OAuthSetup.md, either \
         set the \(clientIDEnvironmentKey) environment variable or drop your \
         \(propertyListName).plist into InboxSweep/Config/.
         """

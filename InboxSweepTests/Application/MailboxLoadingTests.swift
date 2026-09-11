@@ -350,7 +350,7 @@ struct MailboxLoadingTests {
     @Test("A proposal changes as more evidence arrives")
     func proposalsRecomputeAsPagesArrive() async throws {
         // Page one: a plain run of promotional mail, which the rules read as clutter.
-        // Page two: the same sender, starred and marked Important — which protects them.
+        // Page two: the same sender, starred and marked Important, which protects them.
         let first = MailMessagePage(
             messages: ProposalFixtures.promotionalSender(count: 12),
             nextPageToken: MailPageToken("page-2")

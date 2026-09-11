@@ -104,17 +104,23 @@ final class UITestWindow {
     /// reason still comes up at a size the app's own content fits in.
     nonisolated static let contentSize = NSSize(width: 1_200, height: 760)
 
-    /// How long one full-screen transition is given before the request is made again.
+    /// How long a full-screen request is given before it is treated as never having arrived.
     ///
-    /// Chosen against a measurement rather than a feeling, and the measurement is printed by
-    /// ``logTransition(_:)`` on every instrumented run: across the launches of a full suite the
-    /// `didEnterFullScreen` notification arrives well inside a second of the toggle that asked
-    /// for it. A request that has produced nothing after two seconds has not been slow, it has
-    /// been dropped, and the only thing that recovers a dropped one is asking again.
+    /// This is a backstop on a request macOS *silently discarded*, not a guess at how long a
+    /// transition takes. A transition that is merely in progress is never re-requested at all,
+    /// because ``isTransitioning`` knows about it from the `willEnterFullScreen` notification and
+    /// ``enterFullScreen(_:)`` refuses to touch a window in the middle of one.
     ///
-    /// This is not a timeout on an assertion and it is not a sleep before one. Nothing waits on
-    /// it when the transition works, because the notification ends the wait on the next pass.
-    nonisolated static let retryInterval: Duration = .seconds(2)
+    /// That distinction is the whole of it, and getting it wrong is measurable: a first version of
+    /// this retried on the timer alone and re-issued `toggleFullScreen` into a transition that had
+    /// simply not finished yet, which queues the opposite transition behind it. The app then
+    /// presented **no window** for the life of the case, and the accessibility tree the runner
+    /// dumped held a menu bar and nothing else.
+    ///
+    /// Three seconds is therefore only reached when no transition ever began. It is not a timeout
+    /// on an assertion and not a sleep before one: nothing waits on it when the request lands,
+    /// because the notification ends the wait.
+    nonisolated static let retryInterval: Duration = .seconds(3)
 
     /// How many times the request is re-issued before the app gives up and says so.
     ///
@@ -149,8 +155,8 @@ final class UITestWindow {
 
     /// How far the deterministic window has got.
     ///
-    /// Read by ``RootView`` and published to the accessibility tree. The only value a test treats
-    /// as go is ``Phase/ready``.
+    /// Read by ``RootView`` and published to the accessibility tree. The only value a test
+    /// treats as go is ``Phase/ready``.
     private(set) var phase: Phase = .notRequested
 
     /// Where the placement has got to, in the order it gets there.
@@ -239,6 +245,9 @@ final class UITestWindow {
             _ = attempt
             try? await Task.sleep(for: Self.retryInterval)
             if phase == .ready { return true }
+            // A request that produced no `willEnterFullScreen` in all that time was discarded,
+            // and the flag guarding against a double toggle would otherwise block every retry.
+            clearDiscardedRequest()
         }
 
         // Checked once more before giving up: the last attempt's transition may have landed
@@ -260,6 +269,7 @@ final class UITestWindow {
             if isDeterministic {
                 if phase != .ready { phase = .ready }
             } else {
+                clearDiscardedRequest()
                 _ = placeAndCheck()
             }
         }
@@ -272,16 +282,31 @@ final class UITestWindow {
     /// and it was tried first; the window it hands back during launch is not the one the scene
     /// ends up presenting, and configuring that one left the app windowless.
     private func placeAndCheck() -> Bool {
+        // Nothing is touched while macOS is animating a Space in or out. Resizing, centring,
+        // raising, or re-toggling a window mid-transition is how the app ends up with no window
+        // at all; see ``retryInterval``.
+        guard !isTransitioning else { return false }
+
         let windows = NSApplication.shared.windows.filter(\.canBecomeMain)
         guard !windows.isEmpty else {
             phase = .waitingForWindow
             return false
         }
 
+        // **Every** candidate window, not one chosen from among them. Picking one was tried and
+        // is measurably worse: `keyWindow` and `mainWindow` are both `nil` for part of launch, the
+        // visible-window fallback then picks whatever SwiftUI has up at that instant, and
+        // configuring that one leaves the app presenting **nothing**. Measured directly, outside
+        // the runner: `System Events` reported `0` windows for a launch with this argument and `1`
+        // without it. The Interval 9 note warns about exactly this; asking which window is the
+        // real one during launch is the part that has no reliable answer.
+        //
+        // Placing all of them is harmless, because an app of this shape has one window a user can
+        // see and the rest ignore the treatment.
         for window in windows {
-            // Only while the window is still on the shared Space. Resizing and centring a window
-            // that is already full screen is at best a no-op and at worst an exit from the Space
-            // this exists to reach.
+            // Only while the window is still on the shared Space. Resizing and centring one that
+            // is already full screen is at best a no-op and at worst an exit from the Space this
+            // exists to reach.
             if !window.styleMask.contains(.fullScreen) {
                 window.setContentSize(Self.contentSize)
                 window.center()
@@ -304,11 +329,24 @@ final class UITestWindow {
     ///
     /// All three parts are load-bearing. Full screen is what removes the rest of the desktop;
     /// key and active are what make the runner's hit test resolve through this application.
+    /// Whether **some** window is in the state the suite depends on, and the app owns the screen.
+    ///
+    /// "Some", not "the first". The Interval 9 version asked
+    /// `windows.first(where: \.canBecomeMain)`, and measured, that is a different window from the
+    /// one the user sees often enough to matter: one launch reported `enteringFullScreen` for the
+    /// full twenty-five seconds because `first` had picked a window that was never going to go
+    /// full screen while the one on screen already had. The placement was fine; the question was
+    /// being asked of the wrong object.
+    ///
+    /// Asking about the window that is *key* fixes that without having to identify the right
+    /// window in advance, which is the thing that has no reliable answer during launch. It is
+    /// also the right question on its own merits: the key window of the active application is
+    /// what the runner's hit test resolves to.
     private var isDeterministic: Bool {
-        guard let window = NSApplication.shared.windows.first(where: \.canBecomeMain) else { return false }
-        return window.styleMask.contains(.fullScreen)
-            && window.isKeyWindow
-            && NSRunningApplication.current.isActive
+        guard NSRunningApplication.current.isActive else { return false }
+        return NSApplication.shared.windows.contains {
+            $0.canBecomeMain && $0.isKeyWindow && $0.styleMask.contains(.fullScreen)
+        }
     }
 
     /// Moves one window onto a Space of its own.
@@ -320,10 +358,23 @@ final class UITestWindow {
     /// leave.
     private func enterFullScreen(_ window: NSWindow) {
         window.collectionBehavior.insert(.fullScreenPrimary)
-        guard !window.styleMask.contains(.fullScreen) else { return }
+        guard !window.styleMask.contains(.fullScreen), !isTransitioning else { return }
+        isTransitioning = true
         requestedFullScreenAt = Date()
         window.toggleFullScreen(nil)
     }
+
+    /// Whether macOS is animating a Space in or out right now.
+    ///
+    /// Set optimistically when a toggle is issued and authoritatively by the `will` notifications,
+    /// cleared by the `did` ones. Optimistically because `toggleFullScreen(_:)` returns before
+    /// `willEnterFullScreen` is posted, and the half-millisecond between the two is long enough
+    /// for the maintenance loop to issue a second toggle.
+    ///
+    /// A request macOS discards outright posts no notification at all, which is why this is
+    /// cleared by ``retryInterval`` elapsing as well: without that, one silently dropped request
+    /// would leave the state machine believing a transition was still running forever.
+    private var isTransitioning = false
 
     /// When the current full-screen request was made, for ``logTransition(_:)``.
     private var requestedFullScreenAt: Date?
@@ -364,6 +415,18 @@ final class UITestWindow {
             }
         )
 
+        for name in [NSWindow.willEnterFullScreenNotification, NSWindow.willExitFullScreenNotification] {
+            observers.append(
+                NotificationCenter.default.addObserver(
+                    forName: name,
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    MainActor.assumeIsolated { UITestWindow.shared.beginTransition() }
+                }
+            )
+        }
+
         for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
             observers.append(
                 NotificationCenter.default.addObserver(
@@ -373,6 +436,7 @@ final class UITestWindow {
                 ) { _ in
                     MainActor.assumeIsolated {
                         UITestWindow.shared.logTransition(name)
+                        UITestWindow.shared.endTransition()
                         UITestWindow.shared.reassess()
                     }
                 }
@@ -380,11 +444,33 @@ final class UITestWindow {
         }
     }
 
+    private func beginTransition() {
+        isTransitioning = true
+        if phase == .waitingForWindow { phase = .enteringFullScreen }
+    }
+
+    private func endTransition() {
+        isTransitioning = false
+        requestedFullScreenAt = nil
+    }
+
     /// Recomputes ``phase`` after a transition, without starting another attempt.
     private func reassess() {
         guard phase != .notRequested else { return }
         forceToForeground()
         phase = isDeterministic ? .ready : .enteringFullScreen
+    }
+
+    /// Lets go of a request that produced no transition, so the next attempt is not blocked.
+    ///
+    /// Only ever clears a request older than ``retryInterval``, so a transition that is genuinely
+    /// under way is left alone. This is the one place a duration is compared against, and it is
+    /// comparing against "did macOS ever acknowledge this", not against "is the animation done".
+    private func clearDiscardedRequest() {
+        guard isTransitioning, let requestedFullScreenAt else { return }
+        guard Date().timeIntervalSince(requestedFullScreenAt) >= Self.retryInterval.seconds else { return }
+        isTransitioning = false
+        self.requestedFullScreenAt = nil
     }
 
     private func raise() {
@@ -409,6 +495,13 @@ final class UITestWindow {
     /// actually depends on.
     private func forceToForeground() {
         NSRunningApplication.current.activate(options: [.activateAllWindows])
+    }
+}
+
+private extension Duration {
+    /// The duration in seconds, for comparing against a `Date` interval.
+    var seconds: TimeInterval {
+        TimeInterval(components.seconds) + TimeInterval(components.attoseconds) / 1e18
     }
 }
 #endif

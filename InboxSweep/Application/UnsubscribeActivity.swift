@@ -48,7 +48,7 @@ nonisolated struct UnsubscribeActivity: Equatable, Sendable, Identifiable {
         /// The request is out, or the handoff is being made. Nothing is claimed yet.
         case running
 
-        /// There is an answer. Which is not the same as there being a result — see
+        /// There is an answer. Which is not the same as there being a result; see
         /// ``UnsubscribeOutcome``.
         ///
         /// `localRecordWarning` carries the one awkward case: the action really happened and

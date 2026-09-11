@@ -184,8 +184,8 @@ struct UnsubscribeFlowTests {
         await model.confirmUnsubscribe(review).value
 
         #expect(opener.openedURLs.map(\.absoluteString) == ["https://lists.example/preferences"])
-        // The point of the case: the one-click boundary — the only thing in the session that can
-        // make a request — was never touched.
+        // The point of the case: the one-click boundary, the only thing in the session that can
+        // make a request, was never touched.
         #expect(unsubscriber.requestCount == 0)
         #expect(model.unsubscribeActivity?.outcome == .browserOpened(host: "lists.example"))
 
@@ -267,7 +267,7 @@ struct UnsubscribeFlowTests {
 
         await model.confirmUnsubscribe(review).value
 
-        // Refused, and — the part that matters — nothing was sent to either host.
+        // Refused, and (the part that matters) nothing was sent to either host.
         #expect(model.validateAgainstLoadedWindow(review) == .reviewIsStale)
         #expect(model.unsubscribeActivity?.failure == .reviewIsStale)
         #expect(unsubscriber.requestCount == 0)
@@ -366,7 +366,7 @@ struct UnsubscribeFlowTests {
         model.dismissUnsubscribeActivity()
 
         // The user opens the review again and confirms again. That is a new decision, and it is
-        // allowed — what is not allowed is the app deciding to repeat on its own.
+        // allowed: what is not allowed is the app deciding to repeat on its own.
         let second = try #require(model.makeUnsubscribeReview(forSenderKey: Self.senderKey))
         #expect(second.id != first.id)
         await model.confirmUnsubscribe(second).value

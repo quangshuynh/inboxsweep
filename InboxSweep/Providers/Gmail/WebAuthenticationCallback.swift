@@ -7,7 +7,7 @@ import Synchronization
 ///
 /// It exists because `ASWebAuthenticationSessionCompletionHandler` is declared in
 /// AuthenticationServices without `NS_SWIFT_UI_ACTOR`, so the framework is free to call it on
-/// its own XPC queue — and a result can also arrive from the thread that cancels the task.
+/// its own XPC queue, and a result can also arrive from the thread that cancels the task.
 /// Neither of those is the main actor, so nothing here touches actor-isolated state; the
 /// caller hops back to the main actor after it resumes.
 ///
@@ -24,7 +24,7 @@ nonisolated final class WebAuthenticationCallback: Sendable {
         case idle
         /// The caller is suspended on this continuation.
         case waiting(CheckedContinuation<URL, any Error>)
-        /// A result arrived before the continuation was attached — cancellation can do this.
+        /// A result arrived before the continuation was attached: cancellation can do this.
         case settled(Outcome)
         /// The continuation has been resumed. Every later result is ignored.
         case finished
@@ -64,7 +64,7 @@ nonisolated final class WebAuthenticationCallback: Sendable {
     ///
     /// Built here, in a `nonisolated` context, rather than written inline at the call site.
     /// A closure literal formed inside a `@MainActor` type inherits that isolation, and the
-    /// compiler then guards the closure body with an executor precondition — which traps in
+    /// compiler then guards the closure body with an executor precondition, which traps in
     /// libdispatch the moment AuthenticationServices calls back from its own queue, before a
     /// single line of the body runs. Returning an explicitly `@Sendable` closure from a
     /// `nonisolated` type is what keeps that precondition from being inserted at all.

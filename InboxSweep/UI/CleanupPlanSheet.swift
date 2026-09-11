@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The dry-run preview: what a set of cleanups *would* reach, if the app could carry them out.
 ///
-/// It cannot, and the screen says so twice — once in the header and once in the footer beside
+/// It cannot, and the screen says so twice: once in the header and once in the footer beside
 /// the totals. Every control here changes what is being previewed; none of them is a
 /// confirmation, and there is deliberately no button whose label is a verb the app cannot
 /// perform.
@@ -20,7 +20,7 @@ struct CleanupPlanSheet: View {
     ///
     /// The sender-level entry point, offered from the dry run because this is the screen where
     /// somebody has just read "38 of 43 would be archived" and wants to get at the 38. It hands
-    /// over the sender and the action being previewed and nothing else — the preview still cannot
+    /// over the sender and the action being previewed and nothing else: the preview still cannot
     /// be carried out, and this does not make it carryable. It makes its result *editable*.
     var onReviewCleanupForSender: ((SenderSummary.ID, PlannedCleanupAction) -> Void)?
 
@@ -107,7 +107,7 @@ struct CleanupPlanSheet: View {
 
     /// Rebuilt on every render from the session's in-memory window.
     ///
-    /// Cheap — it is counting messages already in memory — and recomputing keeps the preview
+    /// Cheap (it is counting messages already in memory) and recomputing keeps the preview
     /// honest: there is no stored plan that could still be on screen after the window changed
     /// underneath it.
     private var plan: CleanupPlan {
@@ -121,7 +121,7 @@ struct CleanupPlanSheet: View {
     /// What a sender starts on: whatever the user last saved for it, or the action the
     /// proposal suggests.
     ///
-    /// A plan the rules have since invalidated is not used as a seed — resuming it would put
+    /// A plan the rules have since invalidated is not used as a seed: resuming it would put
     /// last week's choice beside this week's reasoning without saying so.
     private func defaultAction(for key: SenderSummary.ID) -> PlannedCleanupAction {
         if let savedPlan = session.savedPlan, !savedPlan.isInvalidated,
@@ -151,7 +151,7 @@ struct CleanupPlanSheet: View {
             Label {
                 // The identifier sits on the text itself: a `Label` is not its own
                 // accessibility element here, so an identifier on the label would not be
-                // findable — and this is the one sentence a test must be able to find.
+                // findable, and this is the one sentence a test must be able to find.
                 Text(CleanupPlan.disclaimer)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("cleanupPlan.disclaimer")
@@ -230,7 +230,7 @@ struct CleanupPlanSheet: View {
                     session.savePlan(selections)
                 }
                 .disabled(plan.isEmpty || matchesSavedPlan)
-                .help("Keeps which senders you picked and what you chose to preview for each, on this Mac. It schedules nothing — InboxSweep cannot carry a cleanup out.")
+                .help("Keeps which senders you picked and what you chose to preview for each, on this Mac. It schedules nothing, because InboxSweep cannot carry a cleanup out.")
                 .accessibilityIdentifier("cleanupPlan.saveButton")
 
                 Button("Done") { dismiss() }
@@ -343,7 +343,7 @@ private struct CleanupPlanEntryView: View {
     /// Names the individual messages behind the counts above.
     ///
     /// "43 would be archived, 7 would stay put" is not a claim anyone can check. This is where
-    /// the 43 and the 7 become a list — which is the difference between a preview the user is
+    /// the 43 and the 7 become a list, which is the difference between a preview the user is
     /// asked to trust and one they can audit.
     @ViewBuilder
     private var messageMembership: some View {
@@ -429,18 +429,18 @@ private struct CleanupPlanEntryView: View {
 
     private static let namedMessageLimit = 6
 
-    /// Subject, date, and — for a retained message — why it was retained.
+    /// Subject, date, and (for a retained message) why it was retained.
     private func messageLine(for row: ReviewedMessage) -> String {
         let subject = row.message.subject ?? "No subject"
         let date = row.message.receivedAt.formatted(.dateTime.day().month().year())
         guard let reason = row.membership?.reason else { return "\(subject) · \(date)" }
-        return "\(subject) · \(date) — \(reason.explanation(count: 1))"
+        return "\(subject) · \(date) · \(reason.explanation(count: 1))"
     }
 
     /// The one sentence a reader should take away, phrased conditionally throughout.
     private var headline: String {
         guard entry.action.movesMessages else {
-            return "No message would be moved — this is a prompt to look at the subscription itself."
+            return "No message would be moved. This is a prompt to look at the subscription itself."
         }
         return "\(entry.affectedMessageCount) of \(ProposalPhrasing.loadedMessages(entry.loadedMessageCount)) "
             + "\(entry.action.previewVerbPhrase); \(entry.retainedMessageCount) would stay put."

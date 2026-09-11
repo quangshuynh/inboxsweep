@@ -3,7 +3,7 @@ import Foundation
 /// Every threshold the proposal engine uses, in one reviewable place.
 ///
 /// Thresholds live in a value rather than as literals inside the rules so that they can be
-/// read end to end, varied in a test without rewriting the engine, and — most importantly —
+/// read end to end, varied in a test without rewriting the engine, and, most importantly,
 /// argued with. A heuristic whose numbers are scattered through the code it drives is a
 /// heuristic nobody can check.
 ///
@@ -13,8 +13,8 @@ nonisolated struct CleanupProposalRules: Hashable, Sendable {
 
     /// Bumped whenever the rules change in a way that would produce different proposals.
     ///
-    /// Proposals are never persisted — they are recomputed from stored message metadata on
-    /// every launch — so this is not a migration key. It is carried on each proposal so the UI
+    /// Proposals are never persisted: they are recomputed from stored message metadata on
+    /// every launch, so this is not a migration key. It is carried on each proposal so the UI
     /// and the tests can state which ruleset produced what they are showing.
     static let version = 1
 
@@ -61,7 +61,7 @@ nonisolated struct CleanupProposalRules: Hashable, Sendable {
     /// Bulk-mail signals needed before a *protected* sender is still worth reviewing.
     ///
     /// Protection normally ends in "keep". This is the exception: when a protected sender is
-    /// also unmistakably bulk mail — a shop that sends forty offers and two order receipts —
+    /// also unmistakably bulk mail (a shop that sends forty offers and two order receipts)
     /// "keep" would hide something the user probably does want to look at. "Review" says there
     /// is something here without suggesting anything be removed.
     var signalsForProtectedReview = 4

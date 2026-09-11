@@ -1,7 +1,7 @@
 # Google OAuth setup
 
 InboxSweep needs its own Google OAuth client to sign in. The client is tied to your Google
-Cloud project, so it is not committed to this repository — you create one once and point the
+Cloud project, so it is not committed to this repository: you create one once and point the
 app at it.
 
 Nothing you create here is a secret in the usual sense: InboxSweep uses an **iOS/macOS**
@@ -27,7 +27,7 @@ created the wrong client type.
    ```
 
    This is a *restricted* scope. While your app is in **Testing**, only accounts you list
-   under **Test users** can sign in — which is all you need for development. Publishing to
+   under **Test users** can sign in, which is all you need for development. Publishing to
    production would require Google's verification process.
 5. Add your own Google account under **Test users**.
 
@@ -49,7 +49,7 @@ created the wrong client type.
 
 Either option works; the environment variable takes precedence.
 
-### Option A — drop in the property list (recommended)
+### Option A: drop in the property list (recommended)
 
 Rename the downloaded file to `GoogleOAuthClient.plist` and put it here:
 
@@ -58,13 +58,13 @@ InboxSweep/Config/GoogleOAuthClient.plist
 ```
 
 Create the `Config` directory if it does not exist. Xcode's file-system-synchronized group
-picks the file up automatically and copies it into the app bundle — no project changes are
+picks the file up automatically and copies it into the app bundle; no project changes are
 needed. The path is gitignored.
 
 If you would rather write the file by hand, `Docs/GoogleOAuthClient.example.plist` is a
 template. Only `CLIENT_ID` is required; `REVERSED_CLIENT_ID` is derived from it when absent.
 
-### Option B — set an environment variable
+### Option B: set an environment variable
 
 Useful when running from Xcode. Edit the **InboxSweep** scheme → **Run** → **Arguments** →
 **Environment Variables** and add:
@@ -84,14 +84,14 @@ nothing else.
 
 | Value | Where it lives | Committed? |
 | --- | --- | --- |
-| Client ID | `InboxSweep/Config/GoogleOAuthClient.plist` or an environment variable | No — gitignored |
+| Client ID | `InboxSweep/Config/GoogleOAuthClient.plist` or an environment variable | No: gitignored |
 | Refresh token | macOS Keychain, item `InboxSweep.Gmail` | No |
 | Access token | Memory only, for the life of the process | No |
 | Message metadata | Memory while the app runs, plus one JSON file in the app's sandbox container | No |
 
 The metadata file lives at
 `~/Library/Containers/quang.InboxSweep/Data/Library/Application Support/InboxSweep/Cache/`
-and holds message headers, dates, and labels — never bodies, and never a token of any kind.
+and holds message headers, dates, and labels, never bodies, and never a token of any kind.
 The README's [Local persistence](../README.md#local-persistence) section lists exactly what it
 contains.
 
@@ -108,14 +108,14 @@ below changes your mailbox: archiving is a separate, explicitly confirmed action
 1. **Sign in.** Launch the app and click **Connect Gmail**. Google's own window opens.
 2. **Read the consent screen.** It should ask for two things and nothing else: read access to
    Gmail *metadata*, and permission to change which labels a message carries. Google describes
-   the second one far more broadly than what InboxSweep does with it — the app's signed-out
+   the second one far more broadly than what InboxSweep does with it: the app's signed-out
    screen explains that before sending you here, and the only labels it can change are `INBOX`
    on one message you confirm. An unverified client also warns that the app is in testing,
    which is expected while the client stays in Testing mode.
 3. **Token exchange.** Granting consent should land you on the sender dashboard within a few
    seconds. That means the authorization code was exchanged for tokens successfully.
 4. **Restoration.** Quit and relaunch. The dashboard should come back immediately, labelled
-   as restored from this Mac, without a Gmail request — that is the Keychain refresh token
+   as restored from this Mac, without a Gmail request: that is the Keychain refresh token
    plus the local cache. **Reload** fetches current mail.
 5. **Sign out.** **Disconnect** revokes the grant with Google, removes the Keychain item, and
    deletes the cache file. Confirm with:

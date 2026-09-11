@@ -155,6 +155,9 @@ struct SenderRulesView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // A row is a container of separately meaningful lines, not one label; see the rule-run
+        // banner for what the default does to a stack of `Text`s carrying an identifier.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("rules.row")
     }
 

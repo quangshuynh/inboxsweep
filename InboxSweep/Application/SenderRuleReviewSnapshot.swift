@@ -114,7 +114,7 @@ nonisolated struct SenderRuleReviewSnapshot: Identifiable, Equatable, Sendable {
 
     /// What the rule does to protected mail, in the words the rules list also uses.
     static let protectionNote = """
-        A rule never archives a message that looks worth keeping — anything starred, marked \
+        A rule never archives a message that looks worth keeping: anything starred, marked \
         Important by Gmail, or whose subject reads like security, money, health, employment, \
         government, travel, or a receipt. Those are left in your Inbox and InboxSweep tells you \
         it left them, so you can decide yourself.

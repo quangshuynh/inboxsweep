@@ -47,7 +47,7 @@ struct CleanupProposalEngineTests {
     @Test("Bulk-mail signals that match no pattern become a deliberately vague candidate")
     func fallsBackToACleanupCandidate() {
         // List metadata and volume, but no category, no cadence in range, and no automated
-        // address — enough signals to be worth raising, not enough to name a pattern.
+        // address: enough signals to be worth raising, not enough to name a pattern.
         let messages = ProposalFixtures.messages(
             from: "hello@example.org",
             subjects: ProposalFixtures.neutralSubjects(30),

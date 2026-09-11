@@ -30,23 +30,22 @@ struct RootView: View {
     /// and every Release launch have nothing extra in their accessibility tree. It draws nothing,
     /// occupies no space, and is not focusable.
     ///
-    /// It exists so a failing case can say *which* thing failed. Before it, a window that never
-    /// reached its own Space failed twenty seconds later on whichever control the test reached
-    /// for, with a message naming that control: the suite blamed the app for the desktop. Now the
-    /// launch helper waits on this, and a harness failure reads as one.
+    /// ### This exact shape, because the alternatives were measured and are worse
+    ///
+    /// A `Color` with an identifier and a label, in an overlay, at a zero frame. Three variations
+    /// were tried and each was measured over a full run: `accessibilityElement(children: .ignore)`
+    /// at a one-point frame, a one-point `Text` at low opacity, and moving it out of the overlay
+    /// into a `ZStack` beside the content. All three were published on some launches and absent
+    /// on others, and the last produced a run in which nineteen of twenty cases failed waiting
+    /// for it. This is the shape that was measured to work.
     @ViewBuilder
     private var windowStateProbe: some View {
         if UITestWindow.isRequested {
-            // `accessibilityElement(children: .ignore)` is what makes this an element at all.
-            // A `Color` is not one by default, and a version of this that only set an identifier
-            // and a label was published *sometimes*: it survived most launches and vanished on
-            // others, which is the worst possible behaviour for the thing a case waits on. One
-            // point rather than zero for the same reason.
             Color.clear
-                .frame(width: 1, height: 1)
-                .accessibilityElement(children: .ignore)
+                .frame(width: 0, height: 0)
                 .accessibilityIdentifier(UITestWindow.stateIdentifier)
                 .accessibilityLabel(UITestWindow.shared.phase.rawValue)
+                .accessibilityHidden(false)
                 .allowsHitTesting(false)
         }
     }

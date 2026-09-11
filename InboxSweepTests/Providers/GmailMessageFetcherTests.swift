@@ -31,7 +31,7 @@ struct GmailMessageFetcherTests {
         #expect(transport.requests(matching: "/messages/").count == 5)
     }
 
-    @Test("Only metadata is ever requested — never a message body")
+    @Test("Only metadata is ever requested, never a message body")
     func requestsMetadataOnly() async throws {
         let transport = RecordingHTTPTransport(handler: GmailMailboxStub(messages: GmailFixtures.mailbox(messageCount: 3)).handler())
         _ = try await fetcher(transport: transport).fetchMessages(MailFetchRequest(limit: 3))

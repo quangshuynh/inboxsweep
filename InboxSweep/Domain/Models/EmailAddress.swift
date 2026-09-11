@@ -4,8 +4,8 @@ import Foundation
 ///
 /// `EmailAddress` is deliberately provider-neutral: nothing in this type knows that the
 /// message it came from was fetched from Gmail. Values are always *normalized* (see
-/// ``EmailAddressParser``) so that the same human sender produces the same value — and the
-/// same ``groupingKey`` — no matter how the raw header was formatted.
+/// ``EmailAddressParser``) so that the same human sender produces the same value, and the
+/// same ``groupingKey``, no matter how the raw header was formatted.
 nonisolated struct EmailAddress: Hashable, Sendable, Codable {
 
     /// The sender's display name, if the header carried a usable one.
@@ -16,7 +16,7 @@ nonisolated struct EmailAddress: Hashable, Sendable, Codable {
     /// The normalized address, e.g. `newsletter@example.com`.
     ///
     /// Empty when the source header carried no parseable address. Normalization is
-    /// lowercasing plus whitespace trimming only — see ``EmailAddressParser`` for the
+    /// lowercasing plus whitespace trimming only; see ``EmailAddressParser`` for the
     /// full set of rules and for why sub-addressing is deliberately preserved.
     let address: String
 

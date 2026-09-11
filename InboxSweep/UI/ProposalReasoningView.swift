@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The full reasoning behind one proposal.
 ///
-/// Every line here comes from the engine. The view chooses layout and nothing else — there is
+/// Every line here comes from the engine. The view chooses layout and nothing else: there is
 /// no sentence assembled at this level, because an explanation written next to the pixels
 /// could say something the rules did not decide.
 struct ProposalReasoningView: View {
@@ -25,7 +25,7 @@ struct ProposalReasoningView: View {
 
             Text("""
                 These are observations about the \(ProposalPhrasing.loadedMessages(proposal.loadedMessageCount)) \
-                InboxSweep has read from this sender — not a judgement about the sender, and not a \
+                InboxSweep has read from this sender, not a judgement about the sender, and not a \
                 claim about mail outside the loaded window.
                 """)
                 .font(.caption)

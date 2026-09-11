@@ -5,7 +5,7 @@
     that the Google Cloud console offers for an iOS/macOS client and rename it.
 
     InboxSweep/Config/ is gitignored. Do not commit a real client ID, and note that an
-    iOS/macOS OAuth client has no client secret — if you find yourself pasting a secret in
+    iOS/macOS OAuth client has no client secret. If you find yourself pasting a secret in
     here, you have created the wrong client type.
 -->
 <plist version="1.0">

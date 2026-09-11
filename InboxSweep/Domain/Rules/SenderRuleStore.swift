@@ -64,7 +64,7 @@ nonisolated enum SenderRuleRetention {
     /// **Twenty-five**, and the reasoning is different from the mutation history's. That file
     /// grows on its own as the user works and needs a limit so it cannot grow without end. This
     /// one only ever grows when somebody deliberately creates a rule, reads a review screen, and
-    /// confirms — so the limit is not really about size. It is about comprehension: a rules
+    /// confirms, so the limit is not really about size. It is about comprehension: a rules
     /// screen somebody can read in one sitting is a set of rules they can still be said to have
     /// authorized, and a hundred of them is a configuration nobody remembers agreeing to.
     ///

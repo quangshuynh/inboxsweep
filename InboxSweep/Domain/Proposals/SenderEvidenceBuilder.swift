@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Pure and deterministic: the same messages in any order produce the same evidence. It is
 /// the only place that reads message *subjects* for anything other than display, and it reads
-/// them into counts — the engine downstream never sees a subject line.
+/// them into counts: the engine downstream never sees a subject line.
 nonisolated enum SenderEvidenceBuilder {
 
     /// Local-part fragments that mark an address as machine-operated.

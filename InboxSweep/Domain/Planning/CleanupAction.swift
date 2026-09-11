@@ -35,7 +35,7 @@ nonisolated enum PlannedCleanupAction: Hashable, Sendable, Identifiable {
     /// Rebuilds an action from its ``id``.
     ///
     /// Exists so a saved plan's file format is the app's own stable vocabulary rather than
-    /// whatever `Codable` synthesizes for an enum with associated values — the same reasoning
+    /// whatever `Codable` synthesizes for an enum with associated values: the same reasoning
     /// the cache's DTO layer applies. Returns `nil` for anything this build does not recognise,
     /// so a plan written by a future version is discarded rather than guessed at.
     init?(id: String) {
@@ -81,7 +81,7 @@ nonisolated enum PlannedCleanupAction: Hashable, Sendable, Identifiable {
 
     /// How a preview describes the messages this action would reach.
     ///
-    /// Always conditional — "would be", never "will be" — because there is nothing behind it
+    /// Always conditional ("would be", never "will be") because there is nothing behind it
     /// that could make it happen.
     var previewVerbPhrase: String {
         switch self {
@@ -119,7 +119,7 @@ nonisolated extension CleanupProposalKind {
     /// nothing starts on Trash.
     ///
     /// Keep-newest rather than an age cutoff because a cutoff's answer depends on how deep the
-    /// loaded window happens to be — over a window reaching back three weeks, "older than 90
+    /// loaded window happens to be, over a window reaching back three weeks, "older than 90
     /// days" correctly reports that it would touch nothing, which is true and tells the user
     /// nothing. Keep-newest is answerable from any window, and it is still an archive.
     var defaultPlannedAction: PlannedCleanupAction {

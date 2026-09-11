@@ -18,7 +18,7 @@ nonisolated struct MessageUnsubscribeMetadata: Hashable, Sendable, Codable {
 
     /// Whether `List-Unsubscribe-Post: List-Unsubscribe=One-Click` was present, exactly.
     ///
-    /// On its own this means nothing — see ``oneClickURL``, which is the question anything
+    /// On its own this means nothing; see ``oneClickURL``, which is the question anything
     /// acting on it must ask. A sender can declare one-click and provide only a `mailto`, which
     /// is contradictory metadata rather than a one-click mechanism.
     let declaresOneClickPost: Bool
@@ -47,7 +47,7 @@ nonisolated struct MessageUnsubscribeMetadata: Hashable, Sendable, Codable {
     ///
     /// What a message built from the older Boolean means, and what a cache file written before
     /// this interval decodes to. It is honest about the gap: something was there, and this
-    /// build cannot say what — which lands the sender in the ambiguous state rather than in
+    /// build cannot say what, which lands the sender in the ambiguous state rather than in
     /// either "nothing here" or a mechanism nobody parsed.
     static let headerPresentUnparsed = MessageUnsubscribeMetadata(
         targets: [],
@@ -77,7 +77,7 @@ nonisolated struct MessageUnsubscribeMetadata: Hashable, Sendable, Codable {
     /// **Both halves are required.** RFC 8058 one-click is a POST to an HTTPS URL from the
     /// `List-Unsubscribe` header, authorised by a `List-Unsubscribe-Post` header beside it.
     /// Neither header means one-click on its own, and this is the only place in the app that
-    /// decides the question — so a POST cannot be reached from a URL that merely looks like an
+    /// decides the question, so a POST cannot be reached from a URL that merely looks like an
     /// endpoint.
     ///
     /// The *first* HTTPS value wins when there are several, which is the rule
@@ -90,7 +90,7 @@ nonisolated struct MessageUnsubscribeMetadata: Hashable, Sendable, Codable {
     /// Whether the sender declared one-click but supplied nothing it could apply to.
     ///
     /// Contradictory metadata: reported as evidence and never resolved by guessing. The user is
-    /// offered whatever *is* usable — a browser page, a mail handoff — and told the declaration
+    /// offered whatever *is* usable (a browser page, a mail handoff) and told the declaration
     /// did not match.
     var declaresOneClickWithoutHTTPSURL: Bool {
         declaresOneClickPost && webURLs.isEmpty

@@ -4,8 +4,8 @@ import Testing
 
 /// What the parser does with the shapes real mail actually carries.
 ///
-/// Every destination below is under `.example` — RFC 2606's reserved TLD, which no registry
-/// will delegate — so not one of these strings could reach anybody even if something in the app
+/// Every destination below is under `.example`: RFC 2606's reserved TLD, which no registry
+/// will delegate, so not one of these strings could reach anybody even if something in the app
 /// tried to. No value here came from a real message.
 @Suite("List-Unsubscribe parsing")
 struct ListUnsubscribeParserTests {
@@ -98,7 +98,7 @@ struct ListUnsubscribeParserTests {
         #expect(!postOnly.headerWasPresent)
     }
 
-    @Test("Contradictory metadata — one-click declared over a mailto — is neither honoured nor lost")
+    @Test("Contradictory metadata, one-click declared over a mailto, is neither honoured nor lost")
     func contradictoryOneClickMetadata() {
         let metadata = ListUnsubscribeParser.metadata(
             listUnsubscribe: "<mailto:leave@lists.example>",
@@ -109,7 +109,7 @@ struct ListUnsubscribeParserTests {
         #expect(metadata.oneClickURL == nil)
         #expect(metadata.declaresOneClickPost)
         #expect(metadata.declaresOneClickWithoutHTTPSURL)
-        // And the mailto is still perfectly usable — the contradiction narrows the offer rather
+        // And the mailto is still perfectly usable: the contradiction narrows the offer rather
         // than discarding the sender's own working mechanism.
         #expect(metadata.mailAddresses.count == 1)
     }

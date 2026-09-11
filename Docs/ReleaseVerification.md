@@ -1,7 +1,7 @@
 # Signed Release verification
 
 What was measured about how InboxSweep is signed, which Keychain that signing gets it, and
-whether a real Gmail sign-in survives quitting the app — on the strongest signed build this
+whether a real Gmail sign-in survives quitting the app, on the strongest signed build this
 machine can produce.
 
 This document records measurements. Where something was not measured it says so, and it does
@@ -31,12 +31,12 @@ Automatic signing, team `W785GN4X52`, against the one certificate installed on t
 | Bundle identifier | `quang.InboxSweep` |
 | App Sandbox | `ENABLE_APP_SANDBOX = YES` |
 | Hardened runtime | `ENABLE_HARDENED_RUNTIME = YES` (`flags=0x10000(runtime)` on the built app) |
-| Entitlements file | none — capabilities come from build settings |
+| Entitlements file | none: capabilities come from build settings |
 | Provisioning profile | **not embedded** |
 
 ### Developer ID was not available
 
-Not assumed — asked:
+Not assumed. Asked:
 
 ```bash
 security find-identity -v -p codesigning
@@ -81,7 +81,7 @@ embeds one. The profiles present in
 apps; none names `quang.InboxSweep` and none is for macOS.
 
 Obtaining one would mean registering a macOS App ID for `quang.InboxSweep` against the team and
-generating a Mac development profile — an action on the developer's Apple account, so it was
+generating a Mac development profile: an action on the developer's Apple account, so it was
 not taken automatically.
 
 ## 2. Entitlements on the built Release app
@@ -116,7 +116,7 @@ designated => identifier "quang.InboxSweep" and anchor apple generic
   and certificate 1[field.1.2.840.113635.100.6.2.1] exists
 ```
 
-No code directory hash appears in it, which is why a rebuild does not lose Keychain access —
+No code directory hash appears in it, which is why a rebuild does not lose Keychain access;
 see §5.
 
 ## 3. Which Keychain this build actually gets
@@ -126,8 +126,8 @@ and **the fallback is deliberately silent**. That silence is right in production
 for verification: a save that got what it asked for and a save that fell back look identical.
 
 `CredentialStoreDiagnostics` removes the ambiguity by pinning one keychain at a time and
-running the *real* `KeychainCredentialStore` through a full round trip — save, load, replace,
-reload, delete, confirm-deleted — so a keychain this process cannot use reports itself rather
+running the *real* `KeychainCredentialStore` through a full round trip: save, load, replace,
+reload, delete, confirm-deleted, so a keychain this process cannot use reports itself rather
 than handing the question to the next one.
 
 Against the signed Release app:
@@ -156,7 +156,7 @@ app detects that condition by its status code rather than by guessing, and repor
 `round-tripped` means all six steps passed, against `KeychainCredentialStore` itself rather
 than a mock: save succeeded, the saved value read back byte-identical, a replacement replaced
 rather than duplicated, the item was found in the keychain it was written to, deletion
-succeeded, and a read after deletion returned nothing. No fallback was involved — the probe was
+succeeded, and a read after deletion returned nothing. No fallback was involved: the probe was
 pinned, so a result from the other keychain was not reachable.
 
 ### Where the real credential lives
@@ -184,7 +184,7 @@ run 3  SELFCHECK restored keychain=login keychain
 ```
 
 **Restores**, on the signed Release binary. No prompt, no re-authorization, and the same
-keychain both times — a build that had silently changed backends would otherwise look identical
+keychain both times: a build that had silently changed backends would otherwise look identical
 to one that had not.
 
 ## 5. Rebuilt and re-signed, then launched
@@ -210,7 +210,7 @@ item becomes another app's as far as the Keychain is concerned. The app reports 
 
 ## 6. Live Gmail round trip
 
-A real Gmail account, read-only, on the signed Release app — the same `.app` throughout, cdhash
+A real Gmail account, read-only, on the signed Release app: the same `.app` throughout, cdhash
 `9e38d286adcdd925cdc3f12bb68102f44416ab71`. The sign-in itself was completed by the account
 holder in Google's own window; nothing here typed a password.
 
@@ -219,20 +219,20 @@ holder in Google's own window; nothing here typed a password.
 | Connect, complete Google OAuth, load live Gmail metadata | 250 messages, 82 senders |
 | Which backend stored the refresh credential | `BACKEND Credential storage: Login Keychain fallback` |
 | Quit normally, reopen the same `.app` | No Google sign-in or consent window |
-| Account identity restored | Yes — the cache file is named for the SHA-256 of the restored address, and the running app matched it |
-| Cached dashboard restored | Yes, and the cache file was **not** rewritten on relaunch — the window came from disk, costing no Gmail quota |
+| Account identity restored | Yes: the cache file is named for the SHA-256 of the restored address, and the running app matched it |
+| Cached dashboard restored | Yes, and the cache file was **not** rewritten on relaunch: the window came from disk, costing no Gmail quota |
 | Refresh after restore | **Reload** rewrote the cache, `saved_at` 1789092349 → 1789092609, 250 messages and 82 senders read fresh |
-| Proposals recomputed | Structurally — the cache record has no field for a proposal or a verdict, so every launch derives them from the stored metadata |
+| Proposals recomputed | Structurally: the cache record has no field for a proposal or a verdict, so every launch derives them from the stored metadata |
 | Mailbox mutation | None possible: the granted scope is `gmail.metadata`, and no write method exists at the provider boundary. `SafetyBoundaryTests` asserts both |
 
-The refresh is the load-bearing step. It proves the *stored* credential — not a live session — was
+The refresh is the load-bearing step. It proves the *stored* credential (not a live session) was
 exchanged for a new access token and used against Gmail, which is the single thing a
 credential store exists to make possible.
 
 ### A defect the live run exposed
 
 With a real credential in the Keychain, the UI test for the signed-out screen failed. It
-launched the app with no arguments and asserted that the signed-out screen appeared — which is
+launched the app with no arguments and asserted that the signed-out screen appeared, which is
 true only on a Mac that is *not* connected to Gmail. On a connected one the app restored, landed
 on the dashboard, and the test run went through the developer's real mailbox.
 
@@ -247,15 +247,15 @@ credential and cache are untouched by the run.
 
 It establishes that a credential written by this signed Release build, into the login keychain,
 survives a normal quit and is usable against Gmail on the next launch of the same binary. It
-says nothing about a distribution build, and nothing about the data protection keychain — see
+says nothing about a distribution build, and nothing about the data protection keychain; see
 the limitations below.
 
 ## Limitations of what was verified
 
 - **Development signing, not distribution signing.** Everything above is an Apple
   Development-signed build carrying `get-task-allow`. A Developer ID or App Store build is
-  signed by a different certificate, would not carry that entitlement, and — if it embedded a
-  provisioning profile — would use the **data protection keychain** instead of the login
+  signed by a different certificate, would not carry that entitlement, and (if it embedded a
+  provisioning profile) would use the **data protection keychain** instead of the login
   keychain. None of that has been built or tested here, because no such certificate is
   installed.
 - **The data protection keychain path is unexercised.** Its code path exists, is preferred, and
@@ -281,7 +281,7 @@ an App Intent the app has no use for, so it is left alone and recorded here inst
 
 The `Info.plist in Copy Bundle Resources` warning reported at the end of Interval 4 is **gone**.
 Its cause was an empty `InboxSweep/Info.plist` that was simultaneously the target's
-`INFOPLIST_FILE` and — because `InboxSweep/` is a file-system-synchronized group — an
+`INFOPLIST_FILE` and (because `InboxSweep/` is a file-system-synchronized group) an
 automatically added bundle resource. Both the file and the `INFOPLIST_FILE` setting were removed
 before this interval; `GENERATE_INFOPLIST_FILE = YES` supplies the Info.plist. A clean Release
 build produces no `warning:` line other than the AppIntents note above.
@@ -306,8 +306,26 @@ ls "$APP/Contents/embedded.provisionprofile"       # absent on this configuratio
 "$APP/Contents/MacOS/InboxSweep" --keychain-selfcheck-reset
 ```
 
-Every one of these modes is inert without its launch argument, reaches no UI, and prints no
-token, refresh token, authorization code, or client secret. The probes write synthetic markers
+### Repository text checks
+
+Two one-liners over the files Git actually tracks, so build output, `DerivedData`, and anything
+untracked are outside them by construction.
+
+```bash
+# No em dash anywhere in tracked text. Expected output: 0
+git ls-files -z | xargs -0 grep -o '\u2014' 2>/dev/null | wc -l
+
+# Nothing token-shaped or account-shaped in tracked files. Expected: no output.
+git ls-files -z | xargs -0 grep -nIE 'ya29\.|1//0|refresh_token|client_secret' 2>/dev/null
+```
+
+The first is the check Interval 11 introduced, and it is stated as a command rather than
+automated because there is no CI in this repository yet. The exclusions are exactly what
+`git ls-files` excludes: untracked files, ignored files, and build products. Binary files are
+skipped by `grep` itself, which is why the second one passes `-I`.
+
+Every one of the launch modes above is inert without its launch argument, reaches no UI, and
+prints no token, refresh token, authorization code, or client secret. The probes write synthetic markers
 under diagnostic-only Keychain services and delete them;
 `CredentialStoreDiagnosticsTests` asserts both the cleanup and the absence of secrets in the
 output.

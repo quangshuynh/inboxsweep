@@ -128,7 +128,7 @@ struct CleanupPlannerTests {
 
     @Test("A message the action never reaches is reported as out of scope, not as protected")
     func doesNotClaimCreditForMessagesItWouldNotHaveTouched() throws {
-        // Two starred messages, both among the newest — well inside a 10-day cutoff.
+        // Two starred messages, both among the newest: well inside a 10-day cutoff.
         let messages = dailySender(starredCount: 2)
         let result = plan(
             [CleanupPlanRequest(senderKey: key(messages), action: .archiveMessagesOlderThan(days: 10))],

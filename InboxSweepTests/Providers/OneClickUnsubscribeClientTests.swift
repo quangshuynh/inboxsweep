@@ -39,7 +39,7 @@ struct OneClickUnsubscribeClientTests {
         #expect(sent.value(forHTTPHeaderField: "Content-Type") == "application/x-www-form-urlencoded")
     }
 
-    @Test("The URL is used byte for byte — nothing is appended, removed, or reordered")
+    @Test("The URL is used byte for byte: nothing is appended, removed, or reordered")
     func urlIsNotRewritten() async throws {
         // A sender's own tracking token is theirs. One InboxSweep added would be InboxSweep
         // telling a third party something about this user.
@@ -74,7 +74,7 @@ struct OneClickUnsubscribeClientTests {
         #expect(Set(headers.keys) == ["Content-Type"])
     }
 
-    @Test("Nothing about the mailbox goes with it — no address, no message id, no subject")
+    @Test("Nothing about the mailbox goes with it: no address, no message id, no subject")
     func carriesNoMailboxContent() async throws {
         let transport = Self.accepting()
         _ = try await OneClickUnsubscribeClient(transport: transport).submitOneClickUnsubscribe(
@@ -228,7 +228,7 @@ struct OneClickUnsubscribeClientTests {
     @Test("Redirects are bounded, and a loop fails instead of continuing")
     func boundsRedirects() async {
         // Each hop points at a host it has not been to yet, so the client is following a chain
-        // rather than looping on one URL — which is the case a per-URL attempt counter would
+        // rather than looping on one URL, which is the case a per-URL attempt counter would
         // miss and a hop counter catches.
         let transport = RecordingHTTPTransport { request, _ in
             let next = (request.url?.host ?? "") + ".onward"

@@ -9,8 +9,8 @@ import Testing
 /// is why they were perfectly green while the app failed to persist a single credential: no
 /// `SecItem*` call was ever made. These tests make those calls.
 ///
-/// They can do so because the unit-test bundle is hosted by `InboxSweep.app` — the test process
-/// *is* the app, with the app's bundle identifier, signing identity, and entitlements — so a
+/// They can do so because the unit-test bundle is hosted by `InboxSweep.app`: the test process
+/// *is* the app, with the app's bundle identifier, signing identity, and entitlements, so a
 /// round trip here is the same round trip the app performs at sign-in.
 ///
 /// Every credential below is synthetic. The service name is test-only and every case deletes
@@ -38,8 +38,8 @@ struct KeychainCredentialStoreTests {
 
     /// A store on a unique account key, plus the cleanup that removes whatever it wrote.
     ///
-    /// The account key is per-case so that two cases — or a case and a leftover from a crashed
-    /// run — cannot see each other's items.
+    /// The account key is per-case so that two cases, or a case and a leftover from a crashed
+    /// run: cannot see each other's items.
     private func withStore(
         account: String,
         keychains: [KeychainCredentialStore.Keychain] = KeychainCredentialStore.Keychain.inPreferenceOrder,
@@ -119,7 +119,7 @@ struct KeychainCredentialStoreTests {
                 #expect(try first.load()?.accountEmailAddress == "a@example.com")
                 #expect(try second.load()?.accountEmailAddress == "b@example.com")
 
-                // And clearing one leaves the other alone — the case that matters when a
+                // And clearing one leaves the other alone: the case that matters when a
                 // future interval lets the user sign out of one of two accounts.
                 try first.clear()
                 let clearedFirst = try first.load()
@@ -173,7 +173,7 @@ struct KeychainCredentialStoreTests {
 
             let keychain = try #require(store.storingKeychain())
             // Which one it lands in depends on how this build is signed, and both are correct.
-            // What must be true either way is that it landed *somewhere* and reads back — the
+            // What must be true either way is that it landed *somewhere* and reads back: the
             // property that was false before this interval, when a profile-less development
             // build wrote to the data protection keychain and got errSecMissingEntitlement.
             #expect(KeychainCredentialStore.Keychain.allCases.contains(keychain))
@@ -219,7 +219,7 @@ struct KeychainCredentialStoreTests {
         let store = KeychainCredentialStore(service: Self.testService, account: "unusable", keychains: [])
 
         #expect(throws: CredentialStoreError.self) { try store.save(credentials()) }
-        // A read still answers "nothing stored" — there is genuinely nothing — but the *write*
+        // A read still answers "nothing stored" (there is genuinely nothing) but the *write*
         // is what must not be allowed to disappear.
         let loaded = try store.load()
         #expect(loaded == nil)

@@ -108,7 +108,7 @@ struct UnsubscribeHistoryStoreTests {
 
         _ = await store.record(record(account: Self.account))
         // Writing for a second account discards the first account's file entirely, exactly as
-        // the archive history does — one account's history on disk at a time.
+        // the archive history does, one account's history on disk at a time.
         _ = await store.record(record(account: Self.otherAccount))
 
         #expect(await store.unsubscribeEntries(for: Self.account).isEmpty)
@@ -189,7 +189,7 @@ struct UnsubscribeHistoryStoreTests {
         let store = FileMutationTransactionStore(directory: directory)
         let archive = transaction()
 
-        // Let the store choose the filename — it is a digest of the address — and then replace
+        // Let the store choose the filename (it is a digest of the address) and then replace
         // the contents with what a version-3 build would have written.
         _ = await store.record(archive)
         let url = try #require(
@@ -271,7 +271,7 @@ struct UnsubscribeHistoryStoreTests {
         )
         let contents = try String(contentsOf: url, encoding: .utf8)
 
-        // The host and the message identifier are there — the first so the row can say what was
+        // The host and the message identifier are there: the first so the row can say what was
         // done, the second so the sender can be resolved from the cache instead of stored here.
         #expect(contents.contains("lists.example"))
         #expect(contents.contains("gmail-message-id"))

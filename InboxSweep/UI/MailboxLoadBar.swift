@@ -47,7 +47,7 @@ struct MailboxLoadBar: View {
 
     // MARK: - Coverage
 
-    /// How much mail has been analysed — stated, never implied.
+    /// How much mail has been analysed: stated, never implied.
     private var coverage: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(snapshot.loadProgressDescription ?? snapshot.coverageHeadline)

@@ -9,7 +9,7 @@ import Foundation
 /// ### What it is allowed to say
 ///
 /// Only what InboxSweep did. "Unsubscribe request sent", "Opened unsubscribe page", "Opened
-/// email unsubscribe request" — three sentences about three things the app performed. There is
+/// email unsubscribe request", three sentences about three things the app performed. There is
 /// no wording in here for "you are unsubscribed", "you'll stop hearing from them", or any
 /// counting of subscriptions ended, because none of those is something a local record of a sent
 /// request can know. Whether a sender honours an unsubscribe is visible only in mail that has
@@ -21,7 +21,7 @@ nonisolated struct UnsubscribeActivityEntry: Identifiable, Hashable, Sendable {
     /// The sender, when the loaded window can still name it.
     ///
     /// Resolved from the mailbox cache through the record's source message, exactly as archive
-    /// history resolves its messages — so the address is not copied into a second file for the
+    /// history resolves its messages, so the address is not copied into a second file for the
     /// sake of a better-reading row. Absent is ordinary, not a fault: an unsubscribe from two
     /// months ago names a message no longer in a 250-message window.
     let resolvedSender: EmailAddress?
@@ -111,7 +111,7 @@ nonisolated struct UnsubscribeActivityEntry: Identifiable, Hashable, Sendable {
         case .requestFailed:
             base = """
                 InboxSweep tried to send a one-click unsubscribe request to \(destinationHost) and it \
-                didn't go through. Nothing else was tried — InboxSweep doesn't retry unsubscribe \
+                didn't go through. Nothing else was tried: InboxSweep doesn't retry unsubscribe \
                 requests on its own.
                 """
         case .browserOpened:
@@ -136,7 +136,7 @@ nonisolated struct UnsubscribeActivityEntry: Identifiable, Hashable, Sendable {
 
     /// The caveat that goes with every action that reached somebody.
     static let cannotConfirmNote = """
-        Whether the sender acted on it is not something InboxSweep can see — only the mail that \
+        Whether the sender acted on it is not something InboxSweep can see: only the mail that \
         arrives from now on will show that.
         """
 
@@ -148,11 +148,11 @@ nonisolated struct UnsubscribeActivityEntry: Identifiable, Hashable, Sendable {
     /// Why there is no Undo on this row.
     ///
     /// Said rather than left to an absence, because a user who has just seen Undo beside an
-    /// archive row is entitled to know why there isn't one here — and because the honest answer
+    /// archive row is entitled to know why there isn't one here, and because the honest answer
     /// is interesting: there is no such thing to offer.
     static let noUndoNote = """
-        There's no undo for this. Unsubscribing has no standard reverse — nothing an app can send \
-        to put you back on a list — so InboxSweep doesn't offer one it couldn't honour. If you want \
+        There's no undo for this. Unsubscribing has no standard reverse; nothing an app can send \
+        to put you back on a list, so InboxSweep doesn't offer one it couldn't honour. If you want \
         this sender's mail again, sign up with them as you did the first time.
         """
 
@@ -171,7 +171,7 @@ nonisolated struct UnsubscribeActivityEntry: Identifiable, Hashable, Sendable {
 /// One row of the Activity screen, of whichever kind.
 ///
 /// An enum rather than a protocol both entry types conform to. A protocol would have needed a
-/// lowest common denominator — a title, a date, maybe an `isUndoable` — and the moment
+/// lowest common denominator (a title, a date, maybe an `isUndoable`) and the moment
 /// `isUndoable` exists on the shared surface, an unsubscribe row has to answer it, and a screen
 /// can ask an unsubscribe for an undo. The enum makes the screen switch, which is what it
 /// should be doing: the two rows genuinely say different things and offer different controls.
@@ -215,7 +215,7 @@ nonisolated enum ActivityTimelineEntry: Identifiable, Hashable, Sendable {
     /// One interleaved history, newest first.
     ///
     /// Sorted here rather than in the store, because the two kinds live in separate arrays on
-    /// disk — for the reasons ``UnsubscribeActionRecord`` sets out — and "what has InboxSweep
+    /// disk (for the reasons ``UnsubscribeActionRecord`` sets out) and "what has InboxSweep
     /// done, in order" is a question about the screen rather than about the file. The identifier
     /// tiebreak makes the order total, so two entries written in the same second do not swap
     /// places between launches.

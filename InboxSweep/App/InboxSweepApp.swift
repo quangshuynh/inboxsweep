@@ -24,7 +24,7 @@ struct InboxSweepApp: App {
         .defaultSize(width: 980, height: 660)
         .commands {
             // The app's only destructive-sounding verb is "Disconnect", and it disconnects
-            // InboxSweep — it does not touch the mailbox.
+            // InboxSweep: it does not touch the mailbox.
             CommandGroup(replacing: .newItem) {}
         }
     }

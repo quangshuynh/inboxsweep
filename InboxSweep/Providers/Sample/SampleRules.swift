@@ -32,7 +32,7 @@ nonisolated enum SampleRules {
     ///
     /// Matches `UITestLaunchArgument.sampleRules`. It seeds an *authorization*, not a capability:
     /// without ``archivingLaunchArgument`` the session has no boundary and the rule is listed,
-    /// inspectable, and inert — which is its own thing worth asserting.
+    /// inspectable, and inert, which is its own thing worth asserting.
     static let rulesLaunchArgument = "--sample-rules"
 
     /// The sender the seeded rule is about, and the one the sample mailbox sends most.
@@ -75,7 +75,7 @@ nonisolated enum SampleRules {
 /// An archive boundary that changes an in-memory label set and nothing else.
 ///
 /// The sample counterpart of ``SampleUnsubscriber``: it has no transport and cannot acquire one,
-/// so a complete rule pass — matching, archiving, reconciling, and its Activity entry — can be
+/// so a complete rule pass (matching, archiving, reconciling, and its Activity entry) can be
 /// driven on any machine with no socket opened and no real mail touched.
 ///
 /// It is an actor because a pass sends it one message at a time and expects each answer to

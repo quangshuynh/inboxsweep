@@ -36,7 +36,7 @@ struct SenderDetailView: View {
     /// The sender-level convenience, and the wording is the design. **Review messages to
     /// archive…** says what pressing it does: it opens a review with boxes already ticked. It is
     /// not *Archive sender*, *Clean sender*, or *Apply recommendation*, because none of those is
-    /// something InboxSweep can do — there is no whole-sender operation behind this, and the
+    /// something InboxSweep can do: there is no whole-sender operation behind this, and the
     /// button itself changes nothing at all.
     ///
     /// Optional, and absent when there is no action to derive candidates from.
@@ -45,7 +45,7 @@ struct SenderDetailView: View {
     /// Opens the sender's unsubscribe options.
     ///
     /// **Unsubscribe options…**, and the wording is again the design. Not *Stop all mail*, not
-    /// *Block sender*, not *Safe to unsubscribe* — the first two name powers the app does not
+    /// *Block sender*, not *Safe to unsubscribe*: the first two name powers the app does not
     /// have, and the third is a verdict it is in no position to reach. "Options" is what is
     /// behind it: a screen listing what this sender's own headers offer, from which nothing has
     /// happened yet.
@@ -147,7 +147,7 @@ struct SenderDetailView: View {
     /// Facts about this sender's mail that came from the mailbox itself.
     ///
     /// The caption matters as much as the values: Gmail's categories are Gmail's, and a
-    /// `List-Unsubscribe` header is a header that was present — neither is a verdict from
+    /// `List-Unsubscribe` header is a header that was present; neither is a verdict from
     /// InboxSweep about whether this sender is worth keeping.
     private var observations: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -224,7 +224,7 @@ struct SenderDetailView: View {
         return "about one message every \(formatted)"
     }
 
-    /// The messages themselves — the direct answer to "which messages are these?".
+    /// The messages themselves: the direct answer to "which messages are these?".
     private var messageList: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {

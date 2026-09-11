@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import InboxSweep
 
-/// The session's half of archiving: what it refuses, what it sends, and — mostly — what it does
+/// The session's half of archiving: what it refuses, what it sends, and (mostly) what it does
 /// to everything derived from the loaded window once Gmail says yes.
 ///
 /// The reconciliation cases are the bulk of this suite on purpose. Sending one `POST` correctly
@@ -98,7 +98,7 @@ struct MessageArchiveTests {
     func grantingRepublishesTheWindow() async throws {
         // The defect this pins down was found on a real account: granting the permission moved
         // only `archiveCapability`, and the sheet that offers the action draws everything else
-        // from the snapshot — so it went on offering to request a permission the user had
+        // from the snapshot, so it went on offering to request a permission the user had
         // already granted until it was closed and reopened.
         let archiver = StubMessageArchiver(capability: .requiresAdditionalPermission)
         let (session, _, _) = await makeSession(
@@ -187,7 +187,7 @@ struct MessageArchiveTests {
         let records = EphemeralMutationRecordStore()
         let (session, _, _) = await makeSession(messages: messages, archiver: archiver, records: records)
 
-        // Both presses land before the first has finished — which is the case a disabled button
+        // Both presses land before the first has finished, which is the case a disabled button
         // does not cover, because the disabling happens a render later.
         let first = session.archiveMessage(MailMessageID("m-1"))
         let second = session.archiveMessage(MailMessageID("m-1"))
@@ -240,7 +240,7 @@ struct MessageArchiveTests {
         let (session, provider, archiver) = await makeSession(messages: [message("m-1")])
 
         // The window on screen belongs to the account it was read for. The adapter is now
-        // authenticated as somebody else — a re-authorization that landed in a second Google
+        // authenticated as somebody else: a re-authorization that landed in a second Google
         // account is all it takes.
         let other = MailAccount(
             emailAddress: EmailAddressParser.parse("somebody.else@example.com"),

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import InboxSweep
 
-/// What InboxSweep concludes about a sender, and — as often — what it refuses to conclude.
+/// What InboxSweep concludes about a sender, and (as often) what it refuses to conclude.
 @Suite("Unsubscribe detection")
 struct UnsubscribeDetectionTests {
 
@@ -62,7 +62,7 @@ struct UnsubscribeDetectionTests {
     @Test("Arriving every day is not evidence of a subscription on its own")
     func recurrenceAloneIsNotEvidence() {
         // The rule that keeps a daily transactional notice from reading as a mailing list.
-        // Thirty messages, perfectly regular, filed under a bulk category — and still nothing,
+        // Thirty messages, perfectly regular, filed under a bulk category, and still nothing,
         // because none of them said anything about unsubscribing.
         let messages = (1...30).map {
             message("m\($0)", hoursAgo: Double($0) * 24, labels: [.inbox, .categoryPromotions])
@@ -202,7 +202,7 @@ struct UnsubscribeDetectionTests {
 
     // MARK: - Mechanism selection
 
-    @Test("Selection prefers one-click, then web, then mail — and shows what it did not pick")
+    @Test("Selection prefers one-click, then web, then mail, and shows what it did not pick")
     func selectionOrder() {
         let metadata = Self.metadata(
             "<mailto:leave@lists.example>, <https://lists.example/u/abc>",
@@ -325,8 +325,8 @@ struct UnsubscribeDetectionTests {
             }
         }
 
-        // An explanation may *deny* one of them — "it is not confirmation that you have been
-        // removed from the list" is exactly the sentence this feature should be saying — so the
+        // An explanation may *deny* one of them: "it is not confirmation that you have been
+        // removed from the list" is exactly the sentence this feature should be saying, so the
         // rule there is about the claim rather than the words: a sentence containing one of
         // these phrases must be negating it. Checked sentence by sentence, so a denial early in
         // a paragraph cannot license a claim later in it.

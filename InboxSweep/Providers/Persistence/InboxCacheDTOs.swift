@@ -18,8 +18,8 @@ nonisolated enum InboxCacheDTO {
     /// where version 1 carried only a Boolean saying a header had been present. A version-1
     /// file is discarded, which is the right trade for this particular file and would not be
     /// for the transaction store: the only cost of discarding a cache is one refetch of mail
-    /// the app can read whenever it likes, and the alternative — reading old entries as
-    /// "header present, values unknown" — would put every cached sender in the ambiguous state
+    /// the app can read whenever it likes, and the alternative (reading old entries as
+    /// "header present, values unknown") would put every cached sender in the ambiguous state
     /// until the next reload, which reads worse than a reload the user did not notice.
     static let schemaVersion = 2
 
@@ -77,8 +77,8 @@ nonisolated enum InboxCacheDTO {
 
         /// The parsed `List-Unsubscribe` values, as text this file can hold.
         ///
-        /// Absent when the message had no header. What goes in is the *parsed* form — a scheme
-        /// and a destination this build already validated, or a recorded refusal — never the
+        /// Absent when the message had no header. What goes in is the *parsed* form: a scheme
+        /// and a destination this build already validated, or a recorded refusal, never the
         /// sender's original header text, which is exactly the string the app refuses to carry
         /// around. Re-validated on the way back in, so a hand-edited file cannot introduce a
         /// destination the parser would have refused.

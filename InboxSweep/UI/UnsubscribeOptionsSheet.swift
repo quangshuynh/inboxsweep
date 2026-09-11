@@ -62,7 +62,7 @@ struct UnsubscribeOptionsSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             // The screen's identifier sits on the title rather than on the root stack. SwiftUI
             // pushes an identifier down onto every descendant, so a stack-wide one makes every
-            // control and every sentence below it unfindable — which is the same lesson
+            // control and every sentence below it unfindable, which is the same lesson
             // `ActivityView` records, learnt again here.
             Text("Unsubscribe options for \(summary.sender.displayValue)")
                 .font(.title3.weight(.semibold))
@@ -180,7 +180,7 @@ struct UnsubscribeOptionsSheet: View {
 
     /// The limitation worth stating on the screen rather than only in the docs.
     static let bodyLinkNote = """
-        InboxSweep only reads message headers, never message bodies — so an unsubscribe link that \
+        InboxSweep only reads message headers, never message bodies, so an unsubscribe link that \
         lives in the text of an email is one it cannot see. Nothing here is a complete list of a \
         sender's unsubscribe options.
         """
@@ -195,7 +195,7 @@ struct UnsubscribeOptionsSheet: View {
 
             if opportunity.isActionable {
                 Button("Review unsubscribe…") {
-                    // Freezes a review. No request, no page, no record — see
+                    // Freezes a review. No request, no page, no record; see
                     // ``InboxSessionModel/makeUnsubscribeReview(forSenderKey:using:)``.
                     pendingReview = session.makeUnsubscribeReview(forSenderKey: summary.id)
                 }

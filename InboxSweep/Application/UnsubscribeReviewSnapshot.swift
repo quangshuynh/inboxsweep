@@ -5,7 +5,7 @@ import Foundation
 /// The same idea as ``ArchiveSelectionSnapshot``, for a sharper reason. An archive confirmation
 /// that drifted would archive a different set of messages than the one on screen; an
 /// unsubscribe confirmation that drifted would send a request **to a different host** than the
-/// one the user read — which is the single worst thing this feature could do. So the mechanism,
+/// one the user read, which is the single worst thing this feature could do. So the mechanism,
 /// the destination, and the account are frozen here when the review opens, and the session
 /// refuses to act if the window no longer agrees with them rather than acting on whatever the
 /// metadata says by then.
@@ -138,6 +138,6 @@ nonisolated struct UnsubscribeReviewSnapshot: Identifiable, Equatable, Sendable 
     /// What confirming will *not* do, which is most of what somebody needs to know.
     static let boundaryNote = """
         No message in your mailbox changes. InboxSweep doesn't archive, delete, move, or mark \
-        anything as part of this, and it creates no rule or filter — it has no way to.
+        anything as part of this, and it creates no rule and no Gmail filter.
         """
 }

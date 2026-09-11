@@ -6,7 +6,7 @@ import Foundation
 ///
 /// - A stored sign-in could not be restored. The app lands on the signed-out screen either
 ///   way, so without a notice a Keychain refusal and an ordinary first launch are the same
-///   picture — which is how a credential-persistence bug survived a whole interval.
+///   picture, which is how a credential-persistence bug survived a whole interval.
 /// - A sign-in succeeded but could not be *saved*. The session works, so nothing fails; the
 ///   user simply finds themselves signed out next launch with no explanation.
 ///
@@ -88,14 +88,14 @@ nonisolated struct SessionNotice: Equatable, Sendable, Identifiable {
     /// The stored credential survived a sign-out.
     ///
     /// The most serious thing this type says. The user asked to be disconnected, the window
-    /// says they are, and a refresh token is still on the Mac — so the notice tells them where
+    /// says they are, and a refresh token is still on the Mac, so the notice tells them where
     /// to go and remove it themselves rather than leaving them to assume it is gone.
     static func credentialNotRemoved(reason: String) -> SessionNotice {
         SessionNotice(
             symbolName: "key.slash",
             title: "InboxSweep couldn't remove your saved sign-in",
             message: """
-                \(reason) InboxSweep is signed out and your mailbox was not changed, but the saved                 sign-in is still on this Mac. You can delete the "InboxSweep — Gmail sign-in" item                 in Keychain Access, and withdraw the access at myaccount.google.com.
+                \(reason) InboxSweep is signed out and your mailbox was not changed, but the saved                 sign-in is still on this Mac. You can delete the "InboxSweep Gmail sign-in" item                 in Keychain Access, and withdraw the access at myaccount.google.com.
                 """
         )
     }
@@ -121,7 +121,7 @@ nonisolated struct SessionNotice: Equatable, Sendable, Identifiable {
     // MARK: - Mapping
 
     /// The notice for a restore failure, or `nil` when the failure deserves an error screen
-    /// instead — a provider outage is something to retry, not something to re-authorize.
+    /// instead: a provider outage is something to retry, not something to re-authorize.
     static func forRestoreFailure(_ failure: MailRestoreFailure) -> SessionNotice? {
         switch failure {
         case .authorizationRevoked: authorizationEnded

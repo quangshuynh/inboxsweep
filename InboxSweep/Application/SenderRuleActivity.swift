@@ -13,7 +13,7 @@ import Foundation
 /// messages and silently leaves two has done something the user cannot see: their Inbox still
 /// contains mail from a sender they believe is handled, and they have no way to learn that
 /// InboxSweep looked at it and declined. The two it left are, by construction, the two most
-/// likely to matter — protection only holds back starred, Important, and subjects that read as
+/// likely to matter: protection only holds back starred, Important, and subjects that read as
 /// security, money, health, employment, government, travel, or receipts.
 ///
 /// So a pass reports what it declined as prominently as what it did, and

@@ -5,14 +5,14 @@ import Foundation
 ///
 /// Three cases, three genuinely different things. That is the point of the type: "unsubscribe"
 /// is one word for an HTTP request the app makes, a web page the user's browser opens, and a
-/// message the user's mail client composes — and a user deciding whether to go ahead is
+/// message the user's mail client composes, and a user deciding whether to go ahead is
 /// deciding between those, not between yes and no.
 nonisolated enum UnsubscribeMechanism: Hashable, Sendable {
 
     /// RFC 8058 one-click: a `POST` InboxSweep sends itself, to this exact URL.
     ///
     /// The only case in which the app contacts anybody. Reachable only when *both* headers
-    /// agreed — see ``MessageUnsubscribeMetadata/oneClickURL``.
+    /// agreed; see ``MessageUnsubscribeMetadata/oneClickURL``.
     case oneClick(HTTPSUnsubscribeURL)
 
     /// An ordinary unsubscribe page. The user's browser opens it; InboxSweep does not load it.
@@ -24,7 +24,7 @@ nonisolated enum UnsubscribeMechanism: Hashable, Sendable {
 
     /// A `mailto` unsubscribe. The user's mail client opens with the message prepared.
     ///
-    /// Nothing is sent. InboxSweep holds no permission to send mail — see ``GmailScope`` — and
+    /// Nothing is sent. InboxSweep holds no permission to send mail (see ``GmailScope``) and
     /// there is no code path that could, which is what makes "prepared, not sent" a structural
     /// claim rather than a promise.
     case mail(MailtoUnsubscribeAddress)
@@ -120,7 +120,7 @@ nonisolated enum UnsubscribeMechanism: Hashable, Sendable {
         case .webPage(let url):
             return """
                 InboxSweep will open \(url.host) in your browser and stop there. It does not fill in \
-                the page, submit anything, or sign you in — whatever the page asks for is up to you.
+                the page, submit anything, or sign you in, whatever the page asks for is up to you.
                 """
         case .mail(let address):
             return """

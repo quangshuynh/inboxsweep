@@ -4,8 +4,8 @@ import Observation
 /// Owns the app's connection to a mail provider and the window of mail loaded from it.
 ///
 /// This is the only type the views talk to, and the only place ``MailProviderError`` becomes a
-/// screen. It is `@MainActor` because it is view state; the work it drives — network requests,
-/// normalization, aggregation — happens off the main actor inside the provider and in a
+/// screen. It is `@MainActor` because it is view state; the work it drives (network requests,
+/// normalization, aggregation) happens off the main actor inside the provider and in a
 /// detached task, so a slow mailbox never freezes the window.
 @MainActor
 @Observable
@@ -14,7 +14,7 @@ final class InboxSessionModel {
     /// What the window should currently show.
     private(set) var state: InboxSessionState = .signedOut
 
-    /// Something worth telling the user that is not an error screen — a sign-in that could not
+    /// Something worth telling the user that is not an error screen: a sign-in that could not
     /// be restored, or one that could not be saved.
     ///
     /// Cleared whenever a new connect or restore begins, so a notice never outlives the
@@ -66,7 +66,7 @@ final class InboxSessionModel {
     /// Whether archiving is available for the connected account.
     ///
     /// Refreshed whenever a window is published, because it is a fact about the *grant* and the
-    /// grant can change under the app — an upgrade, a withdrawal from the Google Account, a
+    /// grant can change under the app: an upgrade, a withdrawal from the Google Account, a
     /// different account signing in. Starts at ``MailMutationCapability/unsupported`` so a
     /// session that has never connected offers nothing.
     private(set) var archiveCapability: MailMutationCapability = .unsupported
@@ -74,7 +74,7 @@ final class InboxSessionModel {
     /// The archive or undo currently in flight, or the result of the last one.
     ///
     /// `nil` means nothing has been attempted, or the user has dismissed the result. While this
-    /// is running a second mutation is refused outright — which is the guard that makes a double
+    /// is running a second mutation is refused outright, which is the guard that makes a double
     /// click one mutation rather than two, independently of whether the button was disabled in
     /// time.
     private(set) var mutationActivity: MessageMutationActivity?
@@ -98,7 +98,7 @@ final class InboxSessionModel {
     ///
     /// Not a permission: one-click unsubscribe needs no Gmail scope, because it never touches
     /// Gmail. This is only whether a boundary exists to send it. Detection is unaffected either
-    /// way — reading a sender's metadata is domain work over mail already fetched, and it works
+    /// way: reading a sender's metadata is domain work over mail already fetched, and it works
     /// on every provider including the synthetic one.
     private(set) var unsubscribeCapability: UnsubscribeCapability = .unsupported
 
@@ -106,7 +106,7 @@ final class InboxSessionModel {
     ///
     /// `nil` means nothing has been attempted or the user has dismissed the result. While this
     /// is running a second unsubscribe is refused outright, which is what makes a double click
-    /// one request rather than two — independently of whether a button was disabled in time.
+    /// one request rather than two: independently of whether a button was disabled in time.
     private(set) var unsubscribeActivity: UnsubscribeActivity?
 
     // MARK: - Rule state
@@ -148,21 +148,21 @@ final class InboxSessionModel {
     ///
     /// Taken from the provider rather than injected beside it, so the object that performs an
     /// archive is always the one holding the authorization the window was read with. A `nil`
-    /// here is not a disabled feature — it is the absence of any code path to a mutation, which
+    /// here is not a disabled feature: it is the absence of any code path to a mutation, which
     /// is what the synthetic mailbox gets.
     private let archiver: (any MailMessageArchiving)?
 
     /// The unsubscribe boundary, when the provider has one.
     ///
-    /// Taken from the provider for the same reason ``archiver`` is — one object graph, no way
-    /// to pair one account's window with another's boundary — and `nil` is again the absence of
+    /// Taken from the provider for the same reason ``archiver`` is, one object graph, no way
+    /// to pair one account's window with another's boundary, and `nil` is again the absence of
     /// a code path rather than a disabled button.
     private let unsubscriber: (any MailUnsubscribing)?
 
     /// How a browser or mail client is opened for a handoff.
     ///
     /// A boundary rather than a direct `NSWorkspace` call, so a test can hand the session an
-    /// opener that records and a transport that would have recorded — and thereby prove that
+    /// opener that records and a transport that would have recorded, and thereby prove that
     /// the browser path produced no HTTP request at all.
     private let urlOpener: any ExternalURLOpening
 
@@ -179,7 +179,7 @@ final class InboxSessionModel {
     /// the app giving up on finding out whether the mailbox changed.
     private var mutationTask: Task<Void, Never>?
 
-    /// The in-flight unsubscribe, held separately again — and separately from the mutation task
+    /// The in-flight unsubscribe, held separately again, and separately from the mutation task
     /// too, because cancelling an archive is not a reason to abandon a request already with
     /// somebody's server.
     private var unsubscribeTask: Task<Void, Never>?
@@ -190,7 +190,7 @@ final class InboxSessionModel {
     /// The saved plan as it was written, before being checked against the current window.
     ///
     /// Kept separately from ``savedPlan`` so staleness can be re-evaluated after every page
-    /// without re-reading the file — a plan that was fine over 250 messages becomes stale the
+    /// without re-reading the file: a plan that was fine over 250 messages becomes stale the
     /// moment a deep load reaches 2,500, and the user finds that out as it happens.
     private var storedPlan: SavedCleanupPlan?
 
@@ -201,7 +201,7 @@ final class InboxSessionModel {
     /// that produced it can stay on screen; an identifier in here cannot be un-executed.
     ///
     /// Session-lifetime rather than persisted, because it guards a *frozen snapshot*, and a
-    /// snapshot does not survive a relaunch either — there is nothing left after a quit that
+    /// snapshot does not survive a relaunch either: there is nothing left after a quit that
     /// could be submitted twice.
     private var executedSelectionIDs: Set<UUID> = []
 
@@ -211,7 +211,7 @@ final class InboxSessionModel {
     /// different things and must not be able to clear each other. An identifier in here cannot
     /// be un-sent: a second press on a sheet still showing a finished result is refused for the
     /// life of the session, and a user who genuinely wants to unsubscribe again opens the review
-    /// again — which freezes a **new** identifier, because that is a new decision.
+    /// again, which freezes a **new** identifier, because that is a new decision.
     private var performedUnsubscribeIDs: Set<UUID> = []
 
     /// The messages each rule has already been sent to the boundary for, this session.
@@ -222,7 +222,7 @@ final class InboxSessionModel {
     ///
     /// Session-lifetime rather than persisted, deliberately. Persisting it would mean a file that
     /// grows with every message a rule ever looked at, for the sake of not retrying something
-    /// once after a relaunch — and a message that failed for a transient reason genuinely does
+    /// once after a relaunch, and a message that failed for a transient reason genuinely does
     /// deserve one more try tomorrow. What it must not do is retry in a loop today, and this is
     /// what stops that.
     private var ruleAttemptedMessageIDs: [SenderRule.ID: Set<MailMessageID>] = [:]
@@ -261,7 +261,7 @@ final class InboxSessionModel {
 
     /// The shape of the *first* page: its size, and the scope a new session starts on.
     ///
-    /// Kept because callers — previews, the sample mailbox, tests — configure a first-page size
+    /// Kept because callers (previews, the sample mailbox, tests) configure a first-page size
     /// that is not the app's default. The scope on it is only the starting value; ``scope`` is
     /// what a load actually uses.
     private let firstPageRequest: MailFetchRequest
@@ -292,7 +292,7 @@ final class InboxSessionModel {
     /// Re-establishes a previously authorized connection, if one was stored.
     ///
     /// Finding nothing stored is the normal first-launch case and lands silently on the
-    /// signed-out screen. Finding something that *cannot be used* lands there too — but with a
+    /// signed-out screen. Finding something that *cannot be used* lands there too, but with a
     /// ``notice`` saying so, because a Keychain refusal and a first launch produce the same
     /// screen and are not remotely the same thing.
     ///
@@ -368,7 +368,7 @@ final class InboxSessionModel {
     /// user cancels.
     ///
     /// The window grows page by page and the dashboard is republished after each one, so the
-    /// user watches the message count climb rather than staring at a spinner — and so the
+    /// user watches the message count climb rather than staring at a spinner, and so the
     /// proposals on screen reflect the evidence loaded *so far* rather than appearing all at
     /// once at the end.
     @discardableResult
@@ -493,7 +493,7 @@ final class InboxSessionModel {
 
     /// The loaded messages from one sender, newest first.
     ///
-    /// Answers the question the aggregate row raises — "which messages are these?" — from the
+    /// Answers the question the aggregate row raises ("which messages are these?") from the
     /// window already in memory, so opening a sender costs no request.
     func loadedMessages(forSenderKey key: SenderSummary.ID) -> [MailMessage] {
         messagesInScope
@@ -548,7 +548,7 @@ final class InboxSessionModel {
     /// The loaded messages from one sender, as the review screen shows them.
     ///
     /// Answers three questions at once: which messages are these, which of them are protected
-    /// on their own merits, and — when `action` is given — which a previewed cleanup would
+    /// on their own merits, and (when `action` is given) which a previewed cleanup would
     /// reach. All three from the window already in memory, so opening a review costs no
     /// request and cannot fetch a body there is no field to hold.
     ///
@@ -629,7 +629,7 @@ final class InboxSessionModel {
             }
 
             // Asked of the provider rather than taken from the return value, and then
-            // republished — both halves matter.
+            // republished, both halves matter.
             //
             // Asking again is the more honest of the two: the provider is the thing that holds
             // the grant, and a capability re-derived from it cannot disagree with what the next
@@ -637,7 +637,7 @@ final class InboxSessionModel {
             //
             // Republishing is what makes the change *visible*. A granted permission used to
             // move nothing but this one scalar, and the screen that offers the action is a
-            // sheet whose every other value comes from the snapshot — so the button kept
+            // sheet whose every other value comes from the snapshot, so the button kept
             // offering to request a permission the user had already granted until the sheet was
             // closed and reopened. Observed on a real account. Every other operation in this
             // session ends by republishing; this one had no business being the exception.
@@ -659,7 +659,7 @@ final class InboxSessionModel {
     /// This is the **only** place the app turns a recommendation into a list of identifiers, and
     /// two properties make that safe to do:
     ///
-    /// - it performs no write and starts nothing — it returns identifiers for a checkbox column,
+    /// - it performs no write and starts nothing: it returns identifiers for a checkbox column,
     ///   and the user still has to inspect them, keep or remove them, open a confirmation, and
     ///   press a button;
     /// - it never includes a protected message. The planner already holds protected messages
@@ -680,7 +680,7 @@ final class InboxSessionModel {
     /// What a sender-level *Review messages to archive…* opens the review screen with.
     ///
     /// The same identifiers ``preselectableMessageIDs(forSenderKey:under:)`` returns, plus the
-    /// counts needed to say *why* — how many the action's scope missed, how many protection held
+    /// counts needed to say *why*: how many the action's scope missed, how many protection held
     /// back, and, when the answer is none at all, which of those it was.
     ///
     /// Everything the safety note on ``preselectableMessageIDs(forSenderKey:under:)`` says applies
@@ -705,7 +705,7 @@ final class InboxSessionModel {
     /// Freezes a set of chosen messages into the exact thing a confirmation will show.
     ///
     /// Pure and local: it reads the window already in memory and returns a value. **Nothing is
-    /// sent, nothing is scheduled, and nothing is remembered** — building a snapshot the user
+    /// sent, nothing is scheduled, and nothing is remembered**: building a snapshot the user
     /// then abandons costs one allocation.
     ///
     /// Returns `nil`, rather than a narrowed set, when any chosen identifier is not currently a
@@ -752,8 +752,8 @@ final class InboxSessionModel {
     /// Whether the frozen set could be archived right now, without sending anything to find out.
     ///
     /// The cheap half of the validation the execution path performs. It cannot check the
-    /// authenticated account — that question can only be asked of the provider, and only
-    /// asynchronously — so it is a guard for a button's enabled state, never a substitute for
+    /// authenticated account: that question can only be asked of the provider, and only
+    /// asynchronously, so it is a guard for a button's enabled state, never a substitute for
     /// the re-validation in ``archiveSelection(_:)``.
     func canArchive(_ selection: ArchiveSelectionSnapshot) -> Bool {
         validateAgainstLoadedWindow(selection) == nil
@@ -763,7 +763,7 @@ final class InboxSessionModel {
 
     /// Archives exactly the frozen set, after the user has confirmed it.
     ///
-    /// This method performs no confirming of its own — by the time it is called the user has
+    /// This method performs no confirming of its own, by the time it is called the user has
     /// seen every message in the set and pressed the confirming button. What it does do is
     /// **refuse**: every precondition is re-checked here against the state as it is *now*,
     /// because the window can reload and the account can change between reviewing a set and
@@ -799,14 +799,14 @@ final class InboxSessionModel {
 
     /// Puts the messages of the most recent undoable archive back, if the offer is still open.
     ///
-    /// A real request to Gmail per message, through the same boundary the archive went through —
+    /// A real request to Gmail per message, through the same boundary the archive went through,
     /// not a local correction. It succeeds per message only when Gmail confirms, and its failures
     /// are reported separately from the archive's successes: the archive really did happen, and
     /// saying otherwise because the undo failed would be the app rewriting history it does not
     /// own.
     ///
     /// It restores **only** the messages that transaction archived. Nothing is inferred into the
-    /// set — not the rest of the sender, not the rest of the thread, not messages archived by an
+    /// set, not the rest of the sender, not the rest of the thread, not messages archived by an
     /// earlier transaction.
     @discardableResult
     func undoLastArchive() -> Task<Void, Never> {
@@ -834,7 +834,7 @@ final class InboxSessionModel {
     /// opening a row are all answered from the local transaction file and the window already in
     /// memory; the only thing on that screen that can reach Gmail is the existing Undo.
     ///
-    /// Scoped to the connected account, and empty when there is none — so a history is never
+    /// Scoped to the connected account, and empty when there is none, so a history is never
     /// shown beside a mailbox it does not belong to, and never shown at all while signed out.
     func mutationHistory() async -> [MailMutationTransaction] {
         guard let account else { return [] }
@@ -844,7 +844,7 @@ final class InboxSessionModel {
     /// The messages of a past transaction that are still described by the loaded window.
     ///
     /// Activity stores identifiers, not mail. When the window happens to still hold the messages
-    /// a transaction named, this is what lets a row say which ones they were — resolved from the
+    /// a transaction named, this is what lets a row say which ones they were: resolved from the
     /// window in memory, which came from Gmail or from the local cache, and never re-fetched.
     ///
     /// Returning fewer than the transaction named is the ordinary case, not a failure. An
@@ -908,7 +908,7 @@ final class InboxSessionModel {
     /// Resolved dynamically, exactly as ``resolvedMessages(for:)`` resolves an archive's
     /// messages, and for the same reason: the record stores an identifier, not mail. Returning
     /// `nil` is the ordinary case for anything older than the loaded window, and the row degrades
-    /// to naming the destination host — which the record does hold.
+    /// to naming the destination host, which the record does hold.
     func resolvedSender(for record: UnsubscribeActionRecord) -> EmailAddress? {
         guard let account, record.accountAddress == account.emailAddress.address else { return nil }
         guard let messageID = record.sourceMessageID else { return nil }
@@ -917,7 +917,7 @@ final class InboxSessionModel {
 
     /// Everything InboxSweep has done for this account, both kinds interleaved, newest first.
     ///
-    /// One call, so a screen cannot assemble half of the history and forget the other half —
+    /// One call, so a screen cannot assemble half of the history and forget the other half,
     /// which is precisely the failure mode a second kind of entry introduces.
     func activityTimeline() async -> [ActivityTimelineEntry] {
         await ActivityTimelineEntry.merged(
@@ -929,7 +929,7 @@ final class InboxSessionModel {
     /// Whether `transaction` is the one the existing undo path would act on right now.
     ///
     /// Asked by the Activity screen before it offers Undo, so that being *visible* never makes an
-    /// older or superseded transaction actionable. It adds no policy of its own — it compares
+    /// older or superseded transaction actionable. It adds no policy of its own: it compares
     /// against ``undoableArchive``, which is the same value the review screen and the
     /// confirmation sheet offer from, established by ``restoreUndoOffer(for:)``.
     func canUndo(_ transaction: MailMutationTransaction) -> Bool {
@@ -946,7 +946,7 @@ final class InboxSessionModel {
         transaction: MailMutationTransaction
     ) -> Task<Void, Never> {
         // The undo names the messages *the transaction confirmed*, not anything read from the
-        // current window — an archived message is by definition no longer in an Inbox-scoped
+        // current window: an archived message is by definition no longer in an Inbox-scoped
         // window, so re-deriving the set from the screen would restore nothing.
         guard let selection = MailArchiveSelection(
             messageIDs: transaction.succeededMessageIDs,
@@ -971,7 +971,7 @@ final class InboxSessionModel {
     ) -> Task<Void, Never> {
         // The duplicate-submission guard, in two parts. The first refuses anything while a
         // mutation is out, so two clicks are one mutation even if both reach this method. The
-        // second refuses a *frozen set that has already been executed* — which is the case the
+        // second refuses a *frozen set that has already been executed*, which is the case the
         // first one misses, because by then nothing is running any more and the sheet is still
         // on screen showing the same confirmed set.
         guard !isMutating, !isApplyingRules else { return .alreadyFinished }
@@ -1028,7 +1028,7 @@ final class InboxSessionModel {
             // Asked of the provider rather than taken from the snapshot: the snapshot records
             // which account the window was *read* for, and the question here is which account
             // the token in the adapter authenticates *now*. Those differ exactly when it
-            // matters — and for a set, they have to be the same for every message in it, which
+            // matters, and for a set, they have to be the same for every message in it, which
             // is guaranteed by the set carrying one account address rather than one per message.
             guard await provider.currentConnection().account?.emailAddress.address == selection.accountAddress else {
                 await finish(
@@ -1041,7 +1041,7 @@ final class InboxSessionModel {
 
             // Recorded here rather than when the confirmation opened, or when it was validated:
             // this is the first line past which a request really can go out. A run refused before
-            // it — a swapped account, a withdrawn grant — left the mailbox alone and stays
+            // it (a swapped account, a withdrawn grant) left the mailbox alone and stays
             // re-confirmable.
             executedSelectionIDs.insert(selection.operationID)
 
@@ -1065,8 +1065,8 @@ final class InboxSessionModel {
     /// Applies a finished run, exactly once, and writes it down.
     ///
     /// Written to be safe to call more than once for the same operation: the transaction store
-    /// replaces by operation ID rather than appending, and the reconciliation below is idempotent
-    /// — setting a label set that is already set changes nothing. A repeated completion therefore
+    /// replaces by operation ID rather than appending, and the reconciliation below is
+    /// idempotent: setting a label set that is already set changes nothing. A repeated completion therefore
     /// produces one transaction and one local state, not two.
     private func finish(
         _ receipt: MailArchiveSetReceipt,
@@ -1092,7 +1092,7 @@ final class InboxSessionModel {
     /// Writes the durable transaction and moves the undo offer to match it.
     ///
     /// The lifecycle policy, in one place: **one undoable archive transaction per account**.
-    /// A new archive that confirmed anything supersedes the previous offer — the superseded
+    /// A new archive that confirmed anything supersedes the previous offer: the superseded
     /// transaction stays in the file as audit history, and the UI never claims two independent
     /// undos are available. An undo marks the transaction it reversed as undone and leaves no
     /// offer behind, because undoing an undo is archiving, and archiving is something the user
@@ -1123,7 +1123,7 @@ final class InboxSessionModel {
         case .restoreToInbox:
             guard let undoing else { break }
             if receipt.confirmedCount == undoing.succeededCount {
-                // Everything came back, so there is nothing left to undo — and nothing left for
+                // Everything came back, so there is nothing left to undo, and nothing left for
                 // the transaction to name. Narrowed to empty rather than marked `.undone` with
                 // its list intact, so the full and partial paths agree about what the list
                 // means: the messages this archive still has out of the inbox. Leaving two
@@ -1134,7 +1134,7 @@ final class InboxSessionModel {
                 undoableArchive = nil
             } else {
                 // A partial undo leaves the messages that did *not* come back still archived,
-                // so the offer stands — narrowed to exactly those, and never re-widened to
+                // so the offer stands: narrowed to exactly those, and never re-widened to
                 // include the ones already restored.
                 //
                 // Narrowing the *offer* and not the *history*: the archive's confirmed count,
@@ -1156,7 +1156,7 @@ final class InboxSessionModel {
     /// Labels are *replaced* with the ones on the receipt rather than edited towards what the
     /// app expected, so the window says what the mailbox says. Messages the provider refused are
     /// not touched at all, which is what makes a partial run produce a matching partial local
-    /// state. Each message keeps its place in the window whether or not it is still in scope —
+    /// state. Each message keeps its place in the window whether or not it is still in scope;
     /// membership is derived from labels by ``messagesInScope``, which is what makes an undo
     /// restore messages to their original positions instead of appending them to the end.
     private func reconcile(_ receipt: MailArchiveSetReceipt) {
@@ -1180,7 +1180,7 @@ final class InboxSessionModel {
     /// Recomputes and re-persists everything derived from the window.
     ///
     /// Summaries, proposals, protection, plan membership, the saved plan's staleness, and the
-    /// cache file all come from one place — ``publishSnapshot(for:isLoadingMore:persist:)`` —
+    /// cache file all come from one place: ``publishSnapshot(for:isLoadingMore:persist:)``,
     /// so a mutation gets the same recomputation a newly-loaded page does, and no derived value
     /// can be left describing the mailbox as it was a moment ago.
     private func republishAfterMutation() async {
@@ -1215,8 +1215,8 @@ final class InboxSessionModel {
         // Every message must still be loaded, still in scope, still this sender's, and still in
         // the inbox. The sender check is what stops a set from crossing a sender boundary between
         // the review that built it and the confirmation that runs it; the inbox check is what
-        // stops an archive from being sent for a message that has already left it — archived in
-        // Gmail itself, or by an earlier confirmation — which would be a request whose answer the
+        // stops an archive from being sent for a message that has already left it: archived in
+        // Gmail itself, or by an earlier confirmation, which would be a request whose answer the
         // user could not tell apart from the one they asked for.
         let live = Dictionary(uniqueKeysWithValues: messagesInScope.map { ($0.id, $0) })
         for message in selection.messages {
@@ -1303,7 +1303,7 @@ final class InboxSessionModel {
     /// What unsubscribing from one sender would involve, read from the window in memory.
     ///
     /// **A read, in every sense.** It parses nothing new, fetches nothing, opens nothing, and
-    /// contacts nobody — the metadata was parsed at the provider boundary when the mail was
+    /// contacts nobody: the metadata was parsed at the provider boundary when the mail was
     /// loaded, and this arranges it into a reading. Calling it for every sender on screen would
     /// cost nothing but arithmetic, and `SafetyBoundaryTests` asserts it produces no traffic of
     /// any kind.
@@ -1322,7 +1322,7 @@ final class InboxSessionModel {
             summary: summary,
             // Carried through from the proposal the dashboard already computed, so the caution a
             // sender earns for archiving is the same caution it carries here. It changes the
-            // *tone* of the unsubscribe review and never hides its mechanism — see
+            // *tone* of the unsubscribe review and never hides its mechanism; see
             // ``UnsubscribeOpportunity/cautionNote``.
             protection: state.snapshot?.proposal(for: key)?.protection ?? .unprotected
         )
@@ -1341,14 +1341,14 @@ final class InboxSessionModel {
 
     /// Freezes what an unsubscribe confirmation would be about.
     ///
-    /// **Opening a review performs no remote write of any kind** — requirement 7 of this
+    /// **Opening a review performs no remote write of any kind**: requirement 7 of this
     /// interval, and true by construction: this method reads the window, builds a value, and
     /// returns it. Nothing is sent, nothing is opened, nothing is recorded, and abandoning the
     /// sheet costs one allocation.
     ///
     /// Returns `nil` when there is nothing to act on, rather than a snapshot describing an
     /// empty action. A sender with no mechanism, or with metadata the parser refused, gets a
-    /// screen that explains that — from ``unsubscribeOpportunity(forSenderKey:)`` — rather than
+    /// screen that explains that (from ``unsubscribeOpportunity(forSenderKey:)``) rather than
     /// a confirmation for an action that cannot happen.
     ///
     /// - Parameter mechanism: A specific mechanism to freeze, when the user has picked one of
@@ -1381,7 +1381,7 @@ final class InboxSessionModel {
 
     /// Whether the frozen review could be acted on right now, without contacting anybody.
     ///
-    /// The cheap half of the validation the execution path performs — a guard for a button's
+    /// The cheap half of the validation the execution path performs: a guard for a button's
     /// enabled state, never a substitute for the re-validation inside
     /// ``confirmUnsubscribe(_:)``, which additionally asks the provider which account it is
     /// authenticated as.
@@ -1402,7 +1402,7 @@ final class InboxSessionModel {
     /// 1. the account connected now is the one the review was frozen under;
     /// 2. the message the metadata came from is still loaded, still in scope, and still this
     ///    sender's;
-    /// 3. **the mechanism has not changed** — the destination is re-derived from that message's
+    /// 3. **the mechanism has not changed**: the destination is re-derived from that message's
     ///    current metadata and must be the identical value, so a reloaded page that rotated the
     ///    sender's endpoint refuses the confirmation instead of quietly aiming it somewhere
     ///    else;
@@ -1424,8 +1424,8 @@ final class InboxSessionModel {
         guard let live = messagesInScope.first(where: { $0.id == sourceID }) else { return .reviewIsStale }
         guard live.sender.groupingKey == review.senderKey else { return .reviewIsStale }
 
-        // The destination itself, re-derived and compared. Not "is there still a mechanism" —
-        // "is it the same one", which is the only version of the question that protects the user
+        // The destination itself, re-derived and compared. Not "is there still a mechanism"
+        // but "is it the same one", which is the only version of the question that protects the user
         // from confirming one host and reaching another.
         guard let current = UnsubscribeMechanismSelection.select(from: live.unsubscribe) else {
             return .reviewIsStale
@@ -1439,7 +1439,7 @@ final class InboxSessionModel {
 
     /// Acts on a frozen review, after the user has confirmed it.
     ///
-    /// This performs no confirming of its own — by the time it is called the user has seen the
+    /// This performs no confirming of its own, by the time it is called the user has seen the
     /// mechanism, the exact destination, and what confirming would do, and has pressed the
     /// button that says so. What it does is **refuse**: every precondition is re-checked here
     /// against the state as it is now, including the one that matters most, which is that the
@@ -1452,7 +1452,7 @@ final class InboxSessionModel {
     func confirmUnsubscribe(_ review: UnsubscribeReviewSnapshot) -> Task<Void, Never> {
         // The duplicate guard, in two parts, mirroring the archive path. The first refuses
         // anything while an unsubscribe is out; the second refuses a *confirmation that has
-        // already been spent* — the case the first misses, because by then nothing is running
+        // already been spent*: the case the first misses, because by then nothing is running
         // and the sheet is still on screen showing its result.
         guard !isUnsubscribing else { return .alreadyFinished }
         guard unsubscribeActivity?.id != review.id else { return .alreadyFinished }
@@ -1473,8 +1473,9 @@ final class InboxSessionModel {
         return runUnsubscribe { [self] in
             // Asked of the provider rather than taken from the snapshot: the snapshot records
             // which account the mail was *read* for, and the question here is which account the
-            // app is authenticated as *now*. Asked for a handoff as well as for a request —
-            // opening somebody else's unsubscribe page is still acting on the wrong mailbox.
+            // app is authenticated as *now*. Asked for a handoff as well as for a request,
+            // because opening somebody else's unsubscribe page is still acting on the wrong
+            // mailbox.
             guard await provider.currentConnection().account?.emailAddress.address == review.accountAddress else {
                 await finishUnsubscribe(review, refusedBy: .accountChanged)
                 return
@@ -1482,7 +1483,7 @@ final class InboxSessionModel {
 
             // Recorded here rather than when the review opened or when it validated: this is the
             // first line past which something really can leave this Mac. A run refused before it
-            // — a swapped account, a rotated endpoint — left the world alone and stays
+            // (a swapped account, a rotated endpoint) left the world alone and stays
             // re-confirmable.
             performedUnsubscribeIDs.insert(review.id)
 
@@ -1515,7 +1516,7 @@ final class InboxSessionModel {
 
         case .webPage(let url):
             // Handed to the system and nothing more. No page is fetched here, no redirect is
-            // followed, and the session has no transport it could do either with — the browser
+            // followed, and the session has no transport it could do either with: the browser
             // gets the URL and InboxSweep's part is over.
             if let failure = await UnsubscribeHandoff.open(url.url, with: urlOpener) {
                 return .handoffFailed(failure)
@@ -1528,7 +1529,7 @@ final class InboxSessionModel {
                 return .handoffFailed(failure)
             }
             // "Opened", never "sent". InboxSweep holds no permission to send mail and has no
-            // code that could — see ``GmailScope/prohibited``.
+            // code that could; see ``GmailScope/prohibited``.
             return .mailClientOpened(domain: address.domain)
         }
     }
@@ -1595,7 +1596,7 @@ final class InboxSessionModel {
     //
     // The whole of what the app does about rules lives between here and the end of the
     // execution section. Read it in that order: what a rule would be, freezing one, checking a
-    // frozen one, saving it, managing it, and — last, and smallest — running it.
+    // frozen one, saving it, managing it, and (last, and smallest) running it.
 
     /// Whether this account already has a rule for a sender.
     ///
@@ -1632,7 +1633,7 @@ final class InboxSessionModel {
     /// **Opening a review creates nothing.** It reads the window in memory, builds a value, and
     /// returns it: no file is written, no rule exists, and abandoning the sheet costs one
     /// allocation. That is requirement 11 of this interval, and it is true by construction rather
-    /// than by a flag somebody remembered to check — this method has no reference to the store.
+    /// than by a flag somebody remembered to check: this method has no reference to the store.
     ///
     /// Returns `nil` rather than a snapshot for something that could not become a rule:
     ///
@@ -1713,7 +1714,7 @@ final class InboxSessionModel {
     ///
     /// It performs no confirming of its own. What it does is **refuse**: every precondition is
     /// re-checked against the state as it is now, and the frozen rule is saved unchanged or not at
-    /// all. It is never adjusted to fit — a rule quietly retargeted between the screen that
+    /// all. It is never adjusted to fit: a rule quietly retargeted between the screen that
     /// described it and the file that stores it would be an authorization nobody gave.
     @discardableResult
     func createRule(from review: SenderRuleReviewSnapshot) -> Task<Void, Never> {
@@ -1801,7 +1802,7 @@ final class InboxSessionModel {
     ///
     /// At the end of a load, and nowhere else. InboxSweep has no background process, no login
     /// item, and no timer that outlives the app, so the only moments it can see a new message are
-    /// the moments it fetches one — which is when somebody opens it or presses Reload. Every
+    /// the moments it fetches one, which is when somebody opens it or presses Reload. Every
     /// screen that mentions a rule says exactly that, in
     /// ``SenderRule/Action/executionDescription``, because the alternative would be implying a
     /// Gmail filter the app has no permission to create.
@@ -1947,7 +1948,7 @@ final class InboxSessionModel {
     /// Previews what `requests` would reach, without contacting the provider.
     ///
     /// Synchronous and local on purpose. Every message this reads is already in memory, so
-    /// there is no request to make, nothing to await, and no code path from here to Gmail —
+    /// there is no request to make, nothing to await, and no code path from here to Gmail,
     /// which is the property `SafetyBoundaryTests` pins down.
     func cleanupPlan(for requests: [CleanupPlanRequest]) -> CleanupPlan {
         guard case .loaded(let snapshot) = state else {
@@ -2070,8 +2071,8 @@ final class InboxSessionModel {
     ///
     /// The merge itself belongs to ``MailMessageWindow``, which is the one place that decides
     /// what happens to a message seen twice: it keeps the position it was first listed at and
-    /// the content it was last listed with. Routing every page through it — first page, extra
-    /// page, and window restored from disk alike — is what keeps those three from disagreeing.
+    /// the content it was last listed with. Routing every page through it (first page, extra
+    /// page, and window restored from disk alike) is what keeps those three from disagreeing.
     ///
     /// The count is what tells a deep load whether a page was worth anything.
     @discardableResult
@@ -2081,9 +2082,9 @@ final class InboxSessionModel {
         return messages.count - before
     }
 
-    /// Aggregates off the main actor, publishes the result, and — when asked — stores it.
+    /// Aggregates off the main actor, publishes the result, and (when asked) stores it.
     ///
-    /// Aggregation is linear in the loaded window, which stays small enough to be quick — but
+    /// Aggregation is linear in the loaded window, which stays small enough to be quick, but
     /// it grows with every page, so it is kept off the actor that draws the window.
     ///
     /// Proposals are recomputed here, from the *whole* window, every single time. That is what
@@ -2105,8 +2106,8 @@ final class InboxSessionModel {
         archiveCapability = await currentArchiveCapability()
         unsubscribeCapability = await currentUnsubscribeCapability()
 
-        // A cancelled load still publishes what it read — dropping it would throw away pages
-        // the user waited for — but it never claims to still be loading.
+        // A cancelled load still publishes what it read: dropping it would throw away pages
+        // the user waited for, but it never claims to still be loading.
         let stillLoading = isLoadingMore && !Task.isCancelled
 
         state = .loaded(
@@ -2182,7 +2183,7 @@ final class InboxSessionModel {
         loadedPageCount = 0
         restoredFromCacheAt = nil
         // Dropped rather than ended. The offer is durable, so the next published window
-        // re-derives it from the transaction file for whichever account is connected then —
+        // re-derives it from the transaction file for whichever account is connected then,
         // which is both how it survives a reload and how a sign-in as somebody else cannot
         // inherit the previous account's offer. The result banner has no such backing store and
         // simply goes.
@@ -2202,7 +2203,7 @@ final class InboxSessionModel {
 private extension Task where Success == Void, Failure == Never {
     /// A task that has nothing to do, returned when an operation is not applicable.
     ///
-    /// Callers still get something to await, and — unlike routing the no-op through `run` —
+    /// Callers still get something to await, and (unlike routing the no-op through `run`)
     /// requesting an inapplicable operation does not cancel whatever is already running.
     static var alreadyFinished: Task<Void, Never> { Task {} }
 }

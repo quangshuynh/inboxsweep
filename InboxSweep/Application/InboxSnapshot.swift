@@ -30,7 +30,7 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
     /// One proposal per sender, keyed by the same grouping key ``senders`` are identified by.
     ///
     /// Derived data, recomputed from the loaded window every time it changes and never
-    /// persisted — see ``CleanupProposalRules/version``. A dictionary rather than a parallel
+    /// persisted; see ``CleanupProposalRules/version``. A dictionary rather than a parallel
     /// array so re-sorting ``senders`` cannot put a row next to somebody else's proposal.
     let proposals: [SenderSummary.ID: SenderCleanupProposal]
 
@@ -112,7 +112,7 @@ nonisolated struct InboxSnapshot: Equatable, Sendable {
     /// Whether the load succeeded but found nothing.
     var isEmpty: Bool { loadedMessageCount == 0 }
 
-    /// The oldest message date in the window — how far back the app has actually looked.
+    /// The oldest message date in the window: how far back the app has actually looked.
     var oldestLoadedDate: Date? {
         senders.map(\.oldestLoadedReceivedAt).min()
     }

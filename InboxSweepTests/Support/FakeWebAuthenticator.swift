@@ -4,14 +4,14 @@ import Synchronization
 
 /// Stands in for the Google consent window.
 ///
-/// Lets tests decide what comes back from sign-in — a valid code, a mismatched `state`, a
-/// denial, or a cancellation — without any UI appearing.
+/// Lets tests decide what comes back from sign-in: a valid code, a mismatched `state`, a
+/// denial, or a cancellation, without any UI appearing.
 struct FakeWebAuthenticator: WebAuthenticating {
 
     let respond: @Sendable (_ authorizationURL: URL, _ callbackScheme: String) throws -> URL
 
     /// Whether the answer is delivered through the production callback bridge, on a queue that
-    /// is not the main queue — the way `ASWebAuthenticationSession` really answers.
+    /// is not the main queue: the way `ASWebAuthenticationSession` really answers.
     ///
     /// Off by default so most tests stay simple, and turned on by ``offTheMainQueue`` for the
     /// tests that exist to cover the callback's isolation.
@@ -48,7 +48,7 @@ struct FakeWebAuthenticator: WebAuthenticating {
         return copy
     }
 
-    /// Redirects back with an authorization code, echoing the `state` the app sent — which is
+    /// Redirects back with an authorization code, echoing the `state` the app sent, which is
     /// what a well-behaved authorization server does.
     static func granting(code: String = "auth-code") -> FakeWebAuthenticator {
         FakeWebAuthenticator { url, scheme in

@@ -4,7 +4,7 @@ import Foundation
 ///
 /// A view over ``MailMutationTransaction`` rather than a second stored model. Nothing here is
 /// persisted, nothing here is a new fact, and every sentence is derived from counts the
-/// transaction already holds — which is what stops the screen and the file from drifting apart.
+/// transaction already holds, which is what stops the screen and the file from drifting apart.
 ///
 /// ### What it is allowed to say
 ///
@@ -86,15 +86,15 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     ///
     /// ### Why this is derived and not stored
     ///
-    /// A sender-reviewed archive is still an archive of *messages*. The sender was UI context —
-    /// which screen the user was on — and the transaction deliberately has no field for it, in
+    /// A sender-reviewed archive is still an archive of *messages*. The sender was UI context,
+    /// which screen the user was on, and the transaction deliberately has no field for it, in
     /// keeping with a record that names messages and describes none of them. Persisting an address
     /// so a row could read a little better would be putting mailbox content in a second file for a
     /// sentence, which is exactly the trade ``MailMutationTransaction`` refuses.
     ///
     /// So the question is asked of the *cache*, where that metadata already lives, and the answer
     /// is allowed to be no. It is only yes when the window can describe **every** message the
-    /// transaction names and they agree — a partial answer would let the wording generalise from
+    /// transaction names and they agree: a partial answer would let the wording generalise from
     /// the six messages it could see to the fifteen it is counting.
     ///
     /// Partly-undone transactions are excluded for the same reason: their identifier list is
@@ -149,7 +149,7 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     /// " from one sender", when the cache can say that much, and nothing otherwise.
     ///
     /// **"One sender", never the sender's name, and never "the sender".** The count is what was
-    /// archived and the sender is context for it — writing "Archived everything from Example
+    /// archived and the sender is context for it: writing "Archived everything from Example
     /// Sender" would claim an operation this app cannot perform, and naming the address here
     /// would put mail content in a headline for no gain over the message list below it.
     ///
@@ -192,11 +192,11 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
         case .undoSuperseded:
             return "Undo superseded by a later archive"
         case .undoCompleted:
-            return confirmedCount == 1 ? "Undone — put back in your Inbox" : "Undone — all put back in your Inbox"
+            return confirmedCount == 1 ? "Undone, put back in your Inbox" : "Undone, all put back in your Inbox"
         case .undoPartiallyCompleted:
             return isUndoable
-                ? "Partly undone — \(restoredCount) of \(confirmedCount) put back, \(transaction.succeededCount) still archived"
-                : "Partly undone — \(restoredCount) of \(confirmedCount) put back"
+                ? "Partly undone: \(restoredCount) of \(confirmedCount) put back, \(transaction.succeededCount) still archived"
+                : "Partly undone: \(restoredCount) of \(confirmedCount) put back"
         case .restore:
             return nil
         case .nothingChanged:
@@ -233,7 +233,7 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
         case .archive:
             let base = """
                 InboxSweep removed \(confirmedCount == 1 ? "this message" : "these \(confirmedCount) messages") \
-                from your Inbox — one request to Gmail per message, each confirmed separately. \
+                from your Inbox, one request to Gmail per message, each confirmed separately. \
                 Archiving does not delete: they stayed in your Gmail account, in All Mail, and in search.
                 """
             switch status {
@@ -263,7 +263,7 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
         case .restoreToInbox:
             return """
                 InboxSweep put \(confirmedCount == 1 ? "this message" : "these \(confirmedCount) messages") back in \
-                your Inbox — the undo of an earlier archive, sent to Gmail as a real request rather \
+                your Inbox: the undo of an earlier archive, sent to Gmail as a real request rather \
                 than corrected only on this Mac.
                 """
         }
@@ -282,7 +282,7 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
             return """
                 InboxSweep doesn't have the details of \(named == 1 ? "this message" : "these \(named) messages") \
                 any more. It records what it changed, not the mail itself, and the loaded window no \
-                longer covers them — reloading a wider window may bring them back.
+                longer covers them: reloading a wider window may bring them back.
                 """
         }
         return """

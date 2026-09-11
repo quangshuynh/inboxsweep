@@ -13,7 +13,7 @@ import Foundation
 /// the rule's ``SenderRule/senderKey``. That is it. There is no domain match, no display-name
 /// match, no subject keyword, no Levenshtein distance, no "senders like this one", and no
 /// category. `news@example.com` and `news@mail.example.com` are different senders, and so are
-/// `news@example.com` and `News@Example.com.evil.example` — the first pair because the addresses
+/// `news@example.com` and `News@Example.com.evil.example`: the first pair because the addresses
 /// differ, the second because equality is not prefix matching.
 ///
 /// The unknown-sender bucket is refused outright. ``EmailAddress/unknownGroupingKey`` is the one

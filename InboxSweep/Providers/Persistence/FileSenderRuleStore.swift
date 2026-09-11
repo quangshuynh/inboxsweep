@@ -23,7 +23,7 @@ import Foundation
 ///
 /// That is unavoidable rather than incidental: a rule's whole job is to recognise a sender, and
 /// there is no way to recognise one without holding something that identifies them. A digest was
-/// considered and rejected — it would be matchable but not *displayable*, and a rules screen that
+/// considered and rejected: it would be matchable but not *displayable*, and a rules screen that
 /// could not tell you which sender a rule was about would be a list of authorizations nobody
 /// could audit, which is worse for the user than the file being readable by their own account.
 ///
@@ -266,7 +266,7 @@ nonisolated enum SenderRuleDTO {
     /// - an **unrecognised action** is a rule from a later build, and running it as the one action
     ///   this build happens to have would be performing a verb the user authorized something else
     ///   for;
-    /// - an empty sender, or the unknown-sender bucket, is not an identity — it is "anything whose
+    /// - an empty sender, or the unknown-sender bucket, is not an identity: it is "anything whose
     ///   header did not parse", which is precisely the fuzzy match this feature refuses;
     /// - an absurdly long address is not an address.
     static func rule(from entry: Entry, accountAddress: String) -> SenderRule? {

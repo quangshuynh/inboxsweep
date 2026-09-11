@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// The confirmation, progress, and result for archiving a set of messages — and the undo.
+/// The confirmation, progress, and result for archiving a set of messages, and the undo.
 ///
 /// One sheet for all four states rather than an alert plus a banner, for a reason that is about
 /// safety rather than tidiness: the sheet is modal, so the user cannot be editing a selection
 /// while a confirmation about it is on screen, the button that starts the mutation cannot be
-/// pressed twice, and the result — including the offer to undo — appears in the same place the
+/// pressed twice, and the result (including the offer to undo) appears in the same place the
 /// user was already looking. Nothing here can be reached by a proposal, a plan, or a dry run:
 /// the only way in is a user ticking messages and pressing **Archive**.
 ///
@@ -13,7 +13,7 @@ import SwiftUI
 ///
 /// Every message named on this screen comes from ``ArchiveSelectionSnapshot``, which was copied
 /// out of the window when the user asked to review the set and does not change afterwards. If
-/// the mailbox moves underneath — a page lands, a reload finishes — this list keeps describing
+/// the mailbox moves underneath (a page lands, a reload finishes) this list keeps describing
 /// what the user is deciding about, and the session refuses the operation rather than executing
 /// a different set. **The list on screen is the list that gets archived, or nothing does.**
 ///
@@ -56,7 +56,7 @@ struct ArchiveSelectionSheet: View {
     /// The activity, but only when it is about *this* confirmation.
     ///
     /// Matched on the operation identifier the frozen snapshot carries, so a result left over
-    /// from another set — or from the undo of an earlier one — cannot be read as the outcome of
+    /// from another set (or from the undo of an earlier one) cannot be read as the outcome of
     /// this confirmation.
     private var activity: MessageMutationActivity? {
         guard let activity = session.mutationActivity else { return nil }
@@ -140,12 +140,12 @@ struct ArchiveSelectionSheet: View {
         guard let activity else {
             return count == 1
                 ? """
-                    Archiving removes the message from your Inbox. It does not delete it — the \
+                    Archiving removes the message from your Inbox. It does not delete it: the \
                     message stays in your Gmail account and remains searchable and in All Mail.
                     """
                 : """
                     These \(count) messages will be removed from your Inbox. They will not be \
-                    deleted — they stay in your Gmail account and remain searchable and in All Mail.
+                    deleted: they stay in your Gmail account and remain searchable and in All Mail.
                     """
         }
         switch activity.phase {
@@ -190,7 +190,7 @@ struct ArchiveSelectionSheet: View {
 
     /// Said before the list, and only when the user put a protected message in the set by hand.
     ///
-    /// No convenience action can produce this state — proposal-driven preselection never picks a
+    /// No convenience action can produce this state: proposal-driven preselection never picks a
     /// protected message. So if this is on screen, somebody ticked it deliberately, and the
     /// warning's job is to make sure they meant to rather than to argue them out of it. It is
     /// their mail.
@@ -203,7 +203,7 @@ struct ArchiveSelectionSheet: View {
                         .font(.callout.weight(.medium))
                     Text("""
                         They're starred, marked important, or look like part of a conversation. \
-                        InboxSweep never picks these for you — you selected them, and it will \
+                        InboxSweep never picks these for you: you selected them, and it will \
                         archive them if you confirm. They are not deleted, and undo puts them back.
                         """)
                         .font(.callout)
@@ -302,12 +302,12 @@ struct ArchiveSelectionSheet: View {
         }
     }
 
-    /// The app's own wording for why a row did not change — never Gmail's response body.
+    /// The app's own wording for why a row did not change, never Gmail's response body.
     private func outcomeNote(for messageID: MailMessageID) -> String? {
         switch result(for: messageID)?.outcome {
         case .failed(let error): error.errorDescription
         case .notAttempted(let error):
-            error == .cancelled ? "Not sent — you stopped it" : "Not sent"
+            error == .cancelled ? "Not sent, you stopped it" : "Not sent"
         case .confirmed, .none: nil
         }
     }
@@ -336,7 +336,7 @@ struct ArchiveSelectionSheet: View {
                 // after it have not been sent and will not be.
                 Text("""
                     Messages are sent to Gmail one at a time. Stopping now leaves everything \
-                    already confirmed archived and sends nothing further — the request in flight \
+                    already confirmed archived and sends nothing further: the request in flight \
                     can't be recalled.
                     """)
                     .font(.callout)
@@ -352,7 +352,7 @@ struct ArchiveSelectionSheet: View {
                 if let localRecordWarning {
                     // The distinction worth drawing carefully: Gmail did change the mailbox, and
                     // this Mac could not write that down. Reporting it as a failure would tell
-                    // the user the opposite of what happened to their mail — and here it also
+                    // the user the opposite of what happened to their mail, and here it also
                     // means the undo will not be there after a relaunch, which is said out loud.
                     Label {
                         Text("""
@@ -376,7 +376,7 @@ struct ArchiveSelectionSheet: View {
                     Text("""
                         Undo puts \(undoDescription) straight back in your Inbox. It's a real \
                         change in Gmail, not just here, and it stays available until you archive \
-                        something else — including after you quit and reopen InboxSweep.
+                        something else, including after you quit and reopen InboxSweep.
                         """)
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -419,10 +419,10 @@ struct ArchiveSelectionSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             point("tray.and.arrow.down", count == 1
                 ? "Removes this one message from your Inbox."
-                : "Removes these \(count) messages from your Inbox — no others.")
+                : "Removes these \(count) messages from your Inbox, and no others.")
             point("checkmark.shield", "Does not delete them. They stay in your mailbox, in All Mail, and in search.")
             point("envelope", "Does not mark them read, star them, or change any other label.")
-            point("bubble.left.and.bubble.right", "Affects these messages only — not the rest of their conversations, and nothing else from this sender.")
+            point("bubble.left.and.bubble.right", "Affects these messages only, not the rest of their conversations, and nothing else from this sender.")
             point("calendar.badge.clock", ArchiveSelectionSnapshot.senderScopeNote)
             point("list.number", "Sent to Gmail one message at a time, so each one gets its own answer.")
             point("arrow.uturn.backward", "Can be undone afterwards, including after you quit and reopen InboxSweep.")

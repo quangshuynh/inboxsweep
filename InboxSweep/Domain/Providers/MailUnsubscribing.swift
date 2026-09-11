@@ -23,7 +23,7 @@ import Foundation
 ///
 /// ### The surface
 ///
-/// - one message's metadata per call — there is no sender form, no list form, and no
+/// - one message's metadata per call: there is no sender form, no list form, and no
 ///   "everything matching" form;
 /// - one mechanism: the RFC 8058 one-click `POST`, and only when the metadata declared it.
 ///   There is no method here for opening a page, composing mail, scraping a site, submitting a
@@ -34,14 +34,14 @@ nonisolated protocol MailUnsubscribing: Sendable {
     /// Whether this provider can perform a standards-based one-click unsubscribe at all.
     ///
     /// Asked before the action is offered. Note what it is *not*: a permission check. One-click
-    /// unsubscribe needs no Gmail scope, because it does not touch Gmail — so there is no
+    /// unsubscribe needs no Gmail scope, because it does not touch Gmail, so there is no
     /// `requiresAdditionalPermission` case here and no consent screen to send anybody to.
     func unsubscribeCapability() async -> UnsubscribeCapability
 
     /// Sends exactly the request RFC 8058 defines, to exactly the URL in the request, once.
     ///
     /// Returns only once the endpoint has answered or the attempt has failed. Implementations
-    /// must not report acceptance from a request they have merely sent — and must not report
+    /// must not report acceptance from a request they have merely sent, and must not report
     /// *completion* from acceptance either, which is a distinction ``UnsubscribeOutcome`` makes
     /// and this method's callers keep.
     func submitOneClickUnsubscribe(
@@ -52,7 +52,7 @@ nonisolated protocol MailUnsubscribing: Sendable {
 /// Whether one-click unsubscribe can be performed, and if not, why not.
 nonisolated enum UnsubscribeCapability: Equatable, Sendable {
 
-    /// This provider has no unsubscribe boundary — the synthetic mailbox, unless a debug build
+    /// This provider has no unsubscribe boundary: the synthetic mailbox, unless a debug build
     /// was asked for one.
     ///
     /// Detection is unaffected: reading a sender's metadata needs no capability, happens
@@ -68,7 +68,7 @@ nonisolated enum UnsubscribeCapability: Equatable, Sendable {
 
 /// One one-click unsubscribe, as the boundary receives it.
 ///
-/// Carries the account it was reviewed under — not because the request is authorized by it, but
+/// Carries the account it was reviewed under, not because the request is authorized by it, but
 /// because it must not be *sent* if the account has changed since the review. Carries an
 /// operation identifier for the same reason an archive does: one confirmation is one request,
 /// and a repeated submission of the same identifier must not become a second one.
@@ -101,7 +101,7 @@ nonisolated struct OneClickUnsubscribeRequest: Hashable, Sendable {
 /// change what happens next.
 nonisolated struct OneClickUnsubscribeReceipt: Hashable, Sendable {
 
-    /// The host the answer came from — the final one, if redirects were followed.
+    /// The host the answer came from: the final one, if redirects were followed.
     let host: String
 
     /// The HTTP status the endpoint returned.
@@ -122,7 +122,7 @@ nonisolated struct OneClickUnsubscribeReceipt: Hashable, Sendable {
 /// The body of an RFC 8058 one-click request, written out rather than built.
 ///
 /// Literal for the same reason ``GmailMutationRequest/InboxLabelChange`` is. RFC 8058 specifies
-/// the payload exactly — `List-Unsubscribe=One-Click`, form-encoded — and a payload assembled
+/// the payload exactly (`List-Unsubscribe=One-Click`, form-encoded) and a payload assembled
 /// from parameters would be one refactor away from carrying an address, a message identifier,
 /// or anything else in the app's memory to a third party. As a constant, "InboxSweep sends
 /// eight-and-twenty bytes that say nothing about this mailbox" is readable here and assertable

@@ -5,16 +5,16 @@ import Foundation
 ///
 /// This is a **separate boundary from ``MailMessageFetching`` on purpose.** Reading and writing
 /// are not two flavours of the same capability, and folding an archive method into the fetching
-/// protocol would have made every reader a writer — including the synthetic mailbox and every
+/// protocol would have made every reader a writer, including the synthetic mailbox and every
 /// future provider. Keeping them apart means a provider that cannot write says so by not
 /// vending one of these at all, and the session that holds no archiver has no code path to a
 /// mutation rather than a disabled button.
 ///
 /// The surface is as small as archive-and-undo can be made:
 ///
-/// - one message per call, named by its provider identifier — there is no batch form, no
+/// - one message per call, named by its provider identifier: there is no batch form, no
 ///   sender form, and no "everything matching" form;
-/// - inbox membership only — there is no parameter for which label to add or remove, so this
+/// - inbox membership only: there is no parameter for which label to add or remove, so this
 ///   cannot express "move to Trash", "mark read", or "apply my own label";
 /// - nothing about trashing, deleting, sending, or settings, in any shape.
 ///
@@ -31,8 +31,8 @@ nonisolated protocol MailMessageArchiving: Sendable {
     /// Asks the user for the archive permission and reports what they granted.
     ///
     /// Interactive: this presents the provider's own consent screen. It must leave the existing
-    /// authorization intact when the user declines, and must refuse — without disturbing the
-    /// current session — if the account that comes back is not the one already connected.
+    /// authorization intact when the user declines, and must refuse, without disturbing the
+    /// current session, if the account that comes back is not the one already connected.
     func authorizeArchiving() async throws -> MailMutationCapability
 
     /// Takes exactly one message out of the inbox, leaving it in the mailbox.
@@ -41,7 +41,7 @@ nonisolated protocol MailMessageArchiving: Sendable {
     /// success from a request they have merely sent.
     func archive(_ request: MailArchiveRequest) async throws -> MailArchiveReceipt
 
-    /// Puts exactly one message back into the inbox — the undo of ``archive(_:)``.
+    /// Puts exactly one message back into the inbox: the undo of ``archive(_:)``.
     ///
     /// A real request to the provider, not a local correction: an undo that only changed this
     /// Mac's idea of the mailbox would leave the user's mail archived while the app claimed
@@ -148,7 +148,7 @@ nonisolated struct MailArchiveReceipt: Hashable, Sendable {
 /// Whether archiving is available, and if not, why not.
 nonisolated enum MailMutationCapability: Equatable, Sendable {
 
-    /// This provider cannot change a mailbox at all — the synthetic mailbox, for one.
+    /// This provider cannot change a mailbox at all: the synthetic mailbox, for one.
     ///
     /// Not a permission problem and not fixable by re-authorizing, so the UI offers nothing
     /// rather than offering a reconnect that would change nothing.
@@ -157,7 +157,7 @@ nonisolated enum MailMutationCapability: Equatable, Sendable {
     /// The authorization in hand covers archiving.
     case granted
 
-    /// The provider could archive, but the grant in hand does not cover it — including when
+    /// The provider could archive, but the grant in hand does not cover it, including when
     /// there is no grant at all. Asking the user for the extra permission is the way forward.
     case requiresAdditionalPermission
 

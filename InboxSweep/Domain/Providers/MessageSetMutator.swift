@@ -7,7 +7,7 @@ import Foundation
 ///
 /// ``MailMessageArchiving`` is unchanged by this interval: still four methods, still one message
 /// per call, still inbox membership only. A set archive is *this type* calling that boundary
-/// once per message. Nothing new is remotely reachable, because there is nothing new to reach —
+/// once per message. Nothing new is remotely reachable, because there is nothing new to reach:
 /// every request a set produces is the same `MailArchiveRequest` a single archive produces, and
 /// the provider cannot tell the two apart.
 ///
@@ -22,7 +22,7 @@ import Foundation
 /// deciding question:
 ///
 /// - `batchModify` returns `204 No Content`. It reports no per-message result and does not echo
-///   the messages back, so there would be nothing to reconcile local state *against* — the app
+///   the messages back, so there would be nothing to reconcile local state *against*: the app
 ///   would be reduced to assuming the change it asked for is the change that happened, which is
 ///   precisely the assumption every other write in this app refuses to make.
 /// - A partial failure inside a batch is not expressible in its reply. "Eight of your twelve
@@ -31,7 +31,7 @@ import Foundation
 ///   request naming one. A bug in set construction costs one wrong message here, not all of
 ///   them.
 ///
-/// So each message is its own `messages.modify` — the exact call archiving has used since it
+/// So each message is its own `messages.modify`: the exact call archiving has used since it
 /// existed, already proven, already idempotent, already echoing the message back.
 ///
 /// ### Strictly one request at a time
@@ -55,7 +55,7 @@ nonisolated struct MessageSetMutator: Sendable {
     /// the messages that really were changed in order to report the ones that were not.
     ///
     /// - Parameter onMessageCompleted: Called after each message is resolved, with how many of
-    ///   the selection have been resolved so far. Progress only — it cannot influence the run.
+    ///   the selection have been resolved so far. Progress only: it cannot influence the run.
     func perform(
         _ operation: MailMutationOperation,
         _ selection: MailArchiveSelection,
@@ -75,7 +75,7 @@ nonisolated struct MessageSetMutator: Sendable {
 
             // Checked before the request rather than after it. Once a request is with the
             // provider it may already have been applied, so cancellation can only honestly
-            // promise "no *further* messages will be changed" — which is what this is.
+            // promise "no *further* messages will be changed", which is what this is.
             if Task.isCancelled {
                 abandonedBecause = .cancelled
                 results.append(MailMessageMutationResult(messageID: messageID, outcome: .notAttempted(.cancelled)))
@@ -85,7 +85,7 @@ nonisolated struct MessageSetMutator: Sendable {
             let outcome = await apply(operation, selection.request(for: messageID))
             results.append(MailMessageMutationResult(messageID: messageID, outcome: outcome))
 
-            // A failure about the *session* — a withdrawn grant, a swapped account — is not a
+            // A failure about the *session* (a withdrawn grant, a swapped account) is not a
             // fact about this message, and the next eleven requests would fail identically.
             // Sending them anyway would be eleven pointless writes against somebody's quota.
             if let error = outcome.error, error.endsTheRun {

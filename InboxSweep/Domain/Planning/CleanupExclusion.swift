@@ -3,7 +3,7 @@ import Foundation
 /// Why a loaded message would not be touched by a planned action.
 ///
 /// Every retained message has exactly one of these, so a preview's retained count is never a
-/// residual — it is the sum of stated reasons. "43 would be archived, 7 retained" invites the
+/// residual: it is the sum of stated reasons. "43 would be archived, 7 retained" invites the
 /// question "which seven?", and this is the answer.
 nonisolated enum CleanupExclusionReason: Hashable, Sendable {
 

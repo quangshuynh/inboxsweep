@@ -48,7 +48,7 @@ nonisolated struct CredentialStoreProbe: Equatable, Sendable {
         case .unavailable(let status):
             "\(keychain.displayName): unavailable (\(status))"
         case .failed(let step, let reason):
-            "\(keychain.displayName): failed at \(step.rawValue) — \(reason)"
+            "\(keychain.displayName): failed at \(step.rawValue), \(reason)"
         }
     }
 }
@@ -58,7 +58,7 @@ nonisolated struct CredentialStoreProbe: Equatable, Sendable {
 /// It exists because that question could previously only be answered by reasoning about
 /// entitlements. A build signed one way uses the data protection keychain and a build signed
 /// another way falls back to the login keychain, the two are indistinguishable from the
-/// outside, and the fallback is deliberately silent — so "which one did it use?" needs
+/// outside, and the fallback is deliberately silent, so "which one did it use?" needs
 /// measuring rather than deducing.
 ///
 /// Nothing here reads, prints, or returns a credential. ``probe(_:)`` writes a synthetic marker
@@ -73,8 +73,8 @@ nonisolated enum CredentialStoreDiagnostics {
 
     /// Round-trips a synthetic credential through `keychain` and reports exactly what happened.
     ///
-    /// The store under test is the production ``KeychainCredentialStore`` — the same type, the
-    /// same `SecItem*` calls, the same encoding — pinned to one keychain so a skip becomes a
+    /// The store under test is the production ``KeychainCredentialStore`` (the same type, the
+    /// same `SecItem*` calls, the same encoding) pinned to one keychain so a skip becomes a
     /// reported `.unavailable` instead of a silent hop to the next one.
     static func probe(_ keychain: KeychainCredentialStore.Keychain) -> CredentialStoreProbe {
         // Per-probe account key: two probes, or a probe and the wreckage of a crashed one,

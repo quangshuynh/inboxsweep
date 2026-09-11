@@ -3,7 +3,7 @@ import Foundation
 /// What a planned action would do to one specific loaded message.
 ///
 /// The counts on a ``CleanupPlanEntry`` answer "how many?". This answers "which ones, and why?",
-/// which is the question a user actually has to be able to check before trusting a suggestion —
+/// which is the question a user actually has to be able to check before trusting a suggestion.
 /// "43 would be archived" is not something anyone can verify, and "these 43, and these 7 were
 /// held back because they are starred" is.
 ///
@@ -57,7 +57,7 @@ nonisolated enum MessagePlanMembership: Hashable, Sendable {
 ///
 /// Carries the message plus the two verdicts about it: whether it is protected on its own
 /// merits, and what a *selected* plan would do with it. The second is optional because the
-/// review is worth reading with no plan chosen at all — "which messages are these?" is a
+/// review is worth reading with no plan chosen at all, "which messages are these?" is a
 /// reasonable question that has nothing to do with cleanup.
 ///
 /// Still metadata only. ``MailMessage`` has nowhere to put a body, so a review screen cannot
@@ -133,7 +133,7 @@ nonisolated enum MessageReviewSortOrder: String, CaseIterable, Hashable, Sendabl
     /// Sorts `messages` into this order.
     ///
     /// Every comparison ends in the message identifier, so the order is total and a list never
-    /// reshuffles between two identical loads — the same property the sender list has.
+    /// reshuffles between two identical loads: the same property the sender list has.
     func sort(_ messages: [ReviewedMessage]) -> [ReviewedMessage] {
         messages.sorted { lhs, rhs in
             switch self {

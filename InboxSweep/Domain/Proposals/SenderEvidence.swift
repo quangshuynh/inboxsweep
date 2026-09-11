@@ -3,7 +3,7 @@ import Foundation
 /// Everything the proposal engine is allowed to reason from about one sender.
 ///
 /// A deliberate narrowing. The engine never sees a ``MailMessage``; it sees this, which is
-/// built once from the loaded window and contains only facts the mailbox already stated —
+/// built once from the loaded window and contains only facts the mailbox already stated,
 /// counts, dates, labels Gmail applied, headers that were present, and whether certain words
 /// appeared in subject lines. Keeping the input in one named type is what makes the rules
 /// reviewable: everything a proposal can possibly be based on is listed below.

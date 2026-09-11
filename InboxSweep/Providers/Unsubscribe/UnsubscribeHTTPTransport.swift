@@ -3,9 +3,9 @@ import Foundation
 /// The network seam for unsubscribe requests, and only for those.
 ///
 /// A second transport rather than the Gmail one with different headers. The two carry
-/// completely different things to completely different places — one carries a Google access
+/// completely different things to completely different places, one carries a Google access
 /// token to `gmail.googleapis.com`, the other carries a fixed twenty-six-byte form body to a
-/// host named in a stranger's mail header — and sharing an object between them would be the one
+/// host named in a stranger's mail header, and sharing an object between them would be the one
 /// place those could be confused.
 ///
 /// Its session is configured for exactly that job:
@@ -19,7 +19,7 @@ import Foundation
 /// - **Redirects refused at the delegate.** `URLSession` would otherwise follow up to twenty of
 ///   them, across schemes, turning the `POST` into a `GET` on the way, entirely invisibly.
 ///   Returning `nil` from the redirect delegate hands the 3xx response back to the caller
-///   instead, so ``UnsubscribeRedirectPolicy`` decides — in code a test can drive.
+///   instead, so ``UnsubscribeRedirectPolicy`` decides, in code a test can drive.
 nonisolated final class UnsubscribeHTTPTransport: NSObject, HTTPTransport, @unchecked Sendable {
 
     private let session: URLSession

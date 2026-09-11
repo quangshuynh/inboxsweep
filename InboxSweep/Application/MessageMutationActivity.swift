@@ -9,13 +9,13 @@ import Foundation
 /// ### Why the result is a receipt and not a Boolean
 ///
 /// A set of twelve does not succeed or fail. Eight can be archived and four refused, and that is
-/// eight real changes to somebody's mailbox — so the finished phase carries the whole
+/// eight real changes to somebody's mailbox, so the finished phase carries the whole
 /// ``MailArchiveSetReceipt`` and the screen reads per-message outcomes out of it. Collapsing it
 /// to "failed" because four messages did not go through would tell the user the opposite of what
 /// happened to the other eight.
 ///
 /// It carries message *identifiers* and no mail. The confirmation list comes from the frozen
-/// ``ArchiveSelectionSnapshot``, which already holds the subjects and dates — so this type never
+/// ``ArchiveSelectionSnapshot``, which already holds the subjects and dates, so this type never
 /// becomes a second, quietly diverging copy of the mailbox.
 nonisolated struct MessageMutationActivity: Equatable, Sendable, Identifiable {
 
@@ -62,7 +62,7 @@ nonisolated struct MessageMutationActivity: Equatable, Sendable, Identifiable {
         /// The requests are going out one at a time. Nothing is claimed about the mailbox yet.
         case running
 
-        /// Every message has an answer — which is not the same as every message having changed.
+        /// Every message has an answer, which is not the same as every message having changed.
         ///
         /// `localRecordWarning` is non-`nil` in the one awkward case worth naming: the mailbox
         /// really did change, and this Mac could not write that down. Reporting that as a
@@ -101,7 +101,7 @@ nonisolated struct MessageMutationActivity: Equatable, Sendable, Identifiable {
     /// The single error to lead with, when there is one.
     ///
     /// `nil` as soon as anything was confirmed. A run that changed the mailbox does not have
-    /// "an error" — it has a list of outcomes, and naming one of them as *the* error would hide
+    /// "an error": it has a list of outcomes, and naming one of them as *the* error would hide
     /// the rest.
     var error: MailMutationError? {
         switch phase {
@@ -133,14 +133,14 @@ nonisolated struct MessageMutationActivity: Equatable, Sendable, Identifiable {
 
     var failedCount: Int { receipt?.failedCount ?? 0 }
 
-    /// The messages that were never asked about — because the run was cancelled, or because a
+    /// The messages that were never asked about, because the run was cancelled, or because a
     /// session-wide failure made every remaining request pointless.
     var notAttemptedCount: Int { receipt?.notAttemptedCount ?? 0 }
 
     /// The messages that can sensibly be offered again, with why they failed.
     ///
     /// Retryable failures and messages that were never attempted. A message refused for a
-    /// reason repeating cannot fix — the account changed, Gmail no longer has it — is not in
+    /// reason repeating cannot fix (the account changed, Gmail no longer has it) is not in
     /// here, because offering a retry that is certain to fail again is not a recovery.
     var retryableMessageIDs: [MailMessageID] {
         guard let receipt else { return [] }
@@ -179,7 +179,7 @@ nonisolated struct MessageMutationActivity: Equatable, Sendable, Identifiable {
             return "\(operation.inProgressVerbPhrase) one message. Waiting for Gmail to confirm…"
         }
         return """
-            \(operation.inProgressVerbPhrase) \(selectedCount) messages, one at a time — \
+            \(operation.inProgressVerbPhrase) \(selectedCount) messages, one at a time, \
             \(completedCount) of \(selectedCount) done. InboxSweep waits for Gmail to confirm each one.
             """
     }
@@ -201,10 +201,10 @@ nonisolated struct MessageMutationActivity: Equatable, Sendable, Identifiable {
             if receipt.isPartialSuccess {
                 return """
                     \(receipt.confirmedCount) of \(selectedCount) were archived and have left your Inbox. \
-                    \(unchangedPhrase(receipt)) — those are still in your Inbox, exactly as they were.
+                    \(unchangedPhrase(receipt)): those are still in your Inbox, exactly as they were.
                     """
             }
-            return "Nothing was archived. \(unchangedPhrase(receipt)) — your Inbox is unchanged."
+            return "Nothing was archived. \(unchangedPhrase(receipt)), and your Inbox is unchanged."
 
         case .restoreToInbox:
             if receipt.isCompleteSuccess {
@@ -215,10 +215,10 @@ nonisolated struct MessageMutationActivity: Equatable, Sendable, Identifiable {
             if receipt.isPartialSuccess {
                 return """
                     \(receipt.confirmedCount) of \(selectedCount) are back in your Inbox. \
-                    \(unchangedPhrase(receipt)) — those are still archived.
+                    \(unchangedPhrase(receipt)): those are still archived.
                     """
             }
-            return "Nothing was put back. \(unchangedPhrase(receipt)) — those messages are still archived."
+            return "Nothing was put back. \(unchangedPhrase(receipt)), and those messages are still archived."
         }
     }
 

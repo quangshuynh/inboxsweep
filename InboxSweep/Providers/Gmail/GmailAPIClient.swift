@@ -66,9 +66,9 @@ nonisolated struct GmailAPIClient: Sendable {
     /// Decoding the response is not ceremony: it is how the caller learns what the mailbox
     /// actually says now, rather than assuming the change landed the way it was asked for.
     ///
-    /// Retrying a `POST` is safe here specifically because `messages.modify` is idempotent —
-    /// removing a label the message no longer carries is a no-op that returns the same message
-    /// — so a retried throttle or 5xx cannot apply the change twice.
+    /// Retrying a `POST` is safe here specifically because `messages.modify` is idempotent:
+    /// removing a label the message no longer carries is a no-op that returns the same
+    /// message, so a retried throttle or 5xx cannot apply the change twice.
     func modify(_ request: GmailMutationRequest) async throws -> GmailDTO.Message {
         let response = try await send(request)
         do {

@@ -12,14 +12,14 @@ import Foundation
 ///    ends in *Keep*; an uncorroborated one ends in *Review*. Neither can be overridden by any
 ///    amount of bulk-mail evidence, because bulk-mail evidence is not evidence that the mail
 ///    is unwanted. The single exception is a protected sender who is also unmistakably bulk
-///    mail, which becomes *Review* rather than *Keep* — see
+///    mail, which becomes *Review* rather than *Keep*; see
 ///    ``CleanupProposalRules/signalsForProtectedReview``.
 ///
 /// 2. **Bulk-mail signals are counted.** Eight independent observations, listed in
 ///    ``bulkSignals(for:rules:)``. Each is a fact the mailbox stated; none is a conclusion.
 ///
 /// 3. **A pattern is matched, or not.** Newsletter, promotional clutter, and recurring
-///    notification each require *three* specific signals to agree — never one. A sender that
+///    notification each require *three* specific signals to agree, never one. A sender that
 ///    matches no pattern but trips ``CleanupProposalRules/signalsForCleanupCandidate`` signals
 ///    becomes the deliberately vague *possible cleanup candidate*.
 ///
@@ -132,7 +132,7 @@ nonisolated enum CleanupProposalEngine {
         }
 
         // Both of the following are *absences*, and an absence observed over two or three
-        // messages is not an observation — every sender who has written to you once has no
+        // messages is not an observation: every sender who has written to you once has no
         // starred mail and nothing that looks like a reply. Below the same floor that gates a
         // cleanup proposal, neither counts.
         if count >= rules.minimumMessagesForCleanupProposal {
@@ -218,7 +218,7 @@ nonisolated enum CleanupProposalEngine {
         rules: CleanupProposalRules
     ) -> ProposalStrength {
         // "Keep" backed by a corroborated protection signal is a confident answer, even when
-        // there is no bulk-mail evidence at all — arguably the most confident one the app has.
+        // there is no bulk-mail evidence at all: arguably the most confident one the app has.
         if kind == .keep, protection.isProtected { return .strong }
 
         if signalCount >= rules.strongStrengthSignalCount { return .strong }
@@ -275,7 +275,7 @@ nonisolated enum CleanupProposalEngine {
             reasons.append(
                 ProposalReason(
                     .insufficientEvidence,
-                    "Only \(ProposalPhrasing.loadedMessages(summary.messageCount)) from this sender — too few to suggest anything about the rest."
+                    "Only \(ProposalPhrasing.loadedMessages(summary.messageCount)) from this sender, too few to suggest anything about the rest."
                 )
             )
         }
@@ -301,7 +301,7 @@ nonisolated enum CleanupProposalEngine {
 
         switch signal {
         case .highVolume:
-            // Named as promotional only when Gmail already said so — the app is reporting
+            // Named as promotional only when Gmail already said so: the app is reporting
             // Gmail's classification, not adding one.
             let noun = summary.categoryLabels.contains(.categoryPromotions) ? "promotional messages" : "messages"
             return ProposalReason(

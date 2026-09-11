@@ -5,19 +5,19 @@ as a list** from your Inbox, and putting them back.
 
 Everything else in the app still reads, reasons, and describes. The cleanup proposals and the
 dry-run planner remain advisory and have no execution path. They can lead you to the screen where
-you select messages, and they can *fill in* a selection for you to check — and they stop there.
+you select messages, and they can *fill in* a selection for you to check, and they stop there.
 Nothing in InboxSweep carries out a recommendation.
 
 That includes the sender-level convenience added in Interval 9. **Review messages to archive…**
 opens a review with boxes already ticked. It is not an archive of a sender, and there is no
-whole-sender operation behind it — see [Sender-level review](#sender-level-review).
+whole-sender operation behind it; see [Sender-level review](#sender-level-review).
 
 ---
 
 ## What archiving does
 
 In Gmail, a message is in your Inbox exactly when it carries the `INBOX` label. So archiving a
-message *is* removing that label, and that is the whole of what InboxSweep does — once per
+message *is* removing that label, and that is the whole of what InboxSweep does: once per
 message, however many you selected:
 
 ```
@@ -33,7 +33,7 @@ POST https://gmail.googleapis.com/gmail/v1/users/me/messages/{id}/modify
 ```
 
 Those two requests are the **complete** set of mutating requests the app can construct. The
-body is not a parameter — `GmailMutationRequest.InboxLabelChange` holds two literal constants —
+body is not a parameter: `GmailMutationRequest.InboxLabelChange` holds two literal constants,
 so "add or remove `INBOX` on one named message" is the app's entire mutation vocabulary rather
 than a convention someone has to maintain.
 
@@ -49,7 +49,7 @@ than a convention someone has to maintain.
 Gmail also offers `users.threads.modify`, which archives every message in a conversation.
 InboxSweep does not use it. You picked specific messages in the review list; archiving the others
 in their threads would be doing more than you asked. A conversation whose other messages are
-still in your Inbox therefore stays in your Inbox — which is Gmail's own behaviour for archiving
+still in your Inbox therefore stays in your Inbox, which is Gmail's own behaviour for archiving
 a single message, and is what the confirmation says.
 
 ### One request per message, and not `batchModify`
@@ -59,7 +59,7 @@ thousand messages in a single request. **InboxSweep does not use it**, and perfo
 the deciding question:
 
 - `batchModify` answers `204 No Content`. It reports no per-message result and does not echo the
-  messages back, so there would be nothing to reconcile local state *against* — the app would be
+  messages back, so there would be nothing to reconcile local state *against*: the app would be
   reduced to assuming the change it asked for is the change that happened, which is the
   assumption every other write in this app refuses to make.
 - A partial failure inside a batch is not expressible in its reply. "Eight of your twelve were
@@ -67,7 +67,7 @@ the deciding question:
 - One request naming a thousand identifiers is a larger blast radius per mistake than one request
   naming one.
 
-So a set of twelve is twelve `messages.modify` calls — the exact call archiving has always used —
+So a set of twelve is twelve `messages.modify` calls: the exact call archiving has always used,
 sent **strictly one at a time**, never in parallel. Sequential costs latency on large sets and
 buys two things worth more: honest cancellation, and a bounded footprint on your Gmail quota.
 `SafetyBoundaryTests` asserts two requests are never in flight at once.
@@ -90,7 +90,7 @@ terms. `gmail.modify` would also permit trashing a message, marking mail read, a
 arbitrary labels, and reading message bodies. **Google publishes no narrower permission that can
 archive.** `gmail.labels` governs creating and deleting label *definitions*, not applying them
 to a message; `gmail.insert` and `gmail.compose` are about putting mail into a mailbox. The
-alternative to `gmail.modify` is not a smaller scope — it is not having an archive feature.
+alternative to `gmail.modify` is not a smaller scope: it is not having an archive feature.
 
 Since the permission cannot be narrowed, the limit lives in the code instead:
 
@@ -123,7 +123,7 @@ credential:
 - pressing it starts a re-authorization, and nothing else;
 - declining leaves the read-only grant exactly as it was, with a notice saying why the button
   stays unavailable;
-- granting it persists the widened scope through the existing Keychain credential store —
+- granting it persists the widened scope through the existing Keychain credential store,
   including in the usual case where Google issues no new refresh token, where the working
   refresh token is kept and only the scope record is updated.
 
@@ -137,12 +137,12 @@ again, as before.
 
 ## Selecting the messages
 
-Archiving starts from individual messages in the sender message review — the screen that already
+Archiving starts from individual messages in the sender message review: the screen that already
 exists for looking at them one by one. No proposal, sender row, dry-run plan, or saved plan can
 open a confirmation; only ticking rows and pressing **Archive…** does.
 
 The selection lives in the review screen and nowhere else. It is not stored, not remembered
-between openings, and the session never learns about it until you ask for a confirmation — which
+between openings, and the session never learns about it until you ask for a confirmation, which
 is what makes "selecting changes nothing" true by construction rather than by discipline.
 
 ### The three bulk controls, and what they cannot do
@@ -150,13 +150,13 @@ is what makes "selecting changes nothing" true by construction rather than by di
 | Control | What it does | What it does not do |
 | --- | --- | --- |
 | **Select all shown** | Ticks every message currently listed | Reach messages the filter is hiding |
-| **Deselect all** | Clears the selection | — |
+| **Deselect all** | Clears the selection | Nothing |
 | **Fill from preview** | Ticks the messages the selected preview would affect | Archive anything; tick a protected message |
 | **Review messages to archive…** | Opens this screen with those messages already ticked | Archive anything; tick a protected message; affect future mail |
 
 **Fill from preview** is the bridge between the dry run and a real change, and it is deliberately
 the *only* one. "38 messages would be affected" is useless if you cannot get at the 38, so this
-writes them into the checkbox column — and then stops. You still read the list, untick what you
+writes them into the checkbox column, and then stops. You still read the list, untick what you
 want to keep, tick anything the rules missed, open a confirmation, and press a button. It is not
 an Execute button with a longer name: it populates a selection you own and can edit.
 
@@ -164,7 +164,7 @@ an Execute button with a longer name: it populates a selection you own and can e
 
 Every identifier in a selection came from one sender's review screen, and the session re-checks
 that when it freezes the set. A selection that somehow named another sender's mail is **refused
-whole**, not narrowed to the part that belongs — a confirmation built from the survivors would be
+whole**, not narrowed to the part that belongs: a confirmation built from the survivors would be
 a confirmation of a set you never ticked.
 
 ---
@@ -184,7 +184,7 @@ freezes nothing, and starts nothing.
 
 ### Where the candidates come from
 
-From the preview you were already looking at — not from a second engine written for this. The
+From the preview you were already looking at, not from a second engine written for this. The
 candidates are the messages that sender's **current** dry run says the **selected action** would
 affect, minus anything protected:
 
@@ -193,7 +193,7 @@ affect, minus anything protected:
 - the conceptual action shown in the preview, cutoff and keep-newest alike;
 - never a protected message;
 - only identifiers already in the loaded window;
-- deterministic — the review list's own order, filtered in place.
+- deterministic: the review list's own order, filtered in place.
 
 They are recomputed every time the button is pressed. A proposal generated before a reload cannot
 bring a stale list onto the screen.
@@ -202,7 +202,7 @@ bring a stale list onto the screen.
 
 The review screen opens with those rows ticked, a line saying how many were ticked and how many
 protected messages were left out, and every control it has always had. You can untick anything,
-tick anything the rules missed — including a protected message — sort, filter, and change the
+tick anything the rules missed (including a protected message), sort, filter, and change the
 previewed action. Nothing is written at any point in that: not when the sender action is pressed,
 not when the candidates are derived, not when the boxes are ticked, not when you change them, and
 not when the confirmation opens.
@@ -232,12 +232,14 @@ looked useful would be the app choosing.
 Alongside the exact list, the count, and any protected-message warning:
 
 > Only the messages listed here will be changed. Future messages from this sender are not
-> affected — InboxSweep creates no rule and archives nothing on its own.
+> affected: this archives the listed messages once, and creates no rule.
 
-That is true because there is nothing in the app that could make it false. No filter is created,
-no rule is stored, nothing is scheduled, and nothing runs in the background. The only file that
-remembers a *choice* is the saved plan, and it holds sender keys and action identifiers — no
-schedule, no enablement, and nothing that applies to mail that has not arrived.
+That is true because there is nothing on this path that could make it false. Confirming an
+archive creates no Gmail filter, stores no rule, and schedules nothing.
+
+The app does have one way to authorize future behaviour, and it is deliberately not this one: a
+[sender rule](Rules.md), which you create on its own review screen after reading exactly what it
+would do. This confirmation is not that screen and cannot become it.
 
 ### Nothing sender-shaped reaches Gmail
 
@@ -256,15 +258,15 @@ draws is between **the app choosing** and **you choosing**:
 
 - **No convenience action ever selects a protected message.** Fill from preview skips anything
   starred, marked important, or that looks like part of a conversation, even when the previewed
-  action's scope would otherwise reach it. This is checked twice — the planner holds protected
-  messages back, and the preselection filters on protection again — so the guarantee does not
+  action's scope would otherwise reach it. This is checked twice: the planner holds protected
+  messages back, and the preselection filters on protection again, so the guarantee does not
   depend on the planner continuing to order its filters the way it does today.
 - **You can still tick one yourself.** It is your mail, and a heuristic being confident is not a
   reason for an app to refuse to archive your own message. Archiving is reversible, undoable, and
   not deletion.
 - **The confirmation says so, in as many words**, listing how many protected messages are in the
   set and marking each one in the list. If that warning is on screen, somebody ticked it
-  deliberately, and the warning's job is to check that they meant to — not to argue.
+  deliberately, and the warning's job is to check that they meant to, not to argue.
 
 The review screen also shows a running count of protected messages in the current selection, so
 the fact does not first appear at the confirmation.
@@ -276,14 +278,14 @@ the fact does not first appear at the confirmation.
 1. Open a sender.
 2. Open **Review…** to see its loaded messages, or **Review messages to archive…** to open the
    same screen with the current preview's messages already ticked.
-3. Tick the messages you want archived — individually, with **Select all shown**, with
+3. Tick the messages you want archived: individually, with **Select all shown**, with
    **Fill from preview**, or by editing what a sender-level action ticked for you.
 4. Press **Archive N messages…**.
 5. Read the confirmation.
 6. Press **Archive N messages**.
 
 The confirmation names the sender, the number of messages, and **every message in the set** by
-subject and received date — the whole list, never "and 34 more". A confirmation you cannot read
+subject and received date: the whole list, never "and 34 more". A confirmation you cannot read
 in full is not a confirmation, so the sheet scrolls instead of summarising. It states plainly:
 
 > These messages will be removed from your Inbox. They will not be deleted.
@@ -307,7 +309,7 @@ rather than a second one.
 
 ### What is re-checked immediately before anything is sent
 
-- the authenticated account still matches — asked of the provider, not read from the snapshot,
+- the authenticated account still matches: asked of the provider, not read from the snapshot,
   because the snapshot records which account the window was *read* for and the question is which
   account the token authenticates *now*;
 - the archive permission is still granted;
@@ -315,15 +317,15 @@ rather than a second one.
   leaves every identifier present and this sender's, and makes the list you read a list of
   something else;
 - every message is still loaded, still in scope, and still belongs to the expected sender;
-- every message is still in the Inbox. One archived elsewhere since the review — in the Gmail web
-  app, on a phone, by a filter — would produce a request whose answer you could not tell apart
+- every message is still in the Inbox. One archived elsewhere since the review, in the Gmail web
+  app, on a phone, by a filter: would produce a request whose answer you could not tell apart
   from the one you asked for;
 - **this confirmation has not already been carried out.** One confirmation is one operation, for
   the life of the session rather than only while its result is on screen.
 
 If any of that has changed the operation is **refused whole and re-reviewed**. It is never
 narrowed to the messages that still match: acting on "the ones still there" would be acting on a
-set nobody approved. Nor is it quietly re-derived from a fresher planner run — that would be
+set nobody approved. Nor is it quietly re-derived from a fresher planner run: that would be
 executing a set you have not seen.
 
 ### While it is running
@@ -336,7 +338,7 @@ executing a set you have not seen.
 - **Stop is a real button**, because sequential execution makes it a real promise: it stops
   before the next message. The request already with Gmail cannot be recalled, and the sheet says
   exactly that rather than implying otherwise. Messages never sent are reported as "not sent",
-  which is a knowably unchanged state — distinct from "failed", where Gmail was asked and said no.
+  which is a knowably unchanged state: distinct from "failed", where Gmail was asked and said no.
 - Nothing on screen changes until Gmail confirms each message. There is no optimistic update, so
   a failure needs no rollback and a success is never claimed early.
 
@@ -354,14 +356,14 @@ So every message gets its own outcome, and the result reads:
 12 selected     8 archived     4 failed
 ```
 
-with each row marked and given the app's own one-line reason — never Gmail's response body, an
+with each row marked and given the app's own one-line reason, never Gmail's response body, an
 authorization code, or a token. Three outcomes are distinguished:
 
 | Outcome | Meaning |
 | --- | --- |
 | **Archived** | Gmail confirmed it. The message has left your Inbox. |
 | **Failed** | Gmail was asked and refused. The message is unchanged and still in your Inbox. |
-| **Not sent** | No request was ever made — you stopped the run, or a session-wide failure made the rest pointless. Knowably unchanged. |
+| **Not sent** | No request was ever made: you stopped the run, or a session-wide failure made the rest pointless. Knowably unchanged. |
 
 ### What a partial run does and does not do
 
@@ -374,15 +376,15 @@ authorization code, or a token. Three outcomes are distinguished:
 - **Failed messages are offered again where that makes sense.** A rate limit or a dropped
   connection is worth retrying; a message Gmail no longer has, or an account that changed, is
   not, and is not offered.
-- **The undo transaction names the successful subset only** — eight identifiers for eight
+- **The undo transaction names the successful subset only**, eight identifiers for eight
   archived messages.
 
 ### When a run stops early
 
-A failure about *this message* — throttling, a dropped connection, a message Gmail no longer has
-— says nothing about the next one, so the run continues and each message gets its own answer.
+A failure about *this message* (throttling, a dropped connection, a message Gmail no longer has)
+says nothing about the next one, so the run continues and each message gets its own answer.
 
-A failure about *the session* — a withdrawn grant, an expired authorization, a swapped account —
+A failure about *the session* (a withdrawn grant, an expired authorization, a swapped account)
 is true of every message at once. The run stops rather than sending eleven more requests that are
 all going to be refused identically, and the remainder are reported as **not sent**.
 
@@ -390,7 +392,7 @@ all going to be refused identically, and the remainder are reported as **not sen
 
 ## Undo, and how long it lasts
 
-Undo is a real Gmail request per message, through the same boundary the archive went through —
+Undo is a real Gmail request per message, through the same boundary the archive went through,
 not a local correction. It restores **only** the messages that transaction confirmed. Nothing is
 inferred into the set: not the rest of the sender, not the rest of a thread, not messages
 archived by an earlier operation.
@@ -417,7 +419,7 @@ On every published window the app re-derives the offer from the file, and all fo
 1. the transaction belongs to the account connected **now**;
 2. it is an archive that confirmed at least one message;
 3. it is still in the `undoable` state;
-4. the grant still covers archiving — undo is a write like any other.
+4. the grant still covers archiving: undo is a write like any other.
 
 If the permission has been withdrawn from your Google Account since, the offer is withheld rather
 than shown and then failing when pressed. The transaction itself stays in the file.
@@ -429,8 +431,8 @@ than shown and then failing when pressed. The transaction itself stays in the fi
 | You archive something else | The previous transaction is **superseded**; only the newest is undoable |
 | The undo completely succeeds | Marked **undone**; no offer remains |
 | The undo partly succeeds | **Narrowed** to the messages still archived, and still offered |
-| The undo completely fails | Unchanged — those messages really are still archived |
-| An archive confirms nothing | Unchanged — a failed run does not withdraw an unrelated offer |
+| The undo completely fails | Unchanged: those messages really are still archived |
+| An archive confirms nothing | Unchanged: a failed run does not withdraw an unrelated offer |
 | You disconnect | The transactions are deleted with everything else for that account |
 
 A superseded transaction is **kept in the file, not deleted**: it is still a true record of what
@@ -441,7 +443,7 @@ available. There is no unlimited undo history and no undo stack.
 ### Narrowing the offer does not rewrite the history
 
 Both "narrowed" rows above shrink a transaction's list of message identifiers, because that list
-means *the messages this archive still has out of your Inbox* — a second undo must not ask Gmail
+means *the messages this archive still has out of your Inbox*: a second undo must not ask Gmail
 about messages that already came back.
 
 What it does **not** touch is what the archive did. The count it confirmed is fixed at the moment
@@ -456,8 +458,8 @@ explicitly.
 ### An undo can itself partly fail
 
 The same three outcomes apply: **restored**, **failed to restore**, and **not sent**. Local state
-reconciles per message — the ones that came back are back in the Inbox, the ones that did not are
-still archived — and the offer narrows to exactly what remains, never re-widening to include
+reconciles per message: the ones that came back are back in the Inbox, the ones that did not are
+still archived, and the offer narrows to exactly what remains, never re-widening to include
 messages already restored. Pressing Undo again asks only about those.
 
 A message Gmail no longer has is reported as no longer applicable and is not retried, since
@@ -467,7 +469,7 @@ repeating that request is certain to fail the same way.
 
 ## Local reconciliation
 
-After Gmail confirms — and only then — the app recomputes everything derived from the loaded
+After Gmail confirms, and only then, the app recomputes everything derived from the loaded
 window, through the same code path a newly-loaded page goes through:
 
 - each confirmed message's labels are **replaced with the ones on Gmail's reply**, not with the
@@ -484,7 +486,7 @@ rather than being deleted from it. Membership is derived by `MailboxScope.retain
 makes undo restore each message to its original position instead of appending it to the end. Only
 the Inbox scope can lose a message this way: Gmail's category labels survive an archive untouched
 and *All mail* lists archived mail by definition, so a message archived while one of those scopes
-is loaded stays in the window — which is what a refresh would return.
+is loaded stays in the window, which is what a refresh would return.
 
 A subsequent reload from Gmail therefore agrees with what is already on screen, including after a
 partial run: the eight that were archived are gone from the Inbox list and the four that were
@@ -519,12 +521,12 @@ about mail, and `SafetyBoundaryTests` asserts the exact field list.
 
 **Only successes are named.** A partial run stores eight identifiers for eight archived messages;
 the four that failed are counted, not named, because there is nothing to undo about a message
-that never changed. That is what makes undo safe to act on directly — every identifier in the
+that never changed. That is what makes undo safe to act on directly, every identifier in the
 file is a message this app really did take out of your Inbox.
 
 It is bounded to the 50 most recent entries, written atomically with `0600` permissions, excluded
 from backups, keyed by a digest of the account address, and deleted when you disconnect. Runs
-that confirmed nothing are recorded too — an attempt Gmail rejected is a fact about what the app
+that confirmed nothing are recorded too: an attempt Gmail rejected is a fact about what the app
 tried to do.
 
 Transactions are replaced by operation ID rather than appended, which is what makes a repeated
@@ -552,12 +554,12 @@ This is not analytics. Nothing is aggregated, scored, or sent anywhere.
 
 A mutation is tied to the account the message was loaded from, and that is checked three times:
 
-1. **In the session**, against the authenticated account as it is *now* — asked of the provider
+1. **In the session**, against the authenticated account as it is *now*: asked of the provider
    rather than taken from the snapshot, because the snapshot records which account the window
    was read for and the question is which account the token authenticates today.
 2. **At the mutation boundary**, which holds the token and re-checks the request's account
    address against its own connection. A caller cannot opt out of this.
-3. **During a permission upgrade**, which refuses — without disturbing the current session — if
+3. **During a permission upgrade**, which refuses (without disturbing the current session) if
    re-authorizing lands in a different Google account.
 
 A set carries **one** account address rather than one per message, so every message in a set is
@@ -566,8 +568,8 @@ guaranteed to be checked against the same account.
 If the account changes between selecting messages and confirming them, the operation is refused
 whole and you are asked to review again. Every selected message must also still be in the loaded
 window and still belong to the same sender, and the grant must still cover archiving. An undo is
-checked the same way: a transaction stored for one account is never offered — or executed —
-against another.
+checked the same way: a transaction stored for one account is never offered, or executed,
+against a different one.
 
 ---
 
@@ -591,13 +593,13 @@ never reach the screen.
 | Network failure or timeout | Check your connection, then reload to confirm what Gmail has |
 | Gmail rejected the request | Reload to confirm what Gmail has, then try again |
 | Cancelled before the request went out | Choose the message again whenever you are ready |
-| Remote success, local record not written | Nothing — the change is real; reload if anything looks stale |
+| Remote success, local record not written | Nothing: the change is real; reload if anything looks stale |
 
 ---
 
 ## Recommendations are still not executable
 
-| Advisory — describes, cannot act | Executable — acts, after you confirm |
+| Advisory: describes, cannot act | Executable: acts, after you confirm |
 | --- | --- |
 | Sender cleanup proposals | Archiving the messages you ticked and confirmed |
 | Dry-run cleanup previews | Undoing that archive |
@@ -612,7 +614,7 @@ boundary, and `SafetyBoundaryTests` exercises loading, previewing, saving, resto
 reloading, preselecting from every action, and freezing a confirmation for every sender against a
 recording archiver that must come back empty.
 
-The workflow a recommendation can reach — and where it stops:
+The workflow a recommendation can reach, and where it stops:
 
 1. the preview says 38 messages would be affected;
 2. **Review messages to archive…** opens those messages in review with them already ticked, minus

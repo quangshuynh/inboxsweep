@@ -5,8 +5,8 @@ import Testing
 /// The on-disk cache, exercised against real files in a temporary directory.
 ///
 /// Uses the actual ``FileInboxCacheStore`` rather than a stand-in, because most of what could
-/// go wrong here — a format that does not round-trip, a file from an older build, a leftover
-/// file from another account — only goes wrong once bytes are involved.
+/// go wrong here (a format that does not round-trip, a file from an older build, a leftover
+/// file from another account) only goes wrong once bytes are involved.
 @Suite("Inbox cache store")
 struct InboxCacheStoreTests {
 

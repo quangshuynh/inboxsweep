@@ -3,7 +3,7 @@ import Foundation
 /// How much of a scope to read in one go.
 ///
 /// The proposal engine only ever reasons over the loaded window, so how deep that window goes
-/// is the single biggest influence on what the app says — a sender who looks like a three-month
+/// is the single biggest influence on what the app says: a sender who looks like a three-month
 /// newsletter over 250 messages may look like a two-year one over 2,500. Making the depth an
 /// explicit, named choice puts that where the user can see it, rather than leaving it as a
 /// constant they have to discover by clicking **Load more** repeatedly.

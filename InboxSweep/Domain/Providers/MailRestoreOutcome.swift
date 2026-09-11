@@ -4,8 +4,8 @@ import Foundation
 ///
 /// Three outcomes, deliberately not two. Before this interval a restore either produced an
 /// account or produced nothing, and "nothing" covered both *there was never a stored sign-in*
-/// and *there is one and we could not read it*. Those look identical on screen — a signed-out
-/// window — and they need completely different responses: the first is an ordinary first
+/// and *there is one and we could not read it*. Those look identical on screen: a signed-out
+/// window, and they need completely different responses: the first is an ordinary first
 /// launch, the second is a fault the user should hear about.
 nonisolated enum MailRestoreOutcome: Equatable, Sendable {
 
@@ -31,7 +31,7 @@ nonisolated enum MailRestoreOutcome: Equatable, Sendable {
 /// transient outage where the right move is to retry rather than re-authorize.
 nonisolated enum MailRestoreFailure: Equatable, Sendable {
 
-    /// The credential store has an item but would not hand it over — a Keychain access or
+    /// The credential store has an item but would not hand it over: a Keychain access or
     /// authorization failure rather than an absence.
     case credentialStoreUnreadable(reason: String)
 
@@ -80,7 +80,7 @@ nonisolated enum MailRestoreFailure: Equatable, Sendable {
 /// Exists because the original credential-restore defect was a *write* that failed silently:
 /// sign-in succeeded, the refresh token was never stored, and the app looked signed out on
 /// every relaunch with nothing anywhere saying why. A failure to persist is not worth failing a
-/// sign-in over — the session still works — but it is absolutely worth saying out loud.
+/// sign-in over (the session still works) but it is absolutely worth saying out loud.
 nonisolated enum StoredAuthorizationState: Equatable, Sendable {
 
     /// The authorization was written and should survive a relaunch.

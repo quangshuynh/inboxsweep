@@ -85,7 +85,7 @@ final class AppModel {
     /// so the signed-out screen appears whether or not this Mac has a saved sign-in.
     ///
     /// The UI test for that screen used to launch the app with no arguments at all, which made
-    /// it pass or fail on whether the developer happened to be connected to Gmail — and, when
+    /// it pass or fail on whether the developer happened to be connected to Gmail, and, when
     /// they were, drove a test run through their real mailbox. Nothing else about the launch
     /// changes: the same provider, the same configuration, the same screen. Only the Keychain
     /// is left out of it, and the real item is neither read nor written.
@@ -98,7 +98,7 @@ final class AppModel {
     /// sample run must not disturb the real account's stored window.
     ///
     /// It also runs without any way to archive. ``SampleMailProvider`` vends no mutation
-    /// boundary, so the sample session has no archiver at all — the Archive control is absent
+    /// boundary, so the sample session has no archiver at all: the Archive control is absent
     /// rather than disabled, because there is no mailbox behind it to change.
     ///
     /// Its transaction store is in-memory, and empty unless ``SampleActivity`` was asked for. A
@@ -106,7 +106,7 @@ final class AppModel {
     /// write, and the undo it restores from those records is still refused for want of a grant.
     ///
     /// Unsubscribing is the same story with one difference. *Detection* works on synthetic mail,
-    /// because reading a sender's headers is domain work and needs no boundary — so the options
+    /// because reading a sender's headers is domain work and needs no boundary, so the options
     /// screen and the review are visible here. *Execution* is off unless
     /// ``SampleUnsubscribe/launchArgument`` was given, and even then it is
     /// ``SampleUnsubscriber``, which has no transport and answers in-process.

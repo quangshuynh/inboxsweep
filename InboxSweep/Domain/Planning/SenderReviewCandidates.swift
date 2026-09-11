@@ -9,7 +9,7 @@ import Foundation
 /// review screen opens with the boxes already ticked. That is the whole of the convenience.
 ///
 /// It is not an authorization, an intent, or a plan. Nothing here is sent anywhere, nothing here
-/// is stored, and deriving it changes nothing — it is a filter over messages already in memory.
+/// is stored, and deriving it changes nothing: it is a filter over messages already in memory.
 /// Between this value and a mailbox changing there are still four things a person has to do:
 /// read the list, edit it, open a confirmation showing the exact set, and press the confirming
 /// button. Every one of those remains exactly as it was before this type existed.
@@ -20,7 +20,7 @@ import Foundation
 /// already decides what an action would reach, ``SenderProtection`` already decides what is held
 /// back, and both verdicts arrive on ``ReviewedMessage``. This filters that list and counts what
 /// it dropped. So the preselection cannot disagree with the preview the user was reading when
-/// they pressed the button — it *is* the preview, with the protected messages removed.
+/// they pressed the button: it *is* the preview, with the protected messages removed.
 ///
 /// ### The two rules
 ///
@@ -50,7 +50,7 @@ nonisolated struct SenderReviewCandidates: Equatable, Sendable {
     /// How many the preview would reach but protection holds back.
     let protectedMessageCount: Int
 
-    /// How many the action's own scope never reached — too new for a cutoff, among the newest
+    /// How many the action's own scope never reached: too new for a cutoff, among the newest
     /// an action keeps, or any action over a sender with nothing old enough.
     let outOfScopeMessageCount: Int
 
@@ -73,8 +73,8 @@ nonisolated struct SenderReviewCandidates: Equatable, Sendable {
         let affected = ownMessages.filter(\.isAffectedByPlan)
 
         // A retained message is one of two quite different things, and the screen has to be able
-        // to tell them apart: held back *for its own sake* — starred, Important, conversation-like
-        // — or simply never reached by the action's scope. The planner already draws that line on
+        // to tell them apart: held back *for its own sake* (starred, Important,
+        // conversation-like) or simply never reached by the action's scope. The planner already draws that line on
         // the membership, so this counts it rather than re-deriving it.
         let retained = ownMessages.filter { !$0.isAffectedByPlan }
         let protectedCount = retained.count { $0.membership?.isProtected == true }
@@ -83,7 +83,7 @@ nonisolated struct SenderReviewCandidates: Equatable, Sendable {
             senderKey: senderKey,
             action: action,
             // Filtered on protection a second time. The planner holds protected messages back
-            // already, so this changes nothing today — and it is what keeps "a convenience action
+            // already, so this changes nothing today, and it is what keeps "a convenience action
             // never picks protected mail" from depending on the planner continuing to order its
             // two filters the way it does.
             messageIDs: affected.filter { !$0.isProtected }.map(\.id),
@@ -116,7 +116,7 @@ nonisolated struct SenderReviewCandidates: Equatable, Sendable {
     /// Why a sender-level review opened with nothing ticked.
     nonisolated enum EmptyReason: Hashable, Sendable {
 
-        /// The window holds no messages from this sender at all — it moved on, or the sender's
+        /// The window holds no messages from this sender at all: it moved on, or the sender's
         /// mail was archived since the proposal was generated.
         case noLoadedMessages
 
@@ -139,7 +139,7 @@ nonisolated struct SenderReviewCandidates: Equatable, Sendable {
     /// Factual, and never an apology. "Nothing is selected" is a perfectly good answer for a
     /// sender whose mail is all recent or all starred, and the sentence says which of those it
     /// is rather than implying something went wrong. None of these offers a way to select
-    /// something anyway — the review screen's own controls are still there, and a fallback the
+    /// something anyway: the review screen's own controls are still there, and a fallback the
     /// app invented to have something to tick would be the app choosing.
     var emptyExplanation: String? {
         let loaded = ProposalPhrasing.loadedMessages(loadedMessageCount)
@@ -166,7 +166,7 @@ nonisolated struct SenderReviewCandidates: Equatable, Sendable {
         case .everyMessageProtected:
             return """
                 Nothing is selected: every one of the \(loaded) from this sender is one InboxSweep \
-                holds back — starred, marked Important, or part of a conversation. You can still \
+                holds back: starred, marked Important, or part of a conversation. You can still \
                 tick them yourself, and the confirmation will say so.
                 """
         case .nothingLeftAfterProtection:
@@ -191,7 +191,7 @@ nonisolated struct SenderReviewCandidates: Equatable, Sendable {
             : ""
         return """
             \(ProposalPhrasing.messages(count)) of \(ProposalPhrasing.loadedMessages(loadedMessageCount)) \
-            selected from this preview.\(heldBack) Nothing has been archived — check the list, \
+            selected from this preview.\(heldBack) Nothing has been archived; check the list, \
             change it however you like, and confirm.
             """
     }

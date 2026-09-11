@@ -70,7 +70,7 @@ nonisolated enum ProposalFixtures {
     //
     // Each named sender uses its own identifier prefix. Gmail's message identifiers are unique
     // across a mailbox and the session deduplicates by them, so two fixture senders sharing a
-    // prefix would collapse into one window the moment they were combined — which is a
+    // prefix would collapse into one window the moment they were combined, which is a
     // property of the fixtures, not of anything under test.
 
     /// High volume, Gmail Promotions, unsubscribe metadata, entirely unread.

@@ -5,7 +5,7 @@ import Foundation
 /// This is the app's only text classification, and it is deliberately the dumbest one that
 /// could work: fixed phrase lists, whole-word matching, no scoring, no model, no network. A
 /// subject that says "Your order has shipped" is evidence that the message might be an order
-/// receipt — it is not proof, and nothing downstream treats it as proof.
+/// receipt: it is not proof, and nothing downstream treats it as proof.
 ///
 /// The lists err towards *over*-matching, because every protective topic here can only ever
 /// make InboxSweep more cautious about a sender. The one non-protective topic
@@ -58,7 +58,7 @@ nonisolated enum SubjectTopic: String, CaseIterable, Hashable, Sendable, Codable
 
     /// The phrases that match this topic, as whole words in a normalized subject.
     ///
-    /// Phrases only — no regular expressions, no stemming — so what a rule matches is exactly
+    /// Phrases only (no regular expressions, no stemming) so what a rule matches is exactly
     /// what is written here and a reviewer can read the whole classifier in one sitting.
     var phrases: [String] {
         switch self {
@@ -118,7 +118,7 @@ nonisolated enum SubjectTopic: String, CaseIterable, Hashable, Sendable, Codable
     /// The topics `subject` suggests, in ``allCases`` order.
     ///
     /// Order is fixed rather than match order so the same subject always produces the same
-    /// list — the property the whole engine's determinism rests on.
+    /// list: the property the whole engine's determinism rests on.
     static func topics(in subject: String) -> [SubjectTopic] {
         let normalized = normalize(subject)
         guard !normalized.isEmpty else { return [] }
