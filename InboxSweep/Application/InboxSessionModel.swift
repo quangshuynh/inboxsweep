@@ -65,13 +65,6 @@ final class InboxSessionModel {
     /// The loaded window, kept so that re-sorting and paging do not need a round trip.
     private var messages: [MailMessage] = []
 
-    /// Identifiers already in ``messages``.
-    ///
-    /// Gmail can list the same message on two sides of a page boundary, and the fetcher only
-    /// deduplicates *within* a page. Without this, a sender's count would creep upwards on
-    /// deep loads for no reason the user could see.
-    private var loadedMessageIDs: Set<MailMessageID> = []
-
     private var nextPageToken: MailPageToken?
     private var activeTask: Task<Void, Never>?
 
@@ -241,23 +234,49 @@ final class InboxSessionModel {
         guard messages.count < target else { return .alreadyFinished }
 
         return run { [self] in
-            state = .loaded(snapshot.settingLoadingMore(true))
-            do {
-                let page = try await provider.fetchMessages(fetchRequest.nextPage(after: pageToken))
-                try Task.checkCancellation()
-                // Merged rather than appended: Gmail can list a message on two consecutive
-                // pages, and counting it twice would overstate the sender it came from.
-                messages = MailMessageWindow.merging(messages, with: page.messages)
-                nextPageToken = page.nextPageToken
-                await publishSnapshot(for: snapshot.account)
-            } catch {
-                // The already-loaded window is still valid and still useful, so a failed
-                // *additional* page returns to it rather than throwing it away.
-                state = .loaded(snapshot.settingLoadingMore(false))
-                let providerError = MailProviderError.wrapping(error)
-                if providerError.requiresReauthentication {
-                    reset()
-                    state = .failed(providerError, account: snapshot.account)
+            let account = startingSnapshot.account
+            state = .loaded(startingSnapshot.settingLoadingMore(true))
+
+            // One more page than the target could possibly need. A provider that returns an
+            // empty page with a cursor is unusual, but "unusual" is not a reason to let a
+            // loop run unbounded against somebody's account.
+            let pageBudget = Int((Double(target) / Double(pageSize)).rounded(.up)) + 1
+
+            for _ in 0..<pageBudget {
+                guard messages.count < target, let pageToken = nextPageToken else { break }
+                guard !Task.isCancelled else { break }
+
+                do {
+                    let page = try await provider.fetchMessages(
+                        MailFetchRequest(limit: pageSize, pageToken: pageToken, scope: scope)
+                    )
+                    try Task.checkCancellation()
+
+                    let added = merge(page.messages)
+                    nextPageToken = page.nextPageToken
+                    loadedPageCount += 1
+
+                    // Publish even when a page was entirely duplicates: the cursor moved, and
+                    // a dashboard that froze mid-load would look like a hang.
+                    await publishSnapshot(
+                        for: account,
+                        isLoadingMore: messages.count < target && nextPageToken != nil,
+                        persist: false
+                    )
+
+                    if added == 0, page.messages.isEmpty { break }
+                } catch is CancellationError {
+                    break
+                } catch {
+                    // The already-loaded window is still valid and still useful, so a failed
+                    // *additional* page returns to it rather than throwing it away.
+                    let providerError = MailProviderError.wrapping(error)
+                    if providerError.requiresReauthentication {
+                        reset()
+                        state = .failed(providerError, account: account)
+                        return
+                    }
+                    break
                 }
             }
 
@@ -435,7 +454,7 @@ final class InboxSessionModel {
 
         reset()
         storedPlan = await planStore.load(for: account)
-        append(cached.messages)
+        merge(cached.messages)
         nextPageToken = cached.nextPageToken
         loadedPageCount = cached.messages.isEmpty ? 0 : 1
         restoredFromCacheAt = cached.savedAt
@@ -478,7 +497,7 @@ final class InboxSessionModel {
         do {
             let page = try await provider.fetchMessages(currentFirstPageRequest)
             try Task.checkCancellation()
-            messages = MailMessageWindow.deduplicated(page.messages)
+            merge(page.messages)
             nextPageToken = page.nextPageToken
             loadedPageCount = 1
             await publishSnapshot(for: account, isLoadingMore: false, persist: true)
@@ -489,19 +508,19 @@ final class InboxSessionModel {
         }
     }
 
-    /// Merges `incoming` into the window, skipping anything already loaded.
+    /// Merges `incoming` into the window and reports how many messages were genuinely new.
     ///
-    /// Returns how many were genuinely new, which is what tells a deep load whether a page was
-    /// worth anything. Order is preserved: a message keeps the position the provider first
-    /// listed it in, so extending the window never reshuffles what is already on screen.
+    /// The merge itself belongs to ``MailMessageWindow``, which is the one place that decides
+    /// what happens to a message seen twice: it keeps the position it was first listed at and
+    /// the content it was last listed with. Routing every page through it — first page, extra
+    /// page, and window restored from disk alike — is what keeps those three from disagreeing.
+    ///
+    /// The count is what tells a deep load whether a page was worth anything.
     @discardableResult
-    private func append(_ incoming: [MailMessage]) -> Int {
-        var added = 0
-        for message in incoming where loadedMessageIDs.insert(message.id).inserted {
-            messages.append(message)
-            added += 1
-        }
-        return added
+    private func merge(_ incoming: [MailMessage]) -> Int {
+        let before = messages.count
+        messages = MailMessageWindow.merging(messages, with: incoming)
+        return messages.count - before
     }
 
     /// Aggregates off the main actor, publishes the result, and — when asked — stores it.
@@ -590,7 +609,6 @@ final class InboxSessionModel {
         storedPlan = nil
         savedPlan = nil
         messages = []
-        loadedMessageIDs = []
         nextPageToken = nil
         loadedPageCount = 0
         restoredFromCacheAt = nil
