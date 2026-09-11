@@ -71,23 +71,71 @@ actor FileMutationTransactionStore: MailMutationRecording {
     // MARK: - MailMutationRecording
 
     func record(_ transaction: MailMutationTransaction) async -> MutationRecordOutcome {
-        guard let directory, let url = fileURL(forAccountAddress: transaction.accountAddress) else {
+        guard let url = fileURL(forAccountAddress: transaction.accountAddress) else {
             return .notStored(reason: "InboxSweep couldn't find a place on this Mac to write the record.")
         }
 
         // Replace by identifier, then prune. Pruning on the way *out* as well as on the way in
         // is what keeps a file that somehow grew — an older build, a hand edit — from being read
         // back unbounded.
-        var transactions = loadTransactions(from: url).filter { $0.id != transaction.id }
+        let existing = load(from: url)
+        var transactions = existing.transactions.filter { $0.id != transaction.id }
         transactions.append(transaction)
-        transactions = MailMutationHistory.pruned(transactions)
 
+        return write(
+            transactions: MailMutationHistory.pruned(transactions),
+            // Carried through untouched. An archive is not an occasion to rewrite the
+            // unsubscribe history, and a write that dropped the other half of the file would be
+            // the app losing a record of something it really did to somebody's subscription.
+            unsubscribes: existing.unsubscribes,
+            accountAddress: transaction.accountAddress,
+            to: url
+        )
+    }
+
+    func record(_ entry: UnsubscribeActionRecord) async -> MutationRecordOutcome {
+        guard let url = fileURL(forAccountAddress: entry.accountAddress) else {
+            return .notStored(reason: "InboxSweep couldn't find a place on this Mac to write the record.")
+        }
+
+        let existing = load(from: url)
+        var entries = existing.unsubscribes.filter { $0.id != entry.id }
+        entries.append(entry)
+
+        return write(
+            transactions: existing.transactions,
+            unsubscribes: MailMutationHistory.prunedUnsubscribes(entries),
+            accountAddress: entry.accountAddress,
+            to: url
+        )
+    }
+
+    func unsubscribeEntries(for account: MailAccount) async -> [UnsubscribeActionRecord] {
+        guard let url = fileURL(forAccountAddress: account.emailAddress.address) else { return [] }
+        return MailMutationHistory.unsubscribeHistory(load(from: url).unsubscribes, for: account)
+    }
+
+    /// The one place the file is written, whichever kind of entry prompted it.
+    ///
+    /// Both halves go out together, every time. There is no code path that writes one and not
+    /// the other, which is what makes "recording an archive cannot lose an unsubscribe" a
+    /// property of the file rather than of a caller remembering to pass the right thing.
+    private func write(
+        transactions: [MailMutationTransaction],
+        unsubscribes: [UnsubscribeActionRecord],
+        accountAddress: String,
+        to url: URL
+    ) -> MutationRecordOutcome {
+        guard let directory else {
+            return .notStored(reason: "InboxSweep couldn't find a place on this Mac to write the record.")
+        }
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             let file = MutationTransactionDTO.File(
                 version: MutationTransactionDTO.schemaVersion,
-                accountAddress: transaction.accountAddress,
-                transactions: transactions.map(MutationTransactionDTO.entry(from:))
+                accountAddress: accountAddress,
+                transactions: transactions.map(MutationTransactionDTO.entry(from:)),
+                unsubscribes: unsubscribes.isEmpty ? nil : unsubscribes.map(MutationTransactionDTO.entry(from:))
             )
             let data = try MutationTransactionDTO.makeEncoder().encode(file)
             try data.write(to: url, options: [.atomic])
@@ -109,7 +157,7 @@ actor FileMutationTransactionStore: MailMutationRecording {
         guard let url = fileURL(forAccountAddress: account.emailAddress.address) else { return [] }
         // Filtered by account before pruning, so a file whose header and entries disagree about
         // whose mailbox they describe cannot have one account's entries displace another's.
-        return MailMutationHistory.history(loadTransactions(from: url), for: account)
+        return MailMutationHistory.history(load(from: url).transactions, for: account)
     }
 
     func clear(for account: MailAccount) async {
@@ -125,15 +173,30 @@ actor FileMutationTransactionStore: MailMutationRecording {
     /// recognise, a file written for a different account, and an individual entry that does not
     /// parse. Neither is worth an error — the worst case is that an undo is not offered, which
     /// is strictly better than offering one built out of something unreadable.
-    private func loadTransactions(from url: URL) -> [MailMutationTransaction] {
+    private func load(from url: URL) -> StoredFile {
         guard let data = try? Data(contentsOf: url),
               let file = try? MutationTransactionDTO.makeDecoder().decode(MutationTransactionDTO.File.self, from: data),
               MutationTransactionDTO.readableVersions.contains(file.version)
-        else { return [] }
+        else { return StoredFile(transactions: [], unsubscribes: []) }
 
-        return file.transactions.compactMap {
-            MutationTransactionDTO.transaction(from: $0, accountAddress: file.accountAddress)
-        }
+        return StoredFile(
+            transactions: file.transactions.compactMap {
+                MutationTransactionDTO.transaction(from: $0, accountAddress: file.accountAddress)
+            },
+            // Absent in a version-2 or version-3 file, which simply had no unsubscribe feature
+            // to record anything for. Missing is empty, not unreadable — which is what lets a
+            // file written before this interval keep its archive history and its live undo
+            // offer rather than being discarded over a key that was not there.
+            unsubscribes: (file.unsubscribes ?? []).compactMap {
+                MutationTransactionDTO.unsubscribe(from: $0, accountAddress: file.accountAddress)
+            }
+        )
+    }
+
+    /// Both halves of the file, as read.
+    private struct StoredFile {
+        let transactions: [MailMutationTransaction]
+        let unsubscribes: [UnsubscribeActionRecord]
     }
 
     /// One file per account, named by a digest of the address, so the address a user signed in
@@ -170,13 +233,21 @@ actor FileMutationTransactionStore: MailMutationRecording {
 /// rather than guessed at.
 nonisolated enum MutationTransactionDTO {
 
-    /// Bumped from 2 when the transaction gained the confirmed count the Activity history reads.
+    /// Bumped from 3 when the file gained a second kind of entry: unsubscribe actions.
     ///
     /// A version-1 file is *discarded*, not migrated. It holds at most one single-message archive
     /// whose undo offer had already expired by design — that interval's offer did not survive a
     /// relaunch — so there is nothing in it worth carrying forward, and migrating would mean
     /// writing a decoder for a shape no user can still be relying on.
-    static let schemaVersion = 3
+    ///
+    /// Versions 2 and 3 are still read, and the 3 → 4 change is the cheapest kind of migration
+    /// there is: **a new optional key beside the existing one**. Nothing about a transaction
+    /// changed, no entry is reinterpreted, and a version-3 file decodes with its archive history
+    /// and its live undo offer intact and an empty unsubscribe list — which is exactly true,
+    /// because a build that wrote version 3 could not perform an unsubscribe. That is what
+    /// requirement 16 of this interval asks for: evolve only as much as needed, and leave the
+    /// existing guarantees alone.
+    static let schemaVersion = 4
 
     /// The versions this build will read.
     ///
@@ -191,7 +262,7 @@ nonisolated enum MutationTransactionDTO {
     /// already been narrowed by a partial undo, where it understates how many the archive
     /// originally confirmed. Understating is the safe direction: it can make an old row read as
     /// a smaller archive than it was, and it can never invent a message.
-    static let readableVersions: Set<Int> = [2, 3]
+    static let readableVersions: Set<Int> = [2, 3, 4]
 
     static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
@@ -210,10 +281,41 @@ nonisolated enum MutationTransactionDTO {
         var accountAddress: String
         var transactions: [Entry]
 
+        /// Unsubscribe actions, absent in every file written before version 4.
+        ///
+        /// A second array rather than a shared one with a discriminator field. The two kinds of
+        /// entry have nothing in common but a timestamp: one names messages and carries an undo
+        /// state, the other names a host and has no inverse. A shared shape would have meant
+        /// every field being optional and every reader guessing which half it was looking at.
+        var unsubscribes: [UnsubscribeEntry]?
+
         enum CodingKeys: String, CodingKey {
             case version = "v"
             case accountAddress = "account"
             case transactions
+            case unsubscribes
+        }
+    }
+
+    /// One unsubscribe action. Note what is not here: no URL path, no query, no mail address,
+    /// no subject, no sender name — see ``UnsubscribeActionRecord`` for why the host alone.
+    struct UnsubscribeEntry: Codable, Equatable {
+        var id: String
+        var mechanism: String
+        var outcome: String
+        var host: String
+        var statusCode: Int?
+        var sourceMessageID: String?
+        var occurredAt: Date
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case mechanism = "via"
+            case outcome
+            case host
+            case statusCode = "status"
+            case sourceMessageID = "message_id"
+            case occurredAt = "at"
         }
     }
 
@@ -240,6 +342,51 @@ nonisolated enum MutationTransactionDTO {
             case confirmedCount = "confirmed"
         }
     }
+
+    static func entry(from record: UnsubscribeActionRecord) -> UnsubscribeEntry {
+        UnsubscribeEntry(
+            id: record.id.uuidString,
+            mechanism: record.mechanism.rawValue,
+            outcome: record.outcome.rawValue,
+            host: record.destinationHost,
+            statusCode: record.statusCode,
+            sourceMessageID: record.sourceMessageID?.rawValue,
+            occurredAt: record.occurredAt
+        )
+    }
+
+    /// Rebuilds an unsubscribe entry, or returns `nil` for one this build cannot account for.
+    ///
+    /// Strict for a different reason than the transaction decoder's. Nothing that comes out of
+    /// here becomes a request — an unsubscribe entry is read-only history with no action behind
+    /// it — so the risk is not a stray write but a **false claim**: a row asserting InboxSweep
+    /// sent a request it did not send, or sent one somewhere it did not. An entry with an
+    /// unrecognised mechanism, an unrecognised outcome, an empty host, or an impossible status
+    /// is not one this app wrote, and it is dropped rather than displayed.
+    static func unsubscribe(from entry: UnsubscribeEntry, accountAddress: String) -> UnsubscribeActionRecord? {
+        guard let id = UUID(uuidString: entry.id),
+              let mechanism = UnsubscribeMechanism.Kind(rawValue: entry.mechanism),
+              let outcome = UnsubscribeOutcome.Kind(rawValue: entry.outcome),
+              !entry.host.isEmpty,
+              entry.host.count <= maximumHostLength,
+              entry.statusCode.map({ (100...599).contains($0) }) ?? true
+        else { return nil }
+
+        return UnsubscribeActionRecord(
+            id: id,
+            accountAddress: accountAddress,
+            mechanism: mechanism,
+            outcome: outcome,
+            destinationHost: entry.host,
+            statusCode: entry.statusCode,
+            sourceMessageID: entry.sourceMessageID.flatMap { $0.isEmpty ? nil : MailMessageID($0) },
+            occurredAt: entry.occurredAt
+        )
+    }
+
+    /// The longest host this file will read back. A DNS name cannot exceed 253 characters, and
+    /// a "host" longer than that is not a host.
+    static let maximumHostLength = 253
 
     static func entry(from transaction: MailMutationTransaction) -> Entry {
         Entry(

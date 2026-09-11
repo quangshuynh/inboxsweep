@@ -40,12 +40,25 @@ nonisolated struct MailMessage: Identifiable, Hashable, Sendable {
     /// Provider-neutral labels and categories.
     let labels: Set<MailLabel>
 
-    /// Whether the message carried a `List-Unsubscribe` header.
+    /// What this message's unsubscribe headers turned out to be.
     ///
-    /// Recorded as an observation only. The app performs no unsubscribe action of any kind,
-    /// and nothing in it reads this flag to decide anything about a sender.
-    let hasListUnsubscribeHeader: Bool
+    /// Used to be a `Bool` meaning "a `List-Unsubscribe` header was present". That was the
+    /// right shape for as long as noticing the header was the whole of what the app did with
+    /// it. It is the wrong shape now: a user can be shown a destination and asked to confirm
+    /// contacting it, and "a header existed" cannot support that while "this exact HTTPS URL,
+    /// declared one-click by this exact second header" can.
+    ///
+    /// Still metadata, and still parsed at the provider boundary — ``ListUnsubscribeParser``
+    /// turns the sender's text into typed values there, so the raw header never travels through
+    /// the app as a string something could later hand to a URL loader.
+    let unsubscribe: MessageUnsubscribeMetadata
 
+    /// - Parameters:
+    ///   - hasListUnsubscribeHeader: The older, coarser form: a header was present and its
+    ///     values were not recorded. Kept because the synthetic mailbox, the fixtures, and a
+    ///     cache file written before this interval all mean exactly that, and because saying so
+    ///     honestly puts a sender in the *ambiguous* state rather than in either "nothing here"
+    ///     or a mechanism nobody parsed. Ignored when `unsubscribe` is given.
     init(
         id: MailMessageID,
         threadID: MailThreadID? = nil,
@@ -53,7 +66,8 @@ nonisolated struct MailMessage: Identifiable, Hashable, Sendable {
         subject: String? = nil,
         receivedAt: Date,
         labels: Set<MailLabel> = [],
-        hasListUnsubscribeHeader: Bool = false
+        hasListUnsubscribeHeader: Bool = false,
+        unsubscribe: MessageUnsubscribeMetadata? = nil
     ) {
         self.id = id
         self.threadID = threadID
@@ -61,11 +75,19 @@ nonisolated struct MailMessage: Identifiable, Hashable, Sendable {
         self.subject = subject
         self.receivedAt = receivedAt
         self.labels = labels
-        self.hasListUnsubscribeHeader = hasListUnsubscribeHeader
+        self.unsubscribe = unsubscribe
+            ?? (hasListUnsubscribeHeader ? .headerPresentUnparsed : .absent)
     }
 
     // Read state lives in `labels` so there is exactly one source of truth; these are
     // conveniences over it rather than independently-settable fields that could disagree.
+
+    /// Whether the message carried a `List-Unsubscribe` header at all.
+    ///
+    /// The observation the dashboard has shown since Interval 2, now derived from the parsed
+    /// metadata rather than stored beside it, so the count on the sender inspector and the
+    /// mechanism on the unsubscribe review can never disagree about whether a header was there.
+    var hasListUnsubscribeHeader: Bool { unsubscribe.hasListUnsubscribeHeader }
 
     var isUnread: Bool { labels.contains(.unread) }
     var isStarred: Bool { labels.contains(.starred) }

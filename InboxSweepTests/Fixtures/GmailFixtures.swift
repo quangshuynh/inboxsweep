@@ -17,6 +17,7 @@ enum GmailFixtures {
         var internalDateMilliseconds: Int? = 1_700_000_000_000
         var labels: [String] = ["INBOX"]
         var listUnsubscribe: String? = nil
+        var listUnsubscribePost: String? = nil
         /// Set to replace the entire payload, for malformed-response tests.
         var rawJSON: String? = nil
 
@@ -27,6 +28,7 @@ enum GmailFixtures {
             if let from { headers.append(Self.header("From", from)) }
             if let subject { headers.append(Self.header("Subject", subject)) }
             if let listUnsubscribe { headers.append(Self.header("List-Unsubscribe", listUnsubscribe)) }
+            if let listUnsubscribePost { headers.append(Self.header("List-Unsubscribe-Post", listUnsubscribePost)) }
 
             var fields = ["\"id\": \(Self.quoted(id))"]
             if let threadID { fields.append("\"threadId\": \(Self.quoted(threadID))") }

@@ -87,6 +87,28 @@ final class InboxSessionModel {
     /// ``restoreUndoOffer(for:)`` for what has to be true before it is offered again.
     private(set) var undoableArchive: MailMutationTransaction?
 
+    // MARK: - Unsubscribe state
+    //
+    // Kept apart from the three above, and not folded into them. Archiving and unsubscribing
+    // are different capabilities reaching different places with different consequences, and a
+    // screen that read one set of flags for both would be a screen that could offer an undo for
+    // something that has none.
+
+    /// Whether this session could send a standards-based one-click unsubscribe.
+    ///
+    /// Not a permission: one-click unsubscribe needs no Gmail scope, because it never touches
+    /// Gmail. This is only whether a boundary exists to send it. Detection is unaffected either
+    /// way — reading a sender's metadata is domain work over mail already fetched, and it works
+    /// on every provider including the synthetic one.
+    private(set) var unsubscribeCapability: UnsubscribeCapability = .unsupported
+
+    /// The unsubscribe in flight, or the result of the last one.
+    ///
+    /// `nil` means nothing has been attempted or the user has dismissed the result. While this
+    /// is running a second unsubscribe is refused outright, which is what makes a double click
+    /// one request rather than two — independently of whether a button was disabled in time.
+    private(set) var unsubscribeActivity: UnsubscribeActivity?
+
     private let provider: any MailProvider
     private let cache: any InboxCacheStoring
     private let planStore: any CleanupPlanStoring
@@ -101,6 +123,20 @@ final class InboxSessionModel {
     /// is what the synthetic mailbox gets.
     private let archiver: (any MailMessageArchiving)?
 
+    /// The unsubscribe boundary, when the provider has one.
+    ///
+    /// Taken from the provider for the same reason ``archiver`` is — one object graph, no way
+    /// to pair one account's window with another's boundary — and `nil` is again the absence of
+    /// a code path rather than a disabled button.
+    private let unsubscriber: (any MailUnsubscribing)?
+
+    /// How a browser or mail client is opened for a handoff.
+    ///
+    /// A boundary rather than a direct `NSWorkspace` call, so a test can hand the session an
+    /// opener that records and a transport that would have recorded — and thereby prove that
+    /// the browser path produced no HTTP request at all.
+    private let urlOpener: any ExternalURLOpening
+
     /// The loaded window, kept so that re-sorting and paging do not need a round trip.
     private var messages: [MailMessage] = []
 
@@ -113,6 +149,11 @@ final class InboxSessionModel {
     /// not asked to abandon an archive that is already with Gmail, and abandoning it would be
     /// the app giving up on finding out whether the mailbox changed.
     private var mutationTask: Task<Void, Never>?
+
+    /// The in-flight unsubscribe, held separately again — and separately from the mutation task
+    /// too, because cancelling an archive is not a reason to abandon a request already with
+    /// somebody's server.
+    private var unsubscribeTask: Task<Void, Never>?
 
     /// How many pages have been read into the current window, for the progress line.
     private var loadedPageCount = 0
@@ -135,6 +176,15 @@ final class InboxSessionModel {
     /// could be submitted twice.
     private var executedSelectionIDs: Set<UUID> = []
 
+    /// The unsubscribe confirmations that have already been acted on.
+    ///
+    /// The same guard as ``executedSelectionIDs`` and separate from it, because they protect
+    /// different things and must not be able to clear each other. An identifier in here cannot
+    /// be un-sent: a second press on a sheet still showing a finished result is refused for the
+    /// life of the session, and a user who genuinely wants to unsubscribe again opens the review
+    /// again — which freezes a **new** identifier, because that is a new decision.
+    private var performedUnsubscribeIDs: Set<UUID> = []
+
     /// When the loaded window was written to the cache, or `nil` when it came from the
     /// provider during this launch. Shown in the header so a window restored from disk is
     /// never mistaken for a fresh read of the mailbox.
@@ -145,6 +195,7 @@ final class InboxSessionModel {
         cache: any InboxCacheStoring = EphemeralInboxCache(),
         planStore: any CleanupPlanStoring = EphemeralCleanupPlanStore(),
         mutationRecords: any MailMutationRecording = EphemeralMutationRecordStore(),
+        urlOpener: any ExternalURLOpening = WorkspaceURLOpener(),
         fetchRequest: MailFetchRequest = MailFetchRequest(),
         loadDepth: MailboxLoadDepth = .firstPage,
         sortOrder: SenderSortOrder = .messageVolume,
@@ -152,6 +203,8 @@ final class InboxSessionModel {
     ) {
         self.provider = provider
         self.archiver = provider.messageArchiver
+        self.unsubscriber = provider.unsubscriber
+        self.urlOpener = urlOpener
         self.cache = cache
         self.planStore = planStore
         self.mutationRecords = mutationRecords
@@ -768,6 +821,45 @@ final class InboxSessionModel {
         }
     }
 
+    /// The unsubscribe actions this app performed for the connected account, newest first.
+    ///
+    /// **Only InboxSweep-initiated actions.** An unsubscribe the user completed in a browser
+    /// InboxSweep opened is recorded as *opening the page*, because that is what the app did;
+    /// an unsubscribe they did in Gmail's own interface never appears at all. The same rule the
+    /// archive history keeps.
+    ///
+    /// **Performs no provider call and contacts nobody.** The records come off disk and the
+    /// sender comes out of the window already in memory.
+    func unsubscribeHistory() async -> [UnsubscribeActivityEntry] {
+        guard let account else { return [] }
+        return await mutationRecords.unsubscribeEntries(for: account).map { record in
+            UnsubscribeActivityEntry(record: record, resolvedSender: resolvedSender(for: record))
+        }
+    }
+
+    /// The sender of a past unsubscribe, when the loaded window can still name it.
+    ///
+    /// Resolved dynamically, exactly as ``resolvedMessages(for:)`` resolves an archive's
+    /// messages, and for the same reason: the record stores an identifier, not mail. Returning
+    /// `nil` is the ordinary case for anything older than the loaded window, and the row degrades
+    /// to naming the destination host — which the record does hold.
+    func resolvedSender(for record: UnsubscribeActionRecord) -> EmailAddress? {
+        guard let account, record.accountAddress == account.emailAddress.address else { return nil }
+        guard let messageID = record.sourceMessageID else { return nil }
+        return messages.first { $0.id == messageID }?.sender
+    }
+
+    /// Everything InboxSweep has done for this account, both kinds interleaved, newest first.
+    ///
+    /// One call, so a screen cannot assemble half of the history and forget the other half —
+    /// which is precisely the failure mode a second kind of entry introduces.
+    func activityTimeline() async -> [ActivityTimelineEntry] {
+        await ActivityTimelineEntry.merged(
+            archives: activityHistory(),
+            unsubscribes: unsubscribeHistory()
+        )
+    }
+
     /// Whether `transaction` is the one the existing undo path would act on right now.
     ///
     /// Asked by the Activity screen before it offers Undo, so that being *visible* never makes an
@@ -1000,7 +1092,7 @@ final class InboxSessionModel {
                 subject: existing.subject,
                 receivedAt: existing.receivedAt,
                 labels: labels,
-                hasListUnsubscribeHeader: existing.hasListUnsubscribeHeader
+                unsubscribe: existing.unsubscribe
             )
         }
     }
@@ -1097,6 +1189,11 @@ final class InboxSessionModel {
         return await archiver.archiveCapability()
     }
 
+    private func currentUnsubscribeCapability() async -> UnsubscribeCapability {
+        guard let unsubscriber else { return .unsupported }
+        return await unsubscriber.unsubscribeCapability()
+    }
+
     /// Re-establishes the undo offer for `account` from the local transaction file.
     ///
     /// Called whenever a window is published, which is what makes the offer survive a relaunch:
@@ -1119,6 +1216,299 @@ final class InboxSessionModel {
         }
         guard undoableArchive == nil else { return }
         undoableArchive = await mutationRecords.latestUndoableTransaction(for: account)
+    }
+
+    // MARK: - Unsubscribe: reading
+
+    /// What unsubscribing from one sender would involve, read from the window in memory.
+    ///
+    /// **A read, in every sense.** It parses nothing new, fetches nothing, opens nothing, and
+    /// contacts nobody — the metadata was parsed at the provider boundary when the mail was
+    /// loaded, and this arranges it into a reading. Calling it for every sender on screen would
+    /// cost nothing but arithmetic, and `SafetyBoundaryTests` asserts it produces no traffic of
+    /// any kind.
+    ///
+    /// Available whether or not this session can *perform* an unsubscribe. Detection and
+    /// execution are separate capabilities: the synthetic mailbox and a read-only grant both
+    /// show a sender's mechanism and offer nothing that would send it.
+    func unsubscribeOpportunity(forSenderKey key: SenderSummary.ID) -> UnsubscribeOpportunity {
+        let senderMessages = messagesInScope.filter { $0.sender.groupingKey == key }
+        let summary = state.snapshot?.senders.first { $0.id == key }
+        let sender = summary?.sender ?? senderMessages.first?.sender ?? .unknown
+
+        return UnsubscribeOpportunityBuilder.build(
+            sender: sender,
+            messages: senderMessages,
+            summary: summary,
+            // Carried through from the proposal the dashboard already computed, so the caution a
+            // sender earns for archiving is the same caution it carries here. It changes the
+            // *tone* of the unsubscribe review and never hides its mechanism — see
+            // ``UnsubscribeOpportunity/cautionNote``.
+            protection: state.snapshot?.proposal(for: key)?.protection ?? .unprotected
+        )
+    }
+
+    /// Whether this session could ever send a one-click request.
+    ///
+    /// Distinguishes "this mailbox has no unsubscribe boundary" from "this sender offers no
+    /// mechanism", which are answers to different questions and lead to different screens.
+    var canPerformOneClickUnsubscribe: Bool { unsubscribeCapability.canSubmitOneClick }
+
+    /// Whether an unsubscribe is in flight right now.
+    var isUnsubscribing: Bool { unsubscribeActivity?.isRunning == true }
+
+    // MARK: - Unsubscribe: freezing a review
+
+    /// Freezes what an unsubscribe confirmation would be about.
+    ///
+    /// **Opening a review performs no remote write of any kind** — requirement 7 of this
+    /// interval, and true by construction: this method reads the window, builds a value, and
+    /// returns it. Nothing is sent, nothing is opened, nothing is recorded, and abandoning the
+    /// sheet costs one allocation.
+    ///
+    /// Returns `nil` when there is nothing to act on, rather than a snapshot describing an
+    /// empty action. A sender with no mechanism, or with metadata the parser refused, gets a
+    /// screen that explains that — from ``unsubscribeOpportunity(forSenderKey:)`` — rather than
+    /// a confirmation for an action that cannot happen.
+    ///
+    /// - Parameter mechanism: A specific mechanism to freeze, when the user has picked one of
+    ///   several the sender offers. Must be one the sender actually offers; anything else is
+    ///   refused rather than honoured, because a mechanism that did not come from this sender's
+    ///   own header is a destination nobody's mail named.
+    func makeUnsubscribeReview(
+        forSenderKey key: SenderSummary.ID,
+        using mechanism: UnsubscribeMechanism? = nil
+    ) -> UnsubscribeReviewSnapshot? {
+        guard case .loaded(let snapshot) = state else { return nil }
+
+        let opportunity = unsubscribeOpportunity(forSenderKey: key)
+        guard let chosen = opportunity.mechanism else { return nil }
+
+        let mechanism = mechanism ?? chosen
+        guard opportunity.mechanisms.contains(mechanism) else { return nil }
+
+        return UnsubscribeReviewSnapshot(
+            accountAddress: snapshot.account.emailAddress.address,
+            senderKey: key,
+            senderDisplayValue: snapshot.senders.first { $0.id == key }?.sender.displayValue ?? key,
+            sourceMessageID: opportunity.sourceMessageID,
+            scope: scope,
+            opportunity: opportunity,
+            mechanism: mechanism,
+            frozenAt: now()
+        )
+    }
+
+    /// Whether the frozen review could be acted on right now, without contacting anybody.
+    ///
+    /// The cheap half of the validation the execution path performs — a guard for a button's
+    /// enabled state, never a substitute for the re-validation inside
+    /// ``confirmUnsubscribe(_:)``, which additionally asks the provider which account it is
+    /// authenticated as.
+    func canPerform(_ review: UnsubscribeReviewSnapshot) -> Bool {
+        validateAgainstLoadedWindow(review) == nil
+    }
+
+    /// Everything about a frozen review that can be checked without asking the provider.
+    ///
+    /// Returns the refusal, or `nil` when the review still describes the mail on screen.
+    /// Internal rather than private so the stale cases can be asserted by *which* refusal they
+    /// produce: "this review is out of date" and "that's already been done" send the user to
+    /// different places, and a test that only checked nothing was sent would pass with the two
+    /// swapped.
+    ///
+    /// The four checks are requirement 20 of this interval, in order:
+    ///
+    /// 1. the account connected now is the one the review was frozen under;
+    /// 2. the message the metadata came from is still loaded, still in scope, and still this
+    ///    sender's;
+    /// 3. **the mechanism has not changed** — the destination is re-derived from that message's
+    ///    current metadata and must be the identical value, so a reloaded page that rotated the
+    ///    sender's endpoint refuses the confirmation instead of quietly aiming it somewhere
+    ///    else;
+    /// 4. this confirmation has not already been acted on.
+    func validateAgainstLoadedWindow(_ review: UnsubscribeReviewSnapshot) -> UnsubscribeFailure? {
+        guard case .loaded(let snapshot) = state else { return .reviewIsStale }
+        guard review.accountAddress == snapshot.account.emailAddress.address else { return .accountChanged }
+        guard !performedUnsubscribeIDs.contains(review.id) else { return .alreadyPerformed }
+        guard review.scope == scope else { return .reviewIsStale }
+
+        // A one-click request needs a boundary; a handoff needs only the system. Checked per
+        // mechanism rather than once, so the absence of an unsubscribe boundary does not take
+        // the browser and mail routes down with it.
+        if review.mechanismKind.isPerformedByInboxSweep, !unsubscribeCapability.canSubmitOneClick {
+            return .notSupported
+        }
+
+        guard let sourceID = review.sourceMessageID else { return .reviewIsStale }
+        guard let live = messagesInScope.first(where: { $0.id == sourceID }) else { return .reviewIsStale }
+        guard live.sender.groupingKey == review.senderKey else { return .reviewIsStale }
+
+        // The destination itself, re-derived and compared. Not "is there still a mechanism" —
+        // "is it the same one", which is the only version of the question that protects the user
+        // from confirming one host and reaching another.
+        guard let current = UnsubscribeMechanismSelection.select(from: live.unsubscribe) else {
+            return .reviewIsStale
+        }
+        guard current.allMechanisms.contains(review.mechanism) else { return .reviewIsStale }
+
+        return nil
+    }
+
+    // MARK: - Unsubscribe: acting
+
+    /// Acts on a frozen review, after the user has confirmed it.
+    ///
+    /// This performs no confirming of its own — by the time it is called the user has seen the
+    /// mechanism, the exact destination, and what confirming would do, and has pressed the
+    /// button that says so. What it does is **refuse**: every precondition is re-checked here
+    /// against the state as it is now, including the one that matters most, which is that the
+    /// destination has not changed since it was read.
+    ///
+    /// One call for all three mechanisms, because the decision to act is one decision and the
+    /// checks in front of it must not differ by route. What differs is only what happens after
+    /// the checks pass.
+    @discardableResult
+    func confirmUnsubscribe(_ review: UnsubscribeReviewSnapshot) -> Task<Void, Never> {
+        // The duplicate guard, in two parts, mirroring the archive path. The first refuses
+        // anything while an unsubscribe is out; the second refuses a *confirmation that has
+        // already been spent* — the case the first misses, because by then nothing is running
+        // and the sheet is still on screen showing its result.
+        guard !isUnsubscribing else { return .alreadyFinished }
+        guard unsubscribeActivity?.id != review.id else { return .alreadyFinished }
+
+        if let refusal = validateAgainstLoadedWindow(review) {
+            return refuseUnsubscribe(review, because: refusal)
+        }
+
+        unsubscribeActivity = UnsubscribeActivity(
+            id: review.id,
+            senderKey: review.senderKey,
+            senderDisplayValue: review.senderDisplayValue,
+            mechanismKind: review.mechanismKind,
+            destinationHost: review.destinationHost,
+            accountAddress: review.accountAddress
+        )
+
+        return runUnsubscribe { [self] in
+            // Asked of the provider rather than taken from the snapshot: the snapshot records
+            // which account the mail was *read* for, and the question here is which account the
+            // app is authenticated as *now*. Asked for a handoff as well as for a request —
+            // opening somebody else's unsubscribe page is still acting on the wrong mailbox.
+            guard await provider.currentConnection().account?.emailAddress.address == review.accountAddress else {
+                await finishUnsubscribe(review, refusedBy: .accountChanged)
+                return
+            }
+
+            // Recorded here rather than when the review opened or when it validated: this is the
+            // first line past which something really can leave this Mac. A run refused before it
+            // — a swapped account, a rotated endpoint — left the world alone and stays
+            // re-confirmable.
+            performedUnsubscribeIDs.insert(review.id)
+
+            let outcome = await perform(review)
+            await finishUnsubscribe(review, outcome: outcome)
+        }
+    }
+
+    /// Carries out one mechanism. The only place in the app that does.
+    private func perform(_ review: UnsubscribeReviewSnapshot) async -> UnsubscribeOutcome {
+        switch review.mechanism {
+        case .oneClick:
+            guard let unsubscriber, let request = review.oneClickRequest() else {
+                return .unsupportedMechanism
+            }
+            do {
+                let receipt = try await unsubscriber.submitOneClickUnsubscribe(request)
+                // The one place the app decides between its two carefully different sentences.
+                // A 2xx is an acceptance of the *request*; a 3xx means it was delivered and the
+                // endpoint pointed elsewhere. Neither is "you are unsubscribed", and neither is
+                // worded as though it were.
+                return receipt.wasAccepted
+                    ? .requestAccepted(host: receipt.host, statusCode: receipt.statusCode)
+                    : .requestSent(host: receipt.host, statusCode: receipt.statusCode)
+            } catch let failure as UnsubscribeFailure {
+                return .requestFailed(failure)
+            } catch {
+                return .requestFailed(.network(reason: "The request didn't complete."))
+            }
+
+        case .webPage(let url):
+            // Handed to the system and nothing more. No page is fetched here, no redirect is
+            // followed, and the session has no transport it could do either with — the browser
+            // gets the URL and InboxSweep's part is over.
+            if let failure = await UnsubscribeHandoff.open(url.url, with: urlOpener) {
+                return .handoffFailed(failure)
+            }
+            return .browserOpened(host: url.host)
+
+        case .mail(let address):
+            guard let composeURL = address.composeURL else { return .invalidMetadata }
+            if let failure = await UnsubscribeHandoff.open(composeURL, with: urlOpener) {
+                return .handoffFailed(failure)
+            }
+            // "Opened", never "sent". InboxSweep holds no permission to send mail and has no
+            // code that could — see ``GmailScope/prohibited``.
+            return .mailClientOpened(domain: address.domain)
+        }
+    }
+
+    /// Applies a finished action and writes it down.
+    private func finishUnsubscribe(
+        _ review: UnsubscribeReviewSnapshot,
+        outcome: UnsubscribeOutcome
+    ) async {
+        let record = UnsubscribeActionRecord.completing(review, outcome: outcome, at: now())
+        let stored = await mutationRecords.record(record)
+        unsubscribeActivity = unsubscribeActivity?.settingPhase(
+            .finished(outcome, localRecordWarning: stored.warning)
+        )
+    }
+
+    /// Applies a run that was refused *after* it started, without contacting anybody.
+    private func finishUnsubscribe(
+        _ review: UnsubscribeReviewSnapshot,
+        refusedBy failure: UnsubscribeFailure
+    ) async {
+        unsubscribeActivity = unsubscribeActivity?.settingPhase(.refused(failure))
+    }
+
+    /// Reports a refusal before anything starts. **Nothing is recorded**, because nothing
+    /// happened: an Activity entry for an action the app declined to attempt would be a claim
+    /// that it did something.
+    private func refuseUnsubscribe(
+        _ review: UnsubscribeReviewSnapshot,
+        because failure: UnsubscribeFailure
+    ) -> Task<Void, Never> {
+        unsubscribeActivity = UnsubscribeActivity(
+            id: review.id,
+            senderKey: review.senderKey,
+            senderDisplayValue: review.senderDisplayValue,
+            mechanismKind: review.mechanismKind,
+            destinationHost: review.destinationHost,
+            accountAddress: review.accountAddress,
+            phase: .refused(failure)
+        )
+        return .alreadyFinished
+    }
+
+    /// Dismisses the unsubscribe result.
+    ///
+    /// Does not clear ``performedUnsubscribeIDs``: closing a sheet is not permission to send the
+    /// same request again.
+    func dismissUnsubscribeActivity() {
+        guard unsubscribeActivity?.isRunning != true else { return }
+        unsubscribeActivity = nil
+    }
+
+    /// Runs an unsubscribe on its own task, so cancelling a load cannot abandon it.
+    private func runUnsubscribe(_ operation: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        let task = Task { @MainActor in
+            await operation()
+            unsubscribeTask = nil
+        }
+        unsubscribeTask = task
+        return task
     }
 
     // MARK: - Cleanup previews
@@ -1188,6 +1578,7 @@ final class InboxSessionModel {
         // effect on the next launch instead of leaving last week's verdicts on screen.
         let proposals = await makeProposals(senders: senders, messages: window)
         archiveCapability = await currentArchiveCapability()
+        unsubscribeCapability = await currentUnsubscribeCapability()
 
         state = .loaded(
             InboxSnapshot(
@@ -1280,6 +1671,7 @@ final class InboxSessionModel {
         let senders = await aggregate(window)
         let proposals = await makeProposals(senders: senders, messages: window)
         archiveCapability = await currentArchiveCapability()
+        unsubscribeCapability = await currentUnsubscribeCapability()
 
         // A cancelled load still publishes what it read — dropping it would throw away pages
         // the user waited for — but it never claims to still be loading.

@@ -18,12 +18,28 @@ actor GmailProvider: MailProvider, MailMessageArchiving {
     /// could drift from this one's.
     nonisolated var messageArchiver: (any MailMessageArchiving)? { self }
 
+    /// The unsubscribe boundary, which is emphatically **not** `self`.
+    ///
+    /// The opposite decision from ``messageArchiver``, for the opposite reason. An archive has
+    /// to be performed by the object holding the Gmail authorization, because it *is* a Gmail
+    /// request. A one-click unsubscribe must not be: it goes to a host a stranger named in a
+    /// mail header, and the object that sends it has no business being the one holding a Google
+    /// access token.
+    ///
+    /// So it is a separate type, over a separate transport, that has never been given a token
+    /// and has no parameter to receive one. "The Google token cannot reach an unsubscribe host"
+    /// is then a property of the object graph rather than of a guard somebody has to remember.
+    nonisolated var unsubscriber: (any MailUnsubscribing)? { unsubscribeClient }
+
     private let configuration: GmailOAuthConfiguration?
     private let transport: HTTPTransport
     private let webAuthenticator: WebAuthenticating
     private let credentialStore: GmailCredentialStoring
     private let retryPolicy: GmailAPIClient.RetryPolicy
     private let concurrency: Int
+
+    /// The one-click client. Holds no credential of any kind and is never handed one.
+    private let unsubscribeClient: any MailUnsubscribing
 
     private var storedCredentials: GmailStoredCredentials?
     private var accessToken: GmailAccessToken?
@@ -55,7 +71,8 @@ actor GmailProvider: MailProvider, MailMessageArchiving {
         webAuthenticator: WebAuthenticating = WebAuthenticationSessionPresenter(),
         credentialStore: GmailCredentialStoring = KeychainCredentialStore(),
         retryPolicy: GmailAPIClient.RetryPolicy = .init(),
-        concurrency: Int = GmailMessageFetcher.defaultConcurrency
+        concurrency: Int = GmailMessageFetcher.defaultConcurrency,
+        unsubscriber: any MailUnsubscribing = OneClickUnsubscribeClient()
     ) {
         self.configuration = configuration
         self.transport = transport
@@ -63,6 +80,7 @@ actor GmailProvider: MailProvider, MailMessageArchiving {
         self.credentialStore = credentialStore
         self.retryPolicy = retryPolicy
         self.concurrency = concurrency
+        self.unsubscribeClient = unsubscriber
     }
 
     // MARK: - MailAccountAuthorizing

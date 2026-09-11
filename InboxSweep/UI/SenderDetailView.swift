@@ -42,6 +42,26 @@ struct SenderDetailView: View {
     /// Optional, and absent when there is no action to derive candidates from.
     var onReviewCleanup: (() -> Void)?
 
+    /// Opens the sender's unsubscribe options.
+    ///
+    /// **Unsubscribe options…**, and the wording is again the design. Not *Stop all mail*, not
+    /// *Block sender*, not *Safe to unsubscribe* — the first two name powers the app does not
+    /// have, and the third is a verdict it is in no position to reach. "Options" is what is
+    /// behind it: a screen listing what this sender's own headers offer, from which nothing has
+    /// happened yet.
+    ///
+    /// Offered independently of archiving. Whether the app can take a message out of this
+    /// mailbox has nothing to do with whether this sender's mail names an unsubscribe endpoint,
+    /// and gating one on the other would hide a reading behind an unrelated permission.
+    var onReviewUnsubscribe: (() -> Void)?
+
+    /// What the sender's unsubscribe metadata amounts to, for the observations row.
+    ///
+    /// Passed in rather than derived, for the same reason the proposal is: the reading belongs
+    /// to the window the session owns, and a view that computed its own could disagree with the
+    /// sheet the button opens.
+    var unsubscribeOpportunity: UnsubscribeOpportunity?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -147,6 +167,14 @@ struct SenderDetailView: View {
                         .multilineTextAlignment(.trailing)
                 }
 
+                if let unsubscribeOpportunity {
+                    LabeledContent("Unsubscribe") {
+                        Text(unsubscribeOpportunity.availability.displayName)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("senderDetail.unsubscribeAvailability")
+                    }
+                }
+
                 if let cadence = cadenceDescription {
                     LabeledContent("Arrives") {
                         Text(cadence)
@@ -156,10 +184,17 @@ struct SenderDetailView: View {
             }
             .font(.callout)
 
+            if let onReviewUnsubscribe, unsubscribeOpportunity?.availability.camesFromListHeader == true {
+                Button("Unsubscribe options…", action: onReviewUnsubscribe)
+                    .buttonStyle(.link)
+                    .help("Shows what this sender's headers say about unsubscribing, and where an unsubscribe would go. Opening it sends nothing.")
+                    .accessibilityIdentifier("senderDetail.unsubscribeButton")
+            }
+
             Text("""
                 Gmail applies its own categories; InboxSweep only reports which ones it saw. \
                 Frequency is measured across the loaded messages, so loading more can change it. \
-                InboxSweep never contacts an unsubscribe address.
+                InboxSweep never contacts an unsubscribe address unless you review it and confirm.
                 """)
                 .font(.caption)
                 .foregroundStyle(.tertiary)

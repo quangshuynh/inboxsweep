@@ -354,9 +354,35 @@ nonisolated protocol MailMutationRecording: Sendable {
 
     /// Removes the stored transactions for `account`.
     func clear(for account: MailAccount) async
+
+    /// Writes an unsubscribe entry, replacing any earlier one with the same identifier.
+    ///
+    /// A **separate method** rather than a `record(_ entry: some ActivityRecord)` that took
+    /// either. The two kinds of entry have different shapes, different lifecycles, and — the
+    /// part that matters — different powers: a transaction can be read back and turned into
+    /// requests that put messages back in an inbox, and an unsubscribe entry can be read back
+    /// and turned into nothing at all, because it has no inverse. A single generic method would
+    /// have invited a single generic handler for both.
+    ///
+    /// Replacing by identifier for the same reason: one confirmation is one entry, whether it
+    /// is completed once or reported twice.
+    func record(_ entry: UnsubscribeActionRecord) async -> MutationRecordOutcome
+
+    /// The stored unsubscribe entries for `account`, newest first.
+    func unsubscribeEntries(for account: MailAccount) async -> [UnsubscribeActionRecord]
 }
 
 nonisolated extension MailMutationRecording {
+
+    /// Unsubscribe history is optional for a store to implement.
+    ///
+    /// Defaulted so a store written for archive history alone — and the test doubles that are —
+    /// keeps compiling and keeps reporting honestly: nothing stored, and a write that says so.
+    func record(_ entry: UnsubscribeActionRecord) async -> MutationRecordOutcome {
+        .notStored(reason: "This mailbox doesn't keep a record of unsubscribe actions.")
+    }
+
+    func unsubscribeEntries(for account: MailAccount) async -> [UnsubscribeActionRecord] { [] }
 
     /// The one transaction `account` could still undo, if there is one.
     ///
@@ -381,6 +407,7 @@ nonisolated final class EphemeralMutationRecordStore: MailMutationRecording, @un
 
     private let lock = NSLock()
     private var stored: [MailMutationTransaction] = []
+    private var storedUnsubscribes: [UnsubscribeActionRecord] = []
 
     init() {}
 
@@ -389,8 +416,12 @@ nonisolated final class EphemeralMutationRecordStore: MailMutationRecording, @un
     /// Exists so a store can be handed to a session *fully populated* rather than filled in by an
     /// `await` the caller has to sequence before connecting. Used by the synthetic-mailbox
     /// Activity fixture and by tests that describe a relaunch.
-    init(seeded transactions: [MailMutationTransaction]) {
+    init(
+        seeded transactions: [MailMutationTransaction],
+        unsubscribes: [UnsubscribeActionRecord] = []
+    ) {
         stored = transactions
+        storedUnsubscribes = unsubscribes
     }
 
     func record(_ transaction: MailMutationTransaction) async -> MutationRecordOutcome {
@@ -410,6 +441,19 @@ nonisolated final class EphemeralMutationRecordStore: MailMutationRecording, @un
     func clear(for account: MailAccount) async {
         lock.withLock {
             stored.removeAll { $0.accountAddress == account.emailAddress.address }
+            storedUnsubscribes.removeAll { $0.accountAddress == account.emailAddress.address }
         }
+    }
+
+    func record(_ entry: UnsubscribeActionRecord) async -> MutationRecordOutcome {
+        lock.withLock {
+            storedUnsubscribes.removeAll { $0.id == entry.id }
+            storedUnsubscribes.append(entry)
+        }
+        return .stored
+    }
+
+    func unsubscribeEntries(for account: MailAccount) async -> [UnsubscribeActionRecord] {
+        lock.withLock { MailMutationHistory.unsubscribeHistory(storedUnsubscribes, for: account) }
     }
 }

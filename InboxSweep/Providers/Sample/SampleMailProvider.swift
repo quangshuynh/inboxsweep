@@ -13,6 +13,17 @@ actor SampleMailProvider: MailProvider {
 
     nonisolated let displayName = "Sample data"
 
+    /// The unsubscribe boundary, which is `nil` unless a debug launch argument asked for one.
+    ///
+    /// Default-off, matching how this provider treats archiving: an ordinary sample run has no
+    /// boundary at all, so the confirmation is *absent* rather than disabled and a synthetic
+    /// session cannot reach a write even by accident. Under
+    /// ``SampleUnsubscribe/launchArgument`` it gets ``SampleUnsubscriber``, which answers
+    /// in-process and has no transport to reach a network with.
+    nonisolated var unsubscriber: (any MailUnsubscribing)? { sampleUnsubscriber }
+
+    private let sampleUnsubscriber: (any MailUnsubscribing)?
+
     private let messages: [MailMessage]
     private let pageSize: Int
     private let account: MailAccount
@@ -21,8 +32,10 @@ actor SampleMailProvider: MailProvider {
     init(
         messages: [MailMessage] = SampleMailbox.messages(),
         pageSize: Int = 60,
-        account: MailAccount = SampleMailbox.account
+        account: MailAccount = SampleMailbox.account,
+        unsubscriber: (any MailUnsubscribing)? = SampleUnsubscribe.unsubscriber()
     ) {
+        self.sampleUnsubscriber = unsubscriber
         self.messages = messages
         self.pageSize = max(1, pageSize)
         self.account = MailAccount(
