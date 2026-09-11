@@ -46,6 +46,16 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
     /// The sender, worded as the review screen displays it.
     let senderDisplayValue: String
 
+    /// Which part of the mailbox was loaded when the set was frozen.
+    ///
+    /// The loaded window's identity, in the one field that can change what "still loaded" means
+    /// without any individual message moving. Switch from Inbox to All mail between reviewing a
+    /// set and confirming it and every identifier is still present, still this sender's, and
+    /// still findable — but the list the user read was a list of inbox mail and the window under
+    /// it is not. Carried so the session can refuse that rather than quietly archive against a
+    /// window the user never saw.
+    let scope: MailboxScope
+
     /// The messages, in the order the review screen listed them.
     let messages: [SelectedMessage]
 
@@ -57,6 +67,7 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
         accountAddress: String,
         senderKey: SenderSummary.ID,
         senderDisplayValue: String,
+        scope: MailboxScope,
         messages: [SelectedMessage],
         frozenAt: Date
     ) {
@@ -64,6 +75,7 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
         self.accountAddress = accountAddress
         self.senderKey = senderKey
         self.senderDisplayValue = senderDisplayValue
+        self.scope = scope
         self.messages = messages
         self.frozenAt = frozenAt
     }
@@ -87,6 +99,21 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
 
         var isProtected: Bool { protectionReason != nil }
     }
+
+    /// The sentence that keeps a sender-level convenience from reading as sender-level authority.
+    ///
+    /// Shown on the confirmation, not left to documentation, because that is the screen where
+    /// somebody decides — and because a set that arrived there from **Review messages to
+    /// archive…** is the one case where a person could reasonably wonder whether they have just
+    /// set something up. They have not. There is no rule, no filter, and no schedule anywhere in
+    /// this app, which is what makes the sentence safe to print.
+    ///
+    /// It lives on the snapshot rather than on the sheet so it is a fact about the frozen set
+    /// rather than a string in a view — and so a test can read it without a main-actor hop.
+    static let senderScopeNote = """
+        Only the messages listed here will be changed. Future messages from this sender are not \
+        affected — InboxSweep creates no rule and archives nothing on its own.
+        """
 
     // MARK: - Derived
 

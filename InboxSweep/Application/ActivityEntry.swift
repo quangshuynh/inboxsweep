@@ -67,6 +67,33 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     /// Whether the mailbox cache can still describe any of the messages involved.
     var hasResolvedMetadata: Bool { !resolvedMessages.isEmpty }
 
+    /// Whether every message this operation still names came from one sender.
+    ///
+    /// ### Why this is derived and not stored
+    ///
+    /// A sender-reviewed archive is still an archive of *messages*. The sender was UI context —
+    /// which screen the user was on — and the transaction deliberately has no field for it, in
+    /// keeping with a record that names messages and describes none of them. Persisting an address
+    /// so a row could read a little better would be putting mailbox content in a second file for a
+    /// sentence, which is exactly the trade ``MailMutationTransaction`` refuses.
+    ///
+    /// So the question is asked of the *cache*, where that metadata already lives, and the answer
+    /// is allowed to be no. It is only yes when the window can describe **every** message the
+    /// transaction names and they agree — a partial answer would let the wording generalise from
+    /// the six messages it could see to the fifteen it is counting.
+    ///
+    /// Partly-undone transactions are excluded for the same reason: their identifier list is
+    /// narrower than the count in the headline, so the two would be about different sets.
+    var cameFromOneSender: Bool {
+        guard !resolvedMessages.isEmpty,
+              resolvedMessages.count == transaction.succeededCount,
+              transaction.succeededCount == confirmedCount
+        else { return false }
+
+        let keys = Set(resolvedMessages.map(\.sender.groupingKey))
+        return keys.count == 1
+    }
+
     // MARK: - Wording
 
     /// The headline: what was done, and to how many.
@@ -83,9 +110,11 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
                     : "No messages were archived"
             }
             if isPartial {
-                return "Archived \(confirmedCount) of \(selectedCount) messages"
+                return "Archived \(confirmedCount) of \(selectedCount) messages\(senderSuffix)"
             }
-            return confirmedCount == 1 ? "Archived 1 message" : "Archived \(confirmedCount) messages"
+            return confirmedCount == 1
+                ? "Archived 1 message\(senderSuffix)"
+                : "Archived \(confirmedCount) messages\(senderSuffix)"
 
         case .restoreToInbox:
             if confirmedCount == 0 {
@@ -101,6 +130,17 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
                 : "Put \(confirmedCount) messages back in your Inbox"
         }
     }
+
+    /// " from one sender", when the cache can say that much, and nothing otherwise.
+    ///
+    /// **"One sender", never the sender's name, and never "the sender".** The count is what was
+    /// archived and the sender is context for it — writing "Archived everything from Example
+    /// Sender" would claim an operation this app cannot perform, and naming the address here
+    /// would put mail content in a headline for no gain over the message list below it.
+    ///
+    /// Nothing in this phrase says the sender was archived, that all of its mail was archived, or
+    /// that anything it sends later is affected. It says these messages had one sender.
+    private var senderSuffix: String { cameFromOneSender ? " from one sender" : "" }
 
     /// The state line under the headline, or `nil` when there is nothing to add.
     ///

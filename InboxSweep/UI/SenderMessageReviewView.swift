@@ -34,6 +34,15 @@ struct SenderMessageReviewView: View {
     let summary: SenderSummary
     let proposal: SenderCleanupProposal?
 
+    /// The preview-derived candidates a sender-level entry point asked to start from, or `nil`
+    /// when the review was opened to look rather than to clean.
+    ///
+    /// Applied **once**, when the screen appears: it chooses the action shown in the picker and
+    /// ticks the candidate rows. From that moment it is inert — it is not consulted again, it does
+    /// not re-apply when the window reloads, and nothing on this screen syncs back to it. What the
+    /// user does with those ticks is what the confirmation gets.
+    var preselection: SenderReviewCandidates?
+
     @Environment(\.dismiss) private var dismiss
 
     @State private var sortOrder: MessageReviewSortOrder = .newestFirst
@@ -62,9 +71,19 @@ struct SenderMessageReviewView: View {
     /// Said when a frozen set could not be built because the window moved under the selection.
     @State private var selectionIsStale = false
 
+    /// The preselection that was actually applied, kept so the banner can say what it did.
+    ///
+    /// A record of something that already happened rather than live state. The user is free to
+    /// untick every row it filled in, and the banner keeps saying what the preview picked — which
+    /// is the honest thing for it to say, because "18 selected from this preview" is a fact about
+    /// how the screen opened, not a claim about what is ticked now. The live count sits beside it
+    /// in the selection row.
+    @State private var appliedPreselection: SenderReviewCandidates?
+
     var body: some View {
         VStack(spacing: 0) {
             header
+            preselectionNotice
             Divider()
             controls
             selectionControls
@@ -79,11 +98,32 @@ struct SenderMessageReviewView: View {
         .sheet(item: $pendingArchive) { frozen in
             ArchiveSelectionSheet(session: session, selection: frozen)
         }
-        .onAppear {
+        .onAppear(perform: applyPreselectionIfNeeded)
+    }
+
+    // MARK: - Opening state
+
+    /// Chooses the action and, when a sender-level entry point asked for one, the starting ticks.
+    ///
+    /// **This is the whole of what a sender-level action does.** It writes into two pieces of view
+    /// state — which action the picker shows, and which checkboxes are on — and stops. No request
+    /// is made, no confirmation opens, nothing is frozen, and nothing is scheduled. The screen the
+    /// user lands on is the same screen they would have reached by opening the review and ticking
+    /// the rows themselves; the only difference is that the ticking has been done for them, and
+    /// they can undo every bit of it before anything is confirmed.
+    private func applyPreselectionIfNeeded() {
+        guard appliedPreselection == nil else { return }
+
+        guard let preselection else {
             // Seeded from the proposal so the screen opens on the plan the app actually
             // suggested, rather than on whichever action happens to be first in a menu.
             if action == nil { action = proposal?.kind.defaultPlannedAction }
+            return
         }
+
+        action = preselection.action
+        selectedMessageIDs = Set(preselection.messageIDs)
+        appliedPreselection = preselection
     }
 
     // MARK: - Derived state
@@ -172,6 +212,38 @@ struct SenderMessageReviewView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
+    }
+
+    /// What a sender-level entry point started this review with, and why.
+    ///
+    /// Shown whenever the screen was opened from one, including — especially — when it filled in
+    /// nothing. A review that opened with no ticks and no sentence would read as a failure, and
+    /// the thing it must never read as is an invitation to select everything instead. So the empty
+    /// case names its reason and offers nothing: the ordinary controls below are still there, and
+    /// the app does not manufacture a fallback selection to have something to show.
+    @ViewBuilder
+    private var preselectionNotice: some View {
+        if let applied = appliedPreselection {
+            Label {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(applied.isEmpty ? "Nothing was preselected" : "\(applied.count) preselected for you")
+                        .font(.callout.weight(.medium))
+                        .accessibilityIdentifier("messageReview.preselectionHeadline")
+
+                    Text(applied.emptyExplanation ?? applied.preselectionSummary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("messageReview.preselectionSummary")
+                }
+            } icon: {
+                Image(systemName: applied.isEmpty ? "checkmark.shield" : "checklist")
+                    .foregroundStyle(.tint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
     }
 
     private var controls: some View {

@@ -8,6 +8,10 @@ dry-run planner remain advisory and have no execution path. They can lead you to
 you select messages, and they can *fill in* a selection for you to check — and they stop there.
 Nothing in InboxSweep carries out a recommendation.
 
+That includes the sender-level convenience added in Interval 9. **Review messages to archive…**
+opens a review with boxes already ticked. It is not an archive of a sender, and there is no
+whole-sender operation behind it — see [Sender-level review](#sender-level-review).
+
 ---
 
 ## What archiving does
@@ -148,6 +152,7 @@ is what makes "selecting changes nothing" true by construction rather than by di
 | **Select all shown** | Ticks every message currently listed | Reach messages the filter is hiding |
 | **Deselect all** | Clears the selection | — |
 | **Fill from preview** | Ticks the messages the selected preview would affect | Archive anything; tick a protected message |
+| **Review messages to archive…** | Opens this screen with those messages already ticked | Archive anything; tick a protected message; affect future mail |
 
 **Fill from preview** is the bridge between the dry run and a real change, and it is deliberately
 the *only* one. "38 messages would be affected" is useless if you cannot get at the 38, so this
@@ -161,6 +166,86 @@ Every identifier in a selection came from one sender's review screen, and the se
 that when it freezes the set. A selection that somehow named another sender's mail is **refused
 whole**, not narrowed to the part that belongs — a confirmation built from the survivors would be
 a confirmation of a set you never ticked.
+
+---
+
+## Sender-level review
+
+Picking messages one at a time is right for a handful and tedious for forty. So a sender can hand
+the review screen a **starting selection**, from two places:
+
+- the sender inspector on the dashboard;
+- a sender's row in the dry-run preview, where you have just read "38 of 43 would be archived".
+
+Both are called **Review messages to archive…**, and the wording is the design. They are not
+*Archive sender*, *Clean sender*, *Archive all from sender*, or *Apply recommendation*, because
+none of those is an operation InboxSweep has. Pressing one opens a screen. It sends nothing,
+freezes nothing, and starts nothing.
+
+### Where the candidates come from
+
+From the preview you were already looking at — not from a second engine written for this. The
+candidates are the messages that sender's **current** dry run says the **selected action** would
+affect, minus anything protected:
+
+- one sender, and the key is re-checked when the set is frozen;
+- the window currently loaded, so a deeper load or a reload changes them;
+- the conceptual action shown in the preview, cutoff and keep-newest alike;
+- never a protected message;
+- only identifiers already in the loaded window;
+- deterministic — the review list's own order, filtered in place.
+
+They are recomputed every time the button is pressed. A proposal generated before a reload cannot
+bring a stale list onto the screen.
+
+### Preselection is not authorization
+
+The review screen opens with those rows ticked, a line saying how many were ticked and how many
+protected messages were left out, and every control it has always had. You can untick anything,
+tick anything the rules missed — including a protected message — sort, filter, and change the
+previewed action. Nothing is written at any point in that: not when the sender action is pressed,
+not when the candidates are derived, not when the boxes are ticked, not when you change them, and
+not when the confirmation opens.
+
+The steps between a sender and a changed mailbox are unchanged by this feature. There are still
+five, and you take all of them.
+
+### When nothing is preselected
+
+A sender-level action can legitimately find nothing to tick, and it says which of these it was
+rather than showing an empty screen:
+
+| Why | What the screen says |
+| --- | --- |
+| No loaded messages from that sender any more | The window may have been reloaded, or their mail may have left it |
+| The action moves no messages (reviewing a subscription) | Choose an action, or tick messages yourself |
+| Every loaded message is outside the action's scope | That action reaches none of the N loaded messages |
+| Every loaded message is protected | All of them are held back; you can still tick them yourself |
+| The action reached some, and protection held back all of those | How many were held back, and that the rest are out of scope |
+
+**No fallback selection is ever manufactured.** "Nothing is selected" is a correct answer for a
+sender whose mail is all recent or all starred, and inventing something to tick so the screen
+looked useful would be the app choosing.
+
+### What the confirmation says
+
+Alongside the exact list, the count, and any protected-message warning:
+
+> Only the messages listed here will be changed. Future messages from this sender are not
+> affected — InboxSweep creates no rule and archives nothing on its own.
+
+That is true because there is nothing in the app that could make it false. No filter is created,
+no rule is stored, nothing is scheduled, and nothing runs in the background. The only file that
+remembers a *choice* is the saved plan, and it holds sender keys and action identifiers — no
+schedule, no enablement, and nothing that applies to mail that has not arrived.
+
+### Nothing sender-shaped reaches Gmail
+
+A sender-reviewed archive produces exactly the traffic that ticking the same messages by hand
+produces: one `messages/{id}/modify` per message, with `{"removeLabelIds":["INBOX"]}`. There is no
+sender-level provider method, no sender identifier in any URL or body, no query, no batch, no
+thread call, and no filters or settings request. The sender is UI and domain context; it is not a
+mutation concept, and `SafetyBoundaryTests` reads the bytes to prove it.
 
 ---
 
@@ -189,9 +274,10 @@ the fact does not first appear at the confirmation.
 ## The confirmation
 
 1. Open a sender.
-2. Open **Review…** to see its loaded messages.
-3. Tick the messages you want archived — individually, with **Select all shown**, or with
-   **Fill from preview** followed by your own edits.
+2. Open **Review…** to see its loaded messages, or **Review messages to archive…** to open the
+   same screen with the current preview's messages already ticked.
+3. Tick the messages you want archived — individually, with **Select all shown**, with
+   **Fill from preview**, or by editing what a sender-level action ticked for you.
 4. Press **Archive N messages…**.
 5. Read the confirmation.
 6. Press **Archive N messages**.
@@ -213,17 +299,32 @@ So the confirmation is wired to an **immutable snapshot** copied out of the wind
 you asked to review the set. Nothing recomputes it and nothing refreshes it. **The list on screen
 is the list that gets archived, or nothing does.**
 
+The snapshot carries what it takes to notice the window moving underneath it: the exact message
+identifiers with the subject, date, and protection reason each had when you reviewed them; the
+account the window was read for; the sender they all belong to; the mailbox scope that was loaded;
+and one operation identifier, which is what makes a repeated press recognisably the same operation
+rather than a second one.
+
 ### What is re-checked immediately before anything is sent
 
 - the authenticated account still matches — asked of the provider, not read from the snapshot,
   because the snapshot records which account the window was *read* for and the question is which
   account the token authenticates *now*;
 - the archive permission is still granted;
-- every message is still loaded, still in scope, and still belongs to the expected sender.
+- the loaded scope is still the one the set was frozen under. Switching from Inbox to All mail
+  leaves every identifier present and this sender's, and makes the list you read a list of
+  something else;
+- every message is still loaded, still in scope, and still belongs to the expected sender;
+- every message is still in the Inbox. One archived elsewhere since the review — in the Gmail web
+  app, on a phone, by a filter — would produce a request whose answer you could not tell apart
+  from the one you asked for;
+- **this confirmation has not already been carried out.** One confirmation is one operation, for
+  the life of the session rather than only while its result is on screen.
 
 If any of that has changed the operation is **refused whole and re-reviewed**. It is never
 narrowed to the messages that still match: acting on "the ones still there" would be acting on a
-set nobody approved.
+set nobody approved. Nor is it quietly re-derived from a fresher planner run — that would be
+executing a set you have not seen.
 
 ### While it is running
 
@@ -484,6 +585,7 @@ never reach the screen.
 | The connected account changed | Reload, reopen the sender, pick the message |
 | The message is no longer in the loaded window | Reload and choose it again |
 | The confirmed set no longer matches the window | Reload, reopen the sender, choose the messages again |
+| This confirmation was already carried out | Close it; if some messages were not archived, select those again |
 | Gmail no longer has the message | Reload to see what is actually in your Inbox |
 | Rate limited | Wait a moment and try again |
 | Network failure or timeout | Check your connection, then reload to confirm what Gmail has |
@@ -502,6 +604,7 @@ never reach the screen.
 | Saved plan selections | |
 | Protection verdicts | |
 | **Fill from preview** (ticks boxes only) | |
+| **Review messages to archive…** (opens a review with boxes ticked) | |
 
 A saved plan naming "archive messages older than 30 days" still only reopens a preview when it is
 restored. There is no code path from a proposal, a plan, or a recommendation to the mutation
@@ -512,15 +615,16 @@ recording archiver that must come back empty.
 The workflow a recommendation can reach — and where it stops:
 
 1. the preview says 38 messages would be affected;
-2. you open those messages in review;
-3. **Fill from preview** ticks them for you, minus anything protected;
-4. you inspect the list, untick, tick;
-5. you open a confirmation showing the frozen set;
-6. **you** press the button.
+2. **Review messages to archive…** opens those messages in review with them already ticked, minus
+   anything protected;
+3. you inspect the list, untick, tick;
+4. you open a confirmation showing the frozen set, which says only the listed messages change and
+   that future mail from that sender is unaffected;
+5. **you** press the button.
 
-Steps 1–5 send nothing. Step 6 is the only thing in the app that reaches Gmail with a write.
+Steps 1–4 send nothing. Step 5 is the only thing in the app that reaches Gmail with a write.
 
 **Not implemented, and not reachable:** archive a whole sender in one click, archive all, execute
-plan, apply recommendations, cross-sender bulk cleanup, `batchModify`, automatic archive,
-scheduled cleanup, background mutation, trash, permanent delete, mark read/unread, and
-unsubscribe execution.
+plan, apply recommendations, cross-sender bulk cleanup, sender rules, future-message automation,
+`batchModify`, automatic archive, scheduled cleanup, background mutation, trash, permanent delete,
+mark read/unread, and unsubscribe execution.

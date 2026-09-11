@@ -39,6 +39,30 @@ row stayed descriptive, and a row that says
 
 is worth more than three subjects kept on disk forever. Privacy wins over historical decoration.
 
+### "…from one sender"
+
+A row reads
+
+> Archived 15 messages from one sender
+
+when the loaded window can still describe **every** message the transaction names and they all
+turn out to have had the same sender, and
+
+> Archived 15 messages
+
+otherwise. The phrase is derived from the cache at the moment the row is drawn. **Nothing about a
+sender is stored to make it possible**, which is why a row whose messages have left the window
+loses the phrase and keeps every number.
+
+What it never says, because none of it would be true: that the sender was archived, that all of
+that sender's mail was archived, or that anything the sender sends later is affected. It says
+these messages had one sender between them. A partly-undone archive does not get the phrase at
+all — its identifier list is narrower than the count in its headline, so the two would be
+describing different sets.
+
+The sender is never named. "One sender" is the whole of it: an address in a headline would be
+mailbox content on disk's doorstep for no gain over the message list directly below it.
+
 ### Where the subjects on a row come from, then
 
 The local mailbox cache. When the loaded window still contains the messages a transaction named,
@@ -181,18 +205,41 @@ This interval added **zero** new remote capability:
   metadata all perform **zero** provider writes, asserted in `ActivityHistoryTests`;
 - the only way to write from Activity is the already-existing explicit Undo.
 
+## Getting to Activity
+
+Two routes, both to the same screen:
+
+- the **Activity** button in the toolbar;
+- an **Activity** link in the dashboard footer, beside the coverage line. The empty-inbox screen
+  has one too, since that is a state somebody is especially likely to be asking the question from
+  and the dashboard is not on screen.
+
+The in-content route exists because a toolbar is a place a control can be hard to get at —
+collapsed into an overflow menu on a narrow window, and unreachable to anything driving the app
+from outside it. It is a small link rather than a banner: Activity is a drawer you open
+occasionally, and a prominent button would misrepresent how central it is.
+
+Neither route sends anything to Gmail.
+
 ## A note on the UI tests
 
-Two UI cases are red, and one covers less than it should. Both are environmental rather than
-defects in the app, and both are written up in `InboxSweepUITests.swift`:
+The two cases that were red for two intervals are green, and the explanation the previous
+interval reached for was wrong in a way worth recording.
 
-- **Occlusion.** XCUITest cannot compute a hit point for a control when another application's
-  window covers it. Every case that only asserts passes; every case that clicks in-content fails
-  when the desktop is busy. `UITestWindow` pins the window's size and position so the geometry is
-  the test's rather than the desktop's, which removes the half of the problem that is
-  controllable.
-- **Toolbar buttons.** XCUITest cannot click a SwiftUI toolbar button in this app at all — with
-  every other window hidden, the runner reported no interrupting elements, clicked, and the app
-  did not react. This predates Activity; `dashboard.disconnectButton` behaves identically. So the
-  Activity case asserts its entry point, and the screen behind it is covered by
-  `MutationHistoryTests`, `ActivityHistoryTests`, and manual verification.
+It read as two problems — an occluded sender table and a SwiftUI toolbar button XCUITest could not
+press. It was one, and neither half was about InboxSweep. Measured: with two other applications'
+windows covering the width of the display, `isHittable` is `false` for the sender name, the
+*Preview cleanup* button, the filter picker, and a line of static text in the footer. **Nothing in
+the app was reachable**, because macOS refused the activation that would have put it in front. The
+toolbar was never the problem; it was one more control on an unreachable window.
+
+`UITestWindow` now puts the window under test **full screen**, which gives it a Space of its own
+where no other application's window exists to occlude it. No sleep, retry, skip, or raised timeout
+is involved, and a control that is genuinely unreachable still fails.
+
+So the Activity case now walks the journey instead of stopping at a button: it opens the screen
+through the in-content link, reads the scope and retention notes, sees the empty state, opens a
+row, and asserts that nothing on the screen can reach a mailbox. A second case covers the
+populated screen, using a synthetic history seeded into an in-memory store — records, not a
+capability. The sample session still has no mutation boundary, so the newest seeded archive is
+marked undoable in the record and is still not offered, which is exactly what the case asserts.

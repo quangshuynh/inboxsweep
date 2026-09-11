@@ -42,6 +42,14 @@ nonisolated enum MailMutationError: Error, Hashable, Sendable {
     /// than the one confirmed, so the whole operation is refused and re-reviewed instead.
     case selectionChanged
 
+    /// This exact confirmation has already been carried out.
+    ///
+    /// One confirmation is one operation. The frozen set behind a result that is still on screen
+    /// describes work that is already done, so submitting it again is refused rather than sent —
+    /// which matters most for the messages that *failed*, because a repeat would re-ask about the
+    /// ones that succeeded too.
+    case alreadyExecuted
+
     /// The provider no longer has this message — it was moved or deleted elsewhere.
     case messageNoLongerAvailable
 
@@ -70,7 +78,7 @@ nonisolated enum MailMutationError: Error, Hashable, Sendable {
         switch self {
         case .rateLimited, .network, .rejectedByProvider, .cancelled: true
         case .notSupported, .permissionRequired, .permissionDeclined, .authorizationExpired,
-             .accountChanged, .messageNotInLoadedWindow, .selectionChanged,
+             .accountChanged, .messageNotInLoadedWindow, .selectionChanged, .alreadyExecuted,
              .messageNoLongerAvailable: false
         }
     }
@@ -88,8 +96,8 @@ nonisolated enum MailMutationError: Error, Hashable, Sendable {
         switch self {
         case .notSupported, .permissionRequired, .permissionDeclined, .authorizationExpired,
              .accountChanged, .cancelled: true
-        case .messageNotInLoadedWindow, .selectionChanged, .messageNoLongerAvailable,
-             .rateLimited, .network, .rejectedByProvider: false
+        case .messageNotInLoadedWindow, .selectionChanged, .alreadyExecuted,
+             .messageNoLongerAvailable, .rateLimited, .network, .rejectedByProvider: false
         }
     }
 
@@ -104,7 +112,7 @@ nonisolated enum MailMutationError: Error, Hashable, Sendable {
     /// Whether the user has to look at a fresh window before trying again.
     var requiresReview: Bool {
         switch self {
-        case .accountChanged, .messageNotInLoadedWindow, .selectionChanged,
+        case .accountChanged, .messageNotInLoadedWindow, .selectionChanged, .alreadyExecuted,
              .messageNoLongerAvailable: true
         default: false
         }
@@ -122,6 +130,7 @@ nonisolated extension MailMutationError: LocalizedError {
         case .accountChanged: "The connected account changed"
         case .messageNotInLoadedWindow: "That message isn't in the loaded window any more"
         case .selectionChanged: "The messages you reviewed have changed"
+        case .alreadyExecuted: "That's already been done"
         case .messageNoLongerAvailable: "Gmail no longer has that message"
         case .rateLimited: "Gmail is busy with this account"
         case .network: "Couldn't reach Gmail"
@@ -155,6 +164,11 @@ nonisolated extension MailMutationError: LocalizedError {
             At least one message you confirmed is no longer where it was when you reviewed it, so \
             InboxSweep refused to act on a different set than the one you approved. Nothing was changed.
             """
+        case .alreadyExecuted:
+            """
+            InboxSweep already carried out this confirmation, so it didn't send it again. Whatever \
+            it changed is in Activity, and the messages it couldn't change are still in your Inbox.
+            """
         case .messageNoLongerAvailable:
             "It was probably deleted or moved somewhere else. Nothing was changed."
         case .rateLimited:
@@ -175,6 +189,7 @@ nonisolated extension MailMutationError: LocalizedError {
         case .authorizationExpired: "Connect your account again to continue."
         case .accountChanged, .messageNotInLoadedWindow: "Reload, open the sender again, and pick the message."
         case .selectionChanged: "Reload, open the sender again, and choose the messages again."
+        case .alreadyExecuted: "Close this. If some messages weren't archived, select them again from the review."
         case .messageNoLongerAvailable: "Reload to see what's actually in your inbox now."
         case .rateLimited: "Wait a moment and try again."
         case .network: "Check your internet connection, then reload to confirm what Gmail has before trying again."

@@ -5,56 +5,24 @@ import XCTest
 /// The dashboard case runs against the app's synthetic mailbox, so the whole path — launch,
 /// connect, fetch, aggregate, render — is exercised without a Google account.
 ///
-/// ### Every case launches through ``launchSampleApp()``, and two of them still fail here
+/// ### Every case launches through ``launchSampleApp()``, and that is what makes them pass
 ///
-/// Two cases in this file — ``testProposalsAndDryRunPreviewAreReachable()`` and
-/// ``testSenderMessagesCanBeReviewed()`` — fail with `Unable to find hit point for ScrollView`.
-/// The cause is **not** InboxSweep, and the evidence for that is unusually clean.
+/// For two intervals, every case here that *clicked* anything failed with `Unable to find hit
+/// point for ScrollView`, and every case that only *asserted* passed. The previous interval read
+/// that as two separate problems — an occluded sender table, and a SwiftUI toolbar button
+/// XCUITest could not press. It was one problem, and neither half was about InboxSweep.
 ///
-/// The split is exact: every case that only *asserts* passes, and every case that *clicks*
-/// fails. The runner names the reason itself:
+/// Measured rather than assumed: with the developer's other windows on screen, `isHittable` is
+/// `false` for the sender name, for the *Preview cleanup* button, for the filter picker, and for
+/// a line of static text in the footer. Nothing in the app was reachable, because two other
+/// applications' windows covered the full width of the display and macOS refused the activation
+/// that would have put the app in front. The toolbar was never the problem; it was one more
+/// control on a window no click could reach.
 ///
-/// ```
-/// Found 2 interrupting elements:
-///     Window at {{839.0, 30.0}, {841.0, 927.0}} from Application 'com.brave.Browser'
-///     Window at {{0.0, 30.0}, {940.0, 920.0}} from Application 'com.anthropic.claudefordesktop'
-///     Window at {{360.0, 220.0}, {960.0, 640.0}} from Application 'com.apple.ActivityMonitor'
-/// ```
-///
-/// Those three cover x ∈ [0, 1680] of the display. The window under test sits at
-/// `{{240, 283}, {1200, 512}}`, entirely inside that union, so there is no point in the sender
-/// table that belongs to InboxSweep when the system is asked whose window is on top. A target
-/// that is not hittable sends XCUITest down its "scroll it into view" fallback, and that scroll
-/// needs a hit point on the table's own backing scroll view — covered by the same windows. The
-/// error names the scroll view, which is why it read for an interval like a layout bug in this
-/// app. It is not one.
-///
-/// ### What was done about it, and what was not
-///
-/// ``UITestWindow`` removes the half of the problem that *is* controllable: a debug-only launch
-/// argument that pins the window to a fixed size, centres it, and asks for the foreground at
-/// launch and on every state change. Before it, the window came up wherever it had last been
-/// dragged — 1,680 points wide across two displays — so the geometry under test was a
-/// measurement of somebody's desktop. It is deterministic now.
-///
-/// What it cannot do is win an argument with three other applications about which window is in
-/// front. Tried, in order, and none of it made the suite reliably green:
-///
-/// - `NSApplication.activate()`, the polite form;
-/// - `NSRunningApplication.activate(options:)`, the form that does not ask;
-/// - `orderFrontRegardless()` on every window, repeated on every state change;
-/// - `NSWindow.Level.floating`, which made it *worse* — XCUITest's occlusion check is about
-///   which application is frontmost, not about which window is drawn on top;
-/// - `XCUIApplication.activate()` from the runner immediately before each click, which also
-///   made it worse;
-/// - clicking the table row rather than the sender's name, which XCUITest refuses outright:
-///   `No unoccluded regions for Cell … Try to interact with a descendant instead.`
-///
-/// So the two cases are left failing, with this note, rather than made green by a sleep, a
-/// retry, a raised timeout, a skip, or a swallowed assertion. On a machine with nothing else on
-/// screen — a CI runner, most of all — there is no occluding window and the hit point resolves.
-/// That is the next interval's to confirm, and it inherits a red it can explain rather than a
-/// green it cannot trust.
+/// ``UITestWindow`` now puts the window under test **full screen**, which gives it a Space of its
+/// own where no other application's window exists to occlude it. Both long-red cases pass, and so
+/// does the journey this interval adds. No sleep, retry, skip, or raised timeout is involved, and
+/// a control that is genuinely unreachable still fails.
 final class InboxSweepUITests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -211,48 +179,183 @@ final class InboxSweepUITests: XCTestCase {
         )
     }
 
-    /// Activity has a way in from the dashboard, and nothing on that screen can change a mailbox.
+    /// Activity is reachable from the content, opens, states its scope, and can change nothing.
     ///
-    /// ### Why this case stops at the button
+    /// ### Why it goes through the in-content route
     ///
-    /// It asserts the entry point and not the journey, which is less than it should be. The
-    /// reason is specific and was measured rather than assumed: **XCUITest cannot click a
-    /// SwiftUI toolbar button in this app at all.** Toolbar items report `isHittable == false`,
-    /// the runner falls back to synthesising a click at the element's centre, and nothing
-    /// happens. That is not new and not about Activity — ``dashboard.disconnectButton`` behaves
-    /// identically, and it predates this interval by five of them. It is also not the occlusion
-    /// problem this class describes above: with every other application's window hidden, the
-    /// runner reported no interrupting elements, clicked the button, and the app did not react.
-    ///
-    /// Two ways out were tried and rejected. A debug launch argument that opened Activity at
-    /// launch does not work either — a `.sheet` whose item is already set when the view first
-    /// appears never presents, because SwiftUI presents on the *transition* — and moving the
-    /// control out of the toolbar to suit the test would be letting the test design the app.
-    ///
-    /// So the screen behind this button is covered where it can be covered honestly: the
-    /// wording, counts, states, and undo rules are `MutationHistoryTests` and
-    /// `ActivityHistoryTests`, and the screen itself was verified by hand — it opens, shows the
-    /// empty state, and states its scope and its retention. See `Docs/Activity.md`.
+    /// The toolbar button is still there and still the primary way in. This drives the link in
+    /// the dashboard footer instead, for a reason that is about the product rather than about the
+    /// runner: a toolbar is a place a control can be hard to get at — collapsed into an overflow
+    /// menu on a narrow window, and unreachable to anything driving the app from outside — and
+    /// "what has this app changed?" deserves an answer that does not depend on one. The journey
+    /// behind both is identical, so testing the reachable one covers the behaviour rather than
+    /// proving XCUITest can press a macOS toolbar button.
     @MainActor
-    func testActivityIsReachableAndCannotChangeAnything() {
+    func testActivityIsReachableFromTheContentAndCannotChangeAnything() {
         let app = launchSampleApp()
 
         let table = app.descendants(matching: .any)["dashboard.senderTable"]
         XCTAssertTrue(table.waitForExistence(timeout: 15), "The dashboard should load from sample data")
 
+        // Both routes exist. Only one of them is driven.
         XCTAssertTrue(
-            app.buttons["dashboard.activityButton"].waitForExistence(timeout: 5),
-            "The dashboard should offer a way into Activity"
+            app.buttons["dashboard.activityButton"].exists,
+            "The toolbar route into Activity should still be there"
         )
 
-        // Activity is not open, and nothing about having a way into it puts a mutation control
-        // on the dashboard. The synthetic mailbox vends no mutation boundary at all, so this is
-        // the app's guarantee that a sample run cannot reach a write even by accident.
-        XCTAssertFalse(app.descendants(matching: .any)["activity.screen"].exists)
+        let activityLink = app.descendants(matching: .any)["dashboard.activityLink"]
+        XCTAssertTrue(
+            activityLink.waitForExistence(timeout: 5),
+            "The dashboard content should offer a way into Activity"
+        )
+        activityLink.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.screen"].waitForExistence(timeout: 5),
+            "The in-content route should open Activity"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.scopeNote"].exists,
+            "Activity must say what it does and does not record before it lists anything"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.retentionNote"].exists,
+            "Activity must say that the history is bounded"
+        )
+
+        // The empty state, reached honestly: the synthetic mailbox vends no mutation boundary, so
+        // a sample run cannot have changed anything and there is nothing to list.
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.empty"].waitForExistence(timeout: 5),
+            "A session that has changed nothing should show the empty state"
+        )
+
+        // Nothing on the screen can reach a mailbox, and the undo is absent rather than disabled.
         XCTAssertFalse(app.buttons["activity.undoButton"].exists)
         XCTAssertFalse(app.buttons["Archive"].exists)
         XCTAssertFalse(app.buttons["Delete"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
+
+        app.descendants(matching: .any)["activity.doneButton"].firstMatch.click()
+        XCTAssertTrue(table.waitForExistence(timeout: 5), "Closing Activity should return to the dashboard")
+    }
+
+    /// Activity with something in it: the rows render, a row opens, and none of it is actionable.
+    ///
+    /// ### Why the history is seeded rather than performed
+    ///
+    /// It cannot be performed here. The synthetic mailbox vends no mutation boundary, so a sample
+    /// run has nothing that could produce a transaction — which is the right design and is what
+    /// every other case in this file relies on. ``SampleActivity`` therefore seeds the *records*
+    /// into an in-memory store. That adds no capability: the session still cannot write, and the
+    /// newest seeded archive is marked undoable in the file and is still not offered, because the
+    /// grant behind it does not exist. This case asserts exactly that.
+    @MainActor
+    func testActivityShowsSeededHistoryAndStillCannotChangeAnything() {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            UITestLaunchArgument.sampleData,
+            UITestLaunchArgument.sampleActivity,
+            UITestLaunchArgument.deterministicWindow,
+        ]
+        app.launch()
+
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15), "The dashboard should load from sample data")
+
+        let activityLink = app.descendants(matching: .any)["dashboard.activityLink"]
+        XCTAssertTrue(activityLink.waitForExistence(timeout: 5))
+        activityLink.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.screen"].waitForExistence(timeout: 5),
+            "The in-content route should open Activity"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.list"].waitForExistence(timeout: 5),
+            "A history with entries should be listed rather than showing the empty state"
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["activity.empty"].exists,
+            "A populated history showed the empty state"
+        )
+
+        // Opening a row is a read. It resolves what the window can still describe and says so
+        // when it cannot, which is the graceful degradation the privacy model depends on.
+        let rows = app.descendants(matching: .any).matching(identifier: "activity.row")
+        XCTAssertGreaterThan(rows.count, 1, "The seeded history should have several entries")
+        rows.element(boundBy: 0).click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.detail.tallies"].waitForExistence(timeout: 5),
+            "Opening a change should show what it did"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.detail.explanation"].exists,
+            "A change must explain itself, not just count"
+        )
+
+        // The whole point: being visible did not make anything actionable. The newest seeded
+        // archive is undoable in the record and is not offered, because this session has no
+        // mutation boundary to honour it with.
+        XCTAssertFalse(app.buttons["activity.undoButton"].exists)
+        XCTAssertFalse(app.buttons["Archive"].exists)
+        XCTAssertFalse(app.buttons["Delete"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
+
+        app.descendants(matching: .any)["activity.doneButton"].firstMatch.click()
+    }
+
+    /// The sender-level entry point: it exists, it opens a review, and it archives nothing.
+    ///
+    /// The wording is asserted as well as the navigation. **Review messages to archive…** is the
+    /// promise the interval makes — that pressing it moves you into a review rather than carrying
+    /// something out — and a later rename to *Archive sender* would be a different product.
+    @MainActor
+    func testSenderCleanupOpensAReviewRatherThanArchiving() {
+        let app = launchSampleApp()
+
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: 15))
+
+        let sender = senderRow(named: "Storefront Deals", in: app)
+        XCTAssertTrue(sender.waitForExistence(timeout: 5))
+        sender.click()
+
+        let previewButton = app.buttons["dashboard.previewCleanupButton"]
+        XCTAssertTrue(previewButton.waitForExistence(timeout: 5))
+        previewButton.click()
+        XCTAssertTrue(app.descendants(matching: .any)["cleanupPlan.screen"].waitForExistence(timeout: 5))
+
+        // Queried across all element types: a link-styled button reports itself as a link.
+        let cleanupReview = app.descendants(matching: .any)["cleanupPlan.reviewCleanupButton"]
+        XCTAssertTrue(
+            cleanupReview.waitForExistence(timeout: 5),
+            "A sender's preview row should offer a way to review the messages it names"
+        )
+        cleanupReview.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: 5),
+            "The sender-level action should open the message review"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["messageReview.preselectionSummary"].waitForExistence(timeout: 5),
+            "The review should say what it preselected, or why it preselected nothing"
+        )
+
+        // The whole point of the interval: the convenience got the user to a review, and stopped.
+        // On the synthetic mailbox there is no archiver at all, so the Archive control is absent
+        // rather than disabled — which is the app's guarantee that a sample run cannot reach a
+        // write even by accident.
+        XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
+        XCTAssertFalse(app.buttons["messageReview.archiveButton"].exists)
+        XCTAssertFalse(app.buttons["Archive sender"].exists)
+        XCTAssertFalse(app.buttons["Clean sender"].exists)
+        XCTAssertFalse(app.buttons["Apply recommendation"].exists)
+        XCTAssertFalse(app.buttons["Archive all from sender"].exists)
+
+        app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
     }
 
     /// Opening the messages behind a sender's proposal, which is what makes a count checkable.

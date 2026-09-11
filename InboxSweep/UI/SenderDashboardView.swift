@@ -36,11 +36,21 @@ struct SenderDashboardView: View {
         /// One sender's loaded messages.
         case messageReview(SenderSummary)
 
+        /// One sender's loaded messages, with the current preview's candidates already ticked.
+        ///
+        /// A separate case rather than an optional payload on ``messageReview``, so the two are
+        /// distinct identities: opening a plain review and then a preselected one for the same
+        /// sender really is a change of destination, and a shared identifier would leave SwiftUI
+        /// showing the first sheet's already-built body with the preselection never applied.
+        case senderCleanupReview(SenderSummary, SenderReviewCandidates)
+
         var id: String {
             switch self {
             case .cleanupPlan: "cleanupPlan"
             case .activity: "activity"
             case .messageReview(let summary): "messageReview-\(summary.id)"
+            case .senderCleanupReview(let summary, let candidates):
+                "senderCleanupReview-\(summary.id)-\(candidates.action.id)"
             }
         }
     }
@@ -70,7 +80,14 @@ struct SenderDashboardView: View {
                         summary: sender,
                         proposal: snapshot.proposal(for: sender.id),
                         messages: session.loadedMessages(forSenderKey: sender.id),
-                        onReviewMessages: { sheet = .messageReview(sender) }
+                        onReviewMessages: { sheet = .messageReview(sender) },
+                        // Offered whether or not this session can write. The button's job is to
+                        // move the user into a review state, which it does either way, and the
+                        // review screen is the honest place to say whether archiving is available
+                        // — it offers **Enable archiving…** on a read-only grant and nothing at
+                        // all on the synthetic mailbox. Gating it here and not on the dry-run row
+                        // would also have made two identically-worded controls behave differently.
+                        onReviewCleanup: { openCleanupReview(for: sender, under: suggestedAction(for: sender.id)) }
                     )
                 } else {
                     ContentUnavailableView(
@@ -95,6 +112,10 @@ struct SenderDashboardView: View {
                     onReviewSender: { key in
                         // Replaces this sheet rather than opening a second one beside it.
                         sheet = snapshot.senders.first { $0.id == key }.map(Sheet.messageReview)
+                    },
+                    onReviewCleanupForSender: { key, action in
+                        guard let sender = snapshot.senders.first(where: { $0.id == key }) else { return }
+                        openCleanupReview(for: sender, under: action)
                     }
                 )
 
@@ -106,6 +127,14 @@ struct SenderDashboardView: View {
                     session: session,
                     summary: sender,
                     proposal: snapshot.proposal(for: sender.id)
+                )
+
+            case .senderCleanupReview(let sender, let candidates):
+                SenderMessageReviewView(
+                    session: session,
+                    summary: sender,
+                    proposal: snapshot.proposal(for: sender.id),
+                    preselection: candidates
                 )
             }
         }
@@ -129,6 +158,28 @@ struct SenderDashboardView: View {
     /// the way the table does rather than in a set's arbitrary order.
     private var selectedSenderKeysInDisplayOrder: [SenderSummary.ID] {
         snapshot.senders.map(\.id).filter(selectedSenderIDs.contains)
+    }
+
+    /// The action a sender-level entry point previews when nothing else has chosen one.
+    ///
+    /// The same seed the preview itself uses — the sender's own proposal — so pressing **Review
+    /// messages to archive…** in the inspector and pressing it on that sender's preview row start
+    /// from the same action rather than from two different defaults.
+    private func suggestedAction(for key: SenderSummary.ID) -> PlannedCleanupAction {
+        snapshot.proposal(for: key)?.kind.defaultPlannedAction ?? .keepNewest(count: 5)
+    }
+
+    /// Moves the user into a review, with the current preview's candidates ticked.
+    ///
+    /// **Derives and navigates. That is all it does.** The candidates come out of the window
+    /// already in memory, nothing is sent, nothing is frozen, and no confirmation opens. The
+    /// screen it opens is the same review any other route opens, with the same Archive button
+    /// behind the same confirmation.
+    private func openCleanupReview(for sender: SenderSummary, under action: PlannedCleanupAction) {
+        sheet = .senderCleanupReview(
+            sender,
+            session.senderReviewCandidates(forSenderKey: sender.id, under: action)
+        )
     }
 
     // MARK: - Filter bar
@@ -277,13 +328,50 @@ struct SenderDashboardView: View {
 
             Spacer(minLength: 12)
 
+            // `fixedSize` and the layout priority are what keep this control *present*. A footer
+            // is a row of text competing for one line, and without them the link is the thing
+            // that gets compressed when the coverage sentence or the privacy note is long —
+            // squeezed to nothing on a narrow window, and intermittently unfindable in a UI test
+            // while the coverage line is still saying "loading". A route into Activity that
+            // disappears when a sentence beside it grows is not a route.
+            activityLink
+                .fixedSize()
+                .layoutPriority(1)
+
             Text(PrivacyNotice.summary)
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
+                .lineLimit(2)
                 .help("InboxSweep suggests and previews. The only change it can make is archiving one message you open and confirm, from a sender's message review — nothing on this screen changes your mail.")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+
+    /// The in-content way into Activity, beside the toolbar one rather than instead of it.
+    ///
+    /// ### Why a second route exists
+    ///
+    /// Because a toolbar is a place a control can be *hard to reach* — for a UI test driving the
+    /// window from outside, and for anybody whose window is narrow enough that macOS collapses the
+    /// toolbar into an overflow menu. "What has this app changed?" is a question worth being able
+    /// to answer from the content itself, which is where the user is already looking.
+    ///
+    /// Deliberately small: a link in the footer beside the coverage line, not a banner. It is a
+    /// drawer somebody opens occasionally, and giving it a prominent button would misrepresent
+    /// how central it is.
+    ///
+    /// Opening it reaches no mailbox. See ``ActivityView``.
+    private var activityLink: some View {
+        Button {
+            sheet = .activity
+        } label: {
+            Label("Activity", systemImage: "clock.arrow.circlepath")
+                .font(.callout)
+        }
+        .buttonStyle(.link)
+        .help("Shows what InboxSweep has changed in this mailbox. Nothing is sent to Gmail by opening it.")
+        .accessibilityIdentifier("dashboard.activityLink")
     }
 
     @ToolbarContentBuilder

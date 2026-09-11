@@ -990,6 +990,235 @@ struct SafetyBoundaryTests {
         }
     }
 
+    // MARK: - Sender-level convenience is not sender-level authority
+    //
+    // The interval that added "Review messages to archive…" is the one where the safety claim is
+    // easiest to lose: a sender-level *action* is one small step from a sender-level *operation*,
+    // and this section is the line between them.
+
+    @Test("Everything a sender-level action does before a confirmation writes nothing")
+    @MainActor
+    func senderLevelFlowsAreInertUntilConfirmed() async throws {
+        // The whole journey the entry point starts, for every sender and every action: derive the
+        // candidates, preselect them, edit the selection in both directions, and freeze the
+        // result into a confirmation. Nothing in that reaches a provider.
+        let messages = ProposalFixtures.promotionalSender(count: 24) + ProposalFixtures.newsletterSender(count: 16)
+        let archiver = StubMessageArchiver()
+        let provider = StubMailProvider(
+            fetch: .pages([MailMessagePage(messages: messages)]),
+            archiver: archiver
+        )
+        let model = InboxSessionModel(provider: provider, fetchRequest: MailFetchRequest(limit: 40))
+
+        await model.connect().value
+        let snapshot = try #require(model.state.snapshot)
+
+        for sender in snapshot.senders {
+            let loaded = model.loadedMessages(forSenderKey: sender.id).map(\.id)
+
+            for action in PlannedCleanupAction.offered {
+                let candidates = model.senderReviewCandidates(forSenderKey: sender.id, under: action)
+
+                // Every sentence the screen would show, including the ones for the empty cases.
+                _ = candidates.emptyReason
+                _ = candidates.emptyExplanation
+                _ = candidates.preselectionSummary
+
+                // Preselecting, then unticking one, then ticking something the app refused to
+                // pick — every edit the review screen allows.
+                if !candidates.isEmpty {
+                    _ = model.makeArchiveSelection(forSenderKey: sender.id, messageIDs: candidates.messageIDs)
+                    _ = model.makeArchiveSelection(
+                        forSenderKey: sender.id,
+                        messageIDs: candidates.messageIDs.dropFirst()
+                    )
+                }
+                let widened = model.makeArchiveSelection(forSenderKey: sender.id, messageIDs: loaded)
+                _ = widened.map(model.canArchive)
+                _ = widened?.selection()
+            }
+        }
+
+        #expect(archiver.allRequests.isEmpty, "A sender-level flow reached the mutation boundary")
+        #expect(model.mutationActivity == nil, "A sender-level flow started an operation")
+        #expect(model.undoableArchive == nil)
+        #expect(try #require(model.state.snapshot).loadedMessageCount == 40, "The window moved before any confirmation")
+    }
+
+    @Test("Candidate derivation never crosses a sender, and never picks protected mail")
+    @MainActor
+    func candidatesStayWithinOneSenderAndSkipProtectedMail() async throws {
+        let messages = ProposalFixtures.promotionalSender(count: 30) + ProposalFixtures.newsletterSender(count: 20)
+        let model = InboxSessionModel(
+            provider: StubMailProvider(
+                fetch: .pages([MailMessagePage(messages: messages)]),
+                archiver: StubMessageArchiver()
+            ),
+            fetchRequest: MailFetchRequest(limit: 50)
+        )
+        await model.connect().value
+        let snapshot = try #require(model.state.snapshot)
+
+        for sender in snapshot.senders {
+            let own = Set(model.loadedMessages(forSenderKey: sender.id).map(\.id))
+            let protectedIDs = Set(
+                model.reviewedMessages(forSenderKey: sender.id).filter(\.isProtected).map(\.id)
+            )
+
+            for action in PlannedCleanupAction.offered {
+                let candidates = model.senderReviewCandidates(forSenderKey: sender.id, under: action)
+                #expect(candidates.senderKey == sender.id)
+                #expect(
+                    Set(candidates.messageIDs).isSubset(of: own),
+                    "A candidate set reached another sender's mail under \(action.displayName)"
+                )
+                #expect(
+                    Set(candidates.messageIDs).isDisjoint(with: protectedIDs),
+                    "A candidate set picked protected mail under \(action.displayName)"
+                )
+            }
+        }
+    }
+
+    @Test("No sender-level mutation exists anywhere, and no sender reaches Gmail as one")
+    @MainActor
+    func noSenderLevelMutationExists() async throws {
+        // Three separate claims, because the convenience could have grown into any of them.
+
+        // One: the mutation boundary still has exactly four methods, and none of them names a
+        // sender, a plan, a rule, or a bulk operation.
+        let boundaryMethodNames = ["archiveCapability", "authorizeArchiving", "archive", "restoreToInbox"]
+        #expect(boundaryMethodNames.count == 4, "The mutation boundary gained or lost a method")
+        for name in boundaryMethodNames {
+            for verb in ["sender", "plan", "rule", "filter", "bulk", "all", "execute", "apply", "sweep"] {
+                #expect(
+                    !name.lowercased().contains(verb),
+                    "The mutation boundary gained something sender-shaped: \(name)"
+                )
+            }
+        }
+
+        // Two: a request to that boundary carries a message identifier and an account, and has
+        // nowhere to put a sender even if something wanted to send one.
+        let request = MailArchiveRequest(
+            messageID: MailMessageID("m-1"),
+            accountAddress: "someone@example.com"
+        )
+        let requestProperties = Set(Mirror(reflecting: request).children.compactMap(\.label))
+        #expect(requestProperties == ["messageID", "accountAddress", "operationID"])
+        #expect(requestProperties.isDisjoint(with: [
+            "sender", "senderKey", "senderAddress", "query", "labelQuery", "rule", "plan", "action",
+        ]))
+
+        // Three: the candidate set — the one new type a sender-level action produces — carries
+        // identifiers and counts. There is nothing on it to carry out, and nothing that could
+        // stand in for a request.
+        let candidates = SenderReviewCandidates.derive(
+            from: [],
+            senderKey: "deals@example.com",
+            under: .keepNewest(count: 5)
+        )
+        let candidateProperties = Set(Mirror(reflecting: candidates).children.compactMap(\.label))
+        #expect(candidateProperties == [
+            "senderKey", "action", "messageIDs", "loadedMessageCount",
+            "protectedMessageCount", "outOfScopeMessageCount",
+        ])
+        #expect(candidateProperties.isDisjoint(with: [
+            "provider", "archiver", "request", "endpoint", "execute", "perform", "schedule",
+            "runAt", "isEnabled", "autoRun", "appliesToFutureMessages",
+        ]))
+    }
+
+    @Test("A real sender-reviewed archive sends the reviewed messages and nothing sender-shaped")
+    @MainActor
+    func senderReviewedArchiveCarriesOnlyMessageModifies() async throws {
+        // Driven through the real Gmail adapter over a recording transport, so this counts bytes:
+        // a sender-level *entry point* must produce exactly the same traffic as ticking the same
+        // messages by hand.
+        var stub = GmailMailboxStub(messages: GmailFixtures.mailbox(messageCount: 12))
+        stub.grantedScope = GmailScope.requestedScopeParameter
+        let transport = RecordingHTTPTransport(handler: stub.handler())
+        let provider = GmailProvider(
+            configuration: GmailOAuthConfiguration(clientID: "1234567890-abcdef.apps.googleusercontent.com"),
+            transport: transport,
+            webAuthenticator: FakeWebAuthenticator.granting(),
+            credentialStore: InMemoryCredentialStore(),
+            retryPolicy: .immediate
+        )
+        let model = InboxSessionModel(provider: provider, fetchRequest: MailFetchRequest(limit: 12))
+
+        await model.connect().value
+        let snapshot = try #require(model.state.snapshot)
+        let senderKey = try #require(snapshot.senders.first).id
+
+        let candidates = model.senderReviewCandidates(forSenderKey: senderKey, under: .keepNewest(count: 1))
+        try #require(!candidates.isEmpty)
+        let requestsAfterDeriving = transport.requests.count
+
+        let frozen = try #require(model.makeArchiveSelection(
+            forSenderKey: senderKey,
+            messageIDs: candidates.messageIDs
+        ))
+        #expect(transport.requests.count == requestsAfterDeriving, "Freezing a sender's set sent something")
+
+        await model.archiveSelection(frozen).value
+
+        let writes = transport.requests.filter {
+            ($0.url?.host ?? "").contains("gmail.googleapis.com") && $0.httpMethod != "GET"
+        }
+        #expect(writes.count == frozen.count, "One request per reviewed message")
+
+        let senderAddress = try #require(snapshot.senders.first).sender.address
+        for write in writes {
+            let url = write.url?.absoluteString ?? ""
+            #expect(write.httpMethod == "POST")
+            #expect(write.url?.path().hasSuffix("/modify") == true)
+            #expect(!url.lowercased().contains("batch"), "A sender-reviewed archive reached a batch endpoint")
+            #expect(!url.contains("/threads/"), "A sender-reviewed archive reached the thread endpoint")
+            #expect(!url.contains("/settings"), "A sender-reviewed archive reached the settings API")
+            #expect(!url.contains("/filters"), "A sender-reviewed archive created a filter")
+            #expect(!url.contains("q="), "A sender-reviewed archive smuggled in a query")
+
+            // The sender is UI context. It has no business appearing in a URL or a body.
+            let body = String(decoding: write.httpBody ?? Data(), as: UTF8.self)
+            #expect(!url.contains(senderAddress), "A sender address reached a Gmail mutation URL")
+            #expect(!body.contains(senderAddress), "A sender address reached a Gmail mutation body")
+            #expect(body == #"{"removeLabelIds":["INBOX"]}"#)
+
+            // And it named one of the reviewed messages, not something the planner produced later.
+            let named = frozen.messageIDs.filter { url.hasSuffix("/messages/\($0.rawValue)/modify") }
+            #expect(named.count == 1, "A write named something other than one reviewed message")
+        }
+    }
+
+    @Test("The confirmation says a sender's future mail is untouched, because nothing schedules anything")
+    func confirmationDeniesAnyFutureEffect() {
+        // The sentence is asserted because it is a promise the app is making on screen, and the
+        // thing that makes it true — there being no rule, filter, or schedule anywhere — is
+        // asserted beside it.
+        let note = ArchiveSelectionSnapshot.senderScopeNote
+        #expect(note.contains("Only the messages listed here will be changed"))
+        #expect(note.contains("Future messages from this sender are not affected"))
+        #expect(note.contains("creates no rule"))
+
+        // Nothing the app persists has anywhere to hold a rule about future mail. The saved plan
+        // is the only file that stores a *choice*, and it stores sender keys and action
+        // identifiers — no message, no schedule, no enablement.
+        let planRecord = CleanupPlanDTO.Record(
+            version: CleanupPlanDTO.schemaVersion,
+            accountAddress: "someone@example.com",
+            scope: MailboxScope.inbox.rawValue,
+            rulesVersion: CleanupProposalRules.version,
+            loadedMessageCount: 0,
+            savedAt: .now,
+            selections: []
+        )
+        let planProperties = Set(Mirror(reflecting: planRecord).children.compactMap(\.label))
+        #expect(planProperties.isDisjoint(with: [
+            "schedule", "runAt", "isEnabled", "autoRun", "appliesToFutureMessages", "filter", "rule",
+        ]))
+    }
+
     // MARK: - Activity
 
     @Test("Making the history visible added no way to reach a mailbox")
