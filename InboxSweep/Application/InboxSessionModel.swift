@@ -81,9 +81,11 @@ final class InboxSessionModel {
 
     /// The archive that can still be taken back, if any.
     ///
-    /// See ``UndoableArchive`` for exactly how long that is. It is not persisted and does not
-    /// expire on a timer.
-    private(set) var undoableArchive: UndoableArchive?
+    /// **Durable.** Unlike the previous interval's in-memory offer, this is read back out of the
+    /// local transaction file, so it survives dismissing the sheet, navigating away, reloading
+    /// the window, and quitting the app. See ``MailMutationTransaction`` for the lifecycle and
+    /// ``restoreUndoOffer(for:)`` for what has to be true before it is offered again.
+    private(set) var undoableArchive: MailMutationTransaction?
 
     private let provider: any MailProvider
     private let cache: any InboxCacheStoring
@@ -458,12 +460,13 @@ final class InboxSessionModel {
         )
     }
 
-    // MARK: - Archiving one message
+    // MARK: - Archiving messages the user selected
     //
-    // The app's only write. Everything here is scoped to one message the user named and
-    // confirmed: there is no batch form, no sender form, and nothing that a proposal, a saved
-    // plan, or a dry run can reach. A recommendation can lead the user to the review screen and
-    // stops there.
+    // The app's only write. Everything here is scoped to a set of messages the user picked one
+    // by one and confirmed as a list: there is no sender form, no "everything matching" form,
+    // and nothing that a proposal, a saved plan, or a dry run can reach. A recommendation can
+    // lead the user to the review screen, and can offer to *fill in* a selection they then
+    // inspect and edit, and it stops there.
 
     /// Whether this session could archive at all, ignoring whether permission has been granted.
     ///
@@ -474,9 +477,9 @@ final class InboxSessionModel {
     /// Whether a mutation is in flight right now.
     var isMutating: Bool { mutationActivity?.isRunning == true }
 
-    /// Whether this specific message can be offered an Archive action.
+    /// Whether this specific message could be included in an archive right now.
     ///
-    /// Everything the confirmation depends on, checked before the button is shown rather than
+    /// Everything a confirmation depends on, checked before the action is offered rather than
     /// after it is pressed: a loaded window, that message in it, a granted permission, and
     /// nothing already running.
     func canArchive(messageID: MailMessageID) -> Bool {
@@ -488,9 +491,9 @@ final class InboxSessionModel {
 
     /// Asks the user for the Gmail permission archiving needs.
     ///
-    /// Separate from ``archiveMessage(_:)`` on purpose: granting a permission and changing a
-    /// mailbox are two decisions, and rolling them into one action would mean the click that
-    /// consented was also the click that archived.
+    /// Separate from archiving on purpose: granting a permission and changing a mailbox are two
+    /// decisions, and rolling them into one action would mean the click that consented was also
+    /// the click that archived.
     @discardableResult
     func requestArchivePermission() -> Task<Void, Never> {
         guard let archiver, archiveCapability.isUpgradable, !isMutating else { return .alreadyFinished }
@@ -524,203 +527,380 @@ final class InboxSessionModel {
                 // `persist: false`: no mail changed, so the cache file would be rewritten
                 // byte-for-byte identical.
                 await publishSnapshot(for: snapshot.account, isLoadingMore: false, persist: false)
+                // A grant that has just arrived can make a stored transaction undoable again.
+                await restoreUndoOffer(for: snapshot.account)
             }
         }
     }
 
-    /// Archives exactly one message, after the caller has confirmed it with the user.
+    // MARK: - Building a selection
+
+    /// The messages a proposal-driven convenience action may fill in for a sender.
+    ///
+    /// This is the **only** place the app turns a recommendation into a list of identifiers, and
+    /// two properties make that safe to do:
+    ///
+    /// - it performs no write and starts nothing — it returns identifiers for a checkbox column,
+    ///   and the user still has to inspect them, keep or remove them, open a confirmation, and
+    ///   press a button;
+    /// - it never includes a protected message. The planner already holds protected messages
+    ///   back, and this filters on protection a second time so the guarantee does not depend on
+    ///   the planner continuing to order its two filters the way it does today.
+    ///
+    /// A user who wants a protected message archived can still tick it themselves, and the
+    /// confirmation says so in as many words. The distinction this draws is between *the app
+    /// choosing* and *the user choosing*: the app never chooses a message somebody's own mailbox
+    /// has marked as worth keeping.
+    func preselectableMessageIDs(
+        forSenderKey key: SenderSummary.ID,
+        under action: PlannedCleanupAction
+    ) -> [MailMessageID] {
+        reviewedMessages(forSenderKey: key, under: action)
+            .filter { $0.isAffectedByPlan && !$0.isProtected }
+            .map(\.id)
+    }
+
+    /// Freezes a set of chosen messages into the exact thing a confirmation will show.
+    ///
+    /// Pure and local: it reads the window already in memory and returns a value. **Nothing is
+    /// sent, nothing is scheduled, and nothing is remembered** — building a snapshot the user
+    /// then abandons costs one allocation.
+    ///
+    /// Returns `nil`, rather than a narrowed set, when any chosen identifier is not currently a
+    /// loaded message of `key`'s sender. Silently dropping the strays would mean opening a
+    /// confirmation for a different set than the one the user ticked, which is precisely what
+    /// freezing exists to prevent. The caller's recovery is to reload and choose again.
+    func makeArchiveSelection(
+        forSenderKey key: SenderSummary.ID,
+        messageIDs: some Collection<MailMessageID>
+    ) -> ArchiveSelectionSnapshot? {
+        guard case .loaded(let snapshot) = state, !messageIDs.isEmpty else { return nil }
+
+        let reviewed = reviewedMessages(forSenderKey: key)
+        let byID = Dictionary(uniqueKeysWithValues: reviewed.map { ($0.id, $0) })
+
+        // Ordered by the review list rather than by the order the user happened to tick rows,
+        // so the confirmation reads top-to-bottom like the screen it came from.
+        let chosen = Set(messageIDs)
+        let selected = reviewed.filter { chosen.contains($0.id) }
+        guard selected.count == chosen.count, chosen.allSatisfy({ byID[$0] != nil }) else { return nil }
+
+        return ArchiveSelectionSnapshot(
+            accountAddress: snapshot.account.emailAddress.address,
+            senderKey: key,
+            senderDisplayValue: snapshot.senders.first { $0.id == key }?.sender.displayValue ?? key,
+            messages: selected.map {
+                ArchiveSelectionSnapshot.SelectedMessage(
+                    id: $0.id,
+                    subject: $0.message.subject,
+                    receivedAt: $0.message.receivedAt,
+                    protectionReason: $0.protectionReason
+                )
+            },
+            frozenAt: now()
+        )
+    }
+
+    /// Whether the frozen set could be archived right now, without sending anything to find out.
+    ///
+    /// The cheap half of the validation the execution path performs. It cannot check the
+    /// authenticated account — that question can only be asked of the provider, and only
+    /// asynchronously — so it is a guard for a button's enabled state, never a substitute for
+    /// the re-validation in ``archiveSelection(_:)``.
+    func canArchive(_ selection: ArchiveSelectionSnapshot) -> Bool {
+        validateAgainstLoadedWindow(selection) == nil
+    }
+
+    // MARK: - Executing a selection
+
+    /// Archives exactly the frozen set, after the user has confirmed it.
     ///
     /// This method performs no confirming of its own — by the time it is called the user has
-    /// seen the message and pressed the confirming button. What it does do is refuse: every
-    /// precondition is re-checked here against the state as it is *now*, because the window can
-    /// reload and the account can change between choosing a message and confirming it.
+    /// seen every message in the set and pressed the confirming button. What it does do is
+    /// **refuse**: every precondition is re-checked here against the state as it is *now*,
+    /// because the window can reload and the account can change between reviewing a set and
+    /// confirming it. A set that no longer matches the window is not narrowed and not partially
+    /// executed; it is refused, and the user reviews again.
     ///
-    /// Local state is reconciled only after Gmail says the change happened. There is no
-    /// optimistic update, so a failure needs no rollback and a success is never claimed early.
+    /// Local state is reconciled only for the messages Gmail confirmed. There is no optimistic
+    /// update, so a failure needs no rollback, a success is never claimed early, and a partial
+    /// run produces a matching partial local state.
+    @discardableResult
+    func archiveSelection(_ selection: ArchiveSelectionSnapshot) -> Task<Void, Never> {
+        perform(.archive, selection: selection)
+    }
+
+    /// Archives exactly one message, as a set of one.
+    ///
+    /// A convenience over ``archiveSelection(_:)`` rather than a second path to the boundary:
+    /// one message is the ordinary case and does not deserve its own machinery, but it also must
+    /// not get weaker validation than twelve messages do by going somewhere else.
     @discardableResult
     func archiveMessage(_ messageID: MailMessageID) -> Task<Void, Never> {
-        perform(.archive, messageID: messageID)
+        guard case .loaded = state,
+              let message = messagesInScope.first(where: { $0.id == messageID }),
+              let selection = makeArchiveSelection(
+                  forSenderKey: message.sender.groupingKey,
+                  messageIDs: [messageID]
+              )
+        else {
+            return failMutation(.archive, [messageID], .messageNotInLoadedWindow)
+        }
+        return archiveSelection(selection)
     }
 
-    /// Puts the last archived message back, if the offer is still open.
+    /// Puts the messages of the most recent undoable archive back, if the offer is still open.
     ///
-    /// A real request to Gmail through the same boundary the archive went through — not a local
-    /// correction. It succeeds only when Gmail confirms, and its failure is reported separately
-    /// from the archive's success: the archive really did happen, and saying otherwise because
-    /// the undo failed would be the app rewriting history it does not own.
+    /// A real request to Gmail per message, through the same boundary the archive went through —
+    /// not a local correction. It succeeds per message only when Gmail confirms, and its failures
+    /// are reported separately from the archive's successes: the archive really did happen, and
+    /// saying otherwise because the undo failed would be the app rewriting history it does not
+    /// own.
+    ///
+    /// It restores **only** the messages that transaction archived. Nothing is inferred into the
+    /// set — not the rest of the sender, not the rest of the thread, not messages archived by an
+    /// earlier transaction.
     @discardableResult
     func undoLastArchive() -> Task<Void, Never> {
-        guard let undoable = undoableArchive else { return .alreadyFinished }
-        return perform(.restoreToInbox, messageID: undoable.messageID)
+        guard let undoable = undoableArchive, undoable.isUndoable else { return .alreadyFinished }
+        return perform(.restoreToInbox, transaction: undoable)
     }
 
-    /// Dismisses the result of the last mutation, and with it the undo offer.
+    /// Dismisses the result banner.
+    ///
+    /// **Does not withdraw the undo offer.** That is the behaviour change this interval makes
+    /// deliberately: closing a sheet is how somebody gets back to their mailbox, not how they
+    /// say the archive was what they wanted. The offer lives in the transaction file and ends
+    /// only for the reasons ``MailMutationTransaction`` names.
     func dismissMutationActivity() {
         guard mutationActivity?.isRunning != true else { return }
         mutationActivity = nil
-        undoableArchive = nil
     }
 
     /// The local record of what this app has changed, newest first.
     ///
     /// Read on demand rather than held, because it is a receipt drawer the user opens, not
     /// state the dashboard renders.
-    func mutationHistory() async -> [MailMutationRecord] {
+    func mutationHistory() async -> [MailMutationTransaction] {
         guard let account else { return [] }
-        return await mutationRecords.records(for: account)
+        return await mutationRecords.transactions(for: account)
     }
 
-    /// The one path both mutations take.
+    // MARK: - The one path both mutations take
+
+    /// Undo, expressed as a selection over the transaction's confirmed messages.
     private func perform(
         _ operation: MailMutationOperation,
-        messageID: MailMessageID
+        transaction: MailMutationTransaction
     ) -> Task<Void, Never> {
-        // The duplicate-submission guard. A second press while the first is out returns a task
-        // that does nothing, so two clicks are one mutation even if both reach this method.
+        // The undo names the messages *the transaction confirmed*, not anything read from the
+        // current window — an archived message is by definition no longer in an Inbox-scoped
+        // window, so re-deriving the set from the screen would restore nothing.
+        guard let selection = MailArchiveSelection(
+            messageIDs: transaction.succeededMessageIDs,
+            accountAddress: transaction.accountAddress
+        ) else { return .alreadyFinished }
+
+        return execute(
+            .restoreToInbox,
+            selection: selection,
+            messageIDs: transaction.succeededMessageIDs,
+            undoing: transaction
+        )
+    }
+
+    private func perform(
+        _ operation: MailMutationOperation,
+        selection snapshot: ArchiveSelectionSnapshot
+    ) -> Task<Void, Never> {
+        // The duplicate-submission guard, in two parts. The first refuses anything while a
+        // mutation is out, so two clicks are one mutation even if both reach this method. The
+        // second refuses a *frozen set that has already been executed* — which is the case the
+        // first one misses, because by then nothing is running any more and the sheet is still
+        // on screen showing the same confirmed set.
         guard !isMutating else { return .alreadyFinished }
-        guard let archiver else { return failMutation(operation, messageID, .notSupported) }
+        guard mutationActivity?.id != snapshot.id else { return .alreadyFinished }
+
+        if let refusal = validateAgainstLoadedWindow(snapshot) {
+            return failMutation(operation, snapshot.messageIDs, refusal)
+        }
+        guard let selection = snapshot.selection() else {
+            return failMutation(operation, snapshot.messageIDs, .selectionChanged)
+        }
+
+        return execute(operation, selection: selection, messageIDs: snapshot.messageIDs, undoing: nil)
+    }
+
+    /// Runs a validated selection and applies whatever came back.
+    private func execute(
+        _ operation: MailMutationOperation,
+        selection: MailArchiveSelection,
+        messageIDs: [MailMessageID],
+        undoing: MailMutationTransaction?
+    ) -> Task<Void, Never> {
+        guard !isMutating else { return .alreadyFinished }
+        guard let archiver else { return failMutation(operation, messageIDs, .notSupported) }
         guard case .loaded(let snapshot) = state else {
-            return failMutation(operation, messageID, .messageNotInLoadedWindow)
+            return failMutation(operation, messageIDs, .messageNotInLoadedWindow)
         }
         guard archiveCapability != .unsupported else {
-            return failMutation(operation, messageID, .notSupported)
+            return failMutation(operation, messageIDs, .notSupported)
         }
         guard archiveCapability.isGranted else {
-            return failMutation(operation, messageID, .permissionRequired)
+            return failMutation(operation, messageIDs, .permissionRequired)
+        }
+        guard selection.accountAddress == snapshot.account.emailAddress.address else {
+            return failMutation(operation, messageIDs, .accountChanged)
         }
 
-        // For an archive the message must be in the window on screen. For an undo it must not —
-        // it has just left the inbox — so what is checked is that this session is the one that
-        // archived it, which the undo offer is the record of.
-        switch operation {
-        case .archive:
-            guard messagesInScope.contains(where: { $0.id == messageID }) else {
-                return failMutation(operation, messageID, .messageNotInLoadedWindow)
-            }
-        case .restoreToInbox:
-            guard let undoable = undoableArchive, undoable.messageID == messageID else {
-                return failMutation(operation, messageID, .messageNotInLoadedWindow)
-            }
-            guard undoable.accountAddress == snapshot.account.emailAddress.address else {
-                return failMutation(operation, messageID, .accountChanged)
-            }
-        }
-
-        let accountAddress = snapshot.account.emailAddress.address
-        let request = MailArchiveRequest(messageID: messageID, accountAddress: accountAddress)
-
+        let activityID = selection.operationID
         mutationActivity = MessageMutationActivity(
-            id: request.operationID,
+            id: activityID,
             operation: operation,
-            messageID: messageID,
-            accountAddress: accountAddress
+            messageIDs: selection.messageIDs,
+            accountAddress: selection.accountAddress
         )
 
         return runMutation { [self] in
             // Asked of the provider rather than taken from the snapshot: the snapshot records
             // which account the window was *read* for, and the question here is which account
             // the token in the adapter authenticates *now*. Those differ exactly when it
-            // matters.
-            guard await provider.currentConnection().account?.emailAddress.address == accountAddress else {
-                await finish(request, operation, with: .failure(.accountChanged))
+            // matters — and for a set, they have to be the same for every message in it, which
+            // is guaranteed by the set carrying one account address rather than one per message.
+            guard await provider.currentConnection().account?.emailAddress.address == selection.accountAddress else {
+                await finish(
+                    .refused(selection, operation: operation, because: .accountChanged),
+                    undoing: undoing
+                )
                 return
             }
 
-            do {
-                let receipt = operation == .archive
-                    ? try await archiver.archive(request)
-                    : try await archiver.restoreToInbox(request)
-                await finish(request, operation, with: .success(receipt))
-            } catch {
-                await finish(request, operation, with: .failure(.wrapping(error)))
-            }
+            let receipt = await MessageSetMutator(archiver: archiver).perform(
+                operation,
+                selection,
+                onMessageCompleted: { [weak self] completed in
+                    await self?.advanceProgress(of: activityID, to: completed)
+                }
+            )
+            await finish(receipt, undoing: undoing)
         }
     }
 
-    /// Applies a confirmed result, or reports a failure, exactly once.
+    /// Moves the progress counter, if the activity it belongs to is still the current one.
+    private func advanceProgress(of activityID: UUID, to completed: Int) {
+        guard let activity = mutationActivity, activity.id == activityID, activity.isRunning else { return }
+        mutationActivity = activity.advancingProgress(to: completed)
+    }
+
+    /// Applies a finished run, exactly once, and writes it down.
     ///
-    /// Written to be safe to call more than once for the same request: the record store replaces
-    /// by operation ID rather than appending, and the reconciliation below is idempotent —
-    /// setting a label set that is already set changes nothing. A repeated completion therefore
-    /// produces one record and one local state, not two.
+    /// Written to be safe to call more than once for the same operation: the transaction store
+    /// replaces by operation ID rather than appending, and the reconciliation below is idempotent
+    /// — setting a label set that is already set changes nothing. A repeated completion therefore
+    /// produces one transaction and one local state, not two.
     private func finish(
-        _ request: MailArchiveRequest,
-        _ operation: MailMutationOperation,
-        with result: Result<MailArchiveReceipt, MailMutationError>
+        _ receipt: MailArchiveSetReceipt,
+        undoing: MailMutationTransaction?
     ) async {
         let occurredAt = now()
 
-        switch result {
-        case .failure(let error):
-            await writeRecord(request, operation, outcome: .failed, at: occurredAt)
-            mutationActivity = mutationActivity?.settingPhase(.failed(error))
-            // An undo that failed leaves the message archived, and the offer to undo it again
-            // stands — unless the reason means there is nothing left to undo.
-            if operation == .archive || error.requiresReview {
-                undoableArchive = nil
-            }
+        // Only the messages Gmail confirmed. A failed message keeps whatever labels it had,
+        // which is what "failures remain in your Inbox" means in code.
+        reconcile(receipt)
 
-        case .success(let receipt):
-            reconcile(receipt)
+        let recordOutcome = await writeTransaction(receipt, at: occurredAt, undoing: undoing)
+        mutationActivity = mutationActivity?.settingPhase(
+            .finished(receipt, localRecordWarning: recordOutcome.warning)
+        )
 
-            let recordOutcome = await writeRecord(request, operation, outcome: .confirmed, at: occurredAt)
-            mutationActivity = mutationActivity?.settingPhase(
-                .succeeded(localRecordWarning: recordOutcome.warning)
-            )
-
-            switch operation {
-            case .archive:
-                undoableArchive = UndoableArchive(
-                    messageID: receipt.messageID,
-                    accountAddress: request.accountAddress,
-                    archivedAt: occurredAt
-                )
-            case .restoreToInbox:
-                undoableArchive = nil
-            }
-
+        if receipt.confirmedCount > 0 {
             await republishAfterMutation()
         }
     }
 
+    /// Writes the durable transaction and moves the undo offer to match it.
+    ///
+    /// The lifecycle policy, in one place: **one undoable archive transaction per account**.
+    /// A new archive that confirmed anything supersedes the previous offer — the superseded
+    /// transaction stays in the file as audit history, and the UI never claims two independent
+    /// undos are available. An undo marks the transaction it reversed as undone and leaves no
+    /// offer behind, because undoing an undo is archiving, and archiving is something the user
+    /// asks for explicitly.
     @discardableResult
-    private func writeRecord(
-        _ request: MailArchiveRequest,
-        _ operation: MailMutationOperation,
-        outcome: MailMutationRecord.Outcome,
-        at occurredAt: Date
+    private func writeTransaction(
+        _ receipt: MailArchiveSetReceipt,
+        at occurredAt: Date,
+        undoing: MailMutationTransaction?
     ) async -> MutationRecordOutcome {
-        await mutationRecords.record(
-            MailMutationRecord(
-                id: request.operationID,
-                operation: operation,
-                messageID: request.messageID,
-                accountAddress: request.accountAddress,
-                occurredAt: occurredAt,
-                outcome: outcome
-            )
-        )
+        let transaction = MailMutationTransaction.completing(receipt, at: occurredAt)
+
+        // Superseding happens before the new transaction is written, so a crash between the two
+        // leaves no file in which two transactions both claim to be undoable.
+        if transaction.isUndoable, let previous = undoableArchive, previous.id != transaction.id {
+            _ = await mutationRecords.record(previous.settingUndoState(.superseded))
+        }
+
+        let outcome = await mutationRecords.record(transaction)
+
+        switch receipt.operation {
+        case .archive:
+            // An archive that confirmed nothing leaves the previous offer alone: it is still a
+            // true statement about messages that are still archived.
+            if transaction.isUndoable { undoableArchive = transaction }
+
+        case .restoreToInbox:
+            guard let undoing else { break }
+            if receipt.confirmedCount == undoing.succeededCount {
+                // Everything came back, so there is nothing left to undo.
+                _ = await mutationRecords.record(undoing.settingUndoState(.undone))
+                undoableArchive = nil
+            } else {
+                // A partial undo leaves the messages that did *not* come back still archived,
+                // so the offer stands — narrowed to exactly those, and never re-widened to
+                // include the ones already restored.
+                let remaining = undoing.succeededMessageIDs.filter { !receipt.confirmedMessageIDs.contains($0) }
+                let narrowed = MailMutationTransaction(
+                    id: undoing.id,
+                    operation: undoing.operation,
+                    accountAddress: undoing.accountAddress,
+                    succeededMessageIDs: remaining,
+                    selectedMessageCount: undoing.selectedMessageCount,
+                    occurredAt: undoing.occurredAt,
+                    undoState: remaining.isEmpty ? .undone : .undoable
+                )
+                _ = await mutationRecords.record(narrowed)
+                undoableArchive = narrowed.isUndoable ? narrowed : nil
+            }
+        }
+
+        return outcome
     }
 
-    /// Brings the in-memory window into line with what the provider reported.
+    /// Brings the in-memory window into line with what the provider reported, message by
+    /// message.
     ///
     /// Labels are *replaced* with the ones on the receipt rather than edited towards what the
-    /// app expected, so the window says what the mailbox says. The message keeps its place in
-    /// the window whether or not it is still in scope — membership is derived from its labels
-    /// by ``messagesInScope``, which is what makes an undo restore its original position
-    /// instead of appending it to the end.
-    private func reconcile(_ receipt: MailArchiveReceipt) {
-        guard let index = messages.firstIndex(where: { $0.id == receipt.messageID }) else { return }
-        let existing = messages[index]
-        messages[index] = MailMessage(
-            id: existing.id,
-            threadID: existing.threadID,
-            sender: existing.sender,
-            subject: existing.subject,
-            receivedAt: existing.receivedAt,
-            labels: receipt.labelsAfterMutation,
-            hasListUnsubscribeHeader: existing.hasListUnsubscribeHeader
-        )
+    /// app expected, so the window says what the mailbox says. Messages the provider refused are
+    /// not touched at all, which is what makes a partial run produce a matching partial local
+    /// state. Each message keeps its place in the window whether or not it is still in scope —
+    /// membership is derived from labels by ``messagesInScope``, which is what makes an undo
+    /// restore messages to their original positions instead of appending them to the end.
+    private func reconcile(_ receipt: MailArchiveSetReceipt) {
+        let confirmed = receipt.confirmedLabels
+        guard !confirmed.isEmpty else { return }
+
+        for (index, existing) in messages.enumerated() {
+            guard let labels = confirmed[existing.id] else { continue }
+            messages[index] = MailMessage(
+                id: existing.id,
+                threadID: existing.threadID,
+                sender: existing.sender,
+                subject: existing.subject,
+                receivedAt: existing.receivedAt,
+                labels: labels,
+                hasListUnsubscribeHeader: existing.hasListUnsubscribeHeader
+            )
+        }
     }
 
     /// Recomputes and re-persists everything derived from the window.
@@ -734,20 +914,40 @@ final class InboxSessionModel {
         await publishSnapshot(for: snapshot.account, isLoadingMore: false, persist: true)
     }
 
+    /// Everything about a frozen set that can be checked without asking the provider.
+    ///
+    /// Returns the refusal, or `nil` when the set still describes the window on screen.
+    private func validateAgainstLoadedWindow(_ selection: ArchiveSelectionSnapshot) -> MailMutationError? {
+        guard case .loaded(let snapshot) = state else { return .messageNotInLoadedWindow }
+        guard archiveCapability != .unsupported else { return .notSupported }
+        guard archiveCapability.isGranted else { return .permissionRequired }
+        guard !selection.messages.isEmpty else { return .selectionChanged }
+        guard selection.accountAddress == snapshot.account.emailAddress.address else { return .accountChanged }
+
+        // Every message must still be loaded, still in scope, and still this sender's. The last
+        // of those is what stops a set from crossing a sender boundary between the review that
+        // built it and the confirmation that runs it.
+        let live = Dictionary(uniqueKeysWithValues: messagesInScope.map { ($0.id, $0) })
+        for message in selection.messages {
+            guard let loaded = live[message.id] else { return .selectionChanged }
+            guard loaded.sender.groupingKey == selection.senderKey else { return .selectionChanged }
+        }
+        return nil
+    }
+
     /// Reports a refusal without contacting the provider at all.
     private func failMutation(
         _ operation: MailMutationOperation,
-        _ messageID: MailMessageID,
+        _ messageIDs: [MailMessageID],
         _ error: MailMutationError
     ) -> Task<Void, Never> {
         mutationActivity = MessageMutationActivity(
             id: UUID(),
             operation: operation,
-            messageID: messageID,
+            messageIDs: messageIDs,
             accountAddress: account?.emailAddress.address ?? "",
-            phase: .failed(error)
+            phase: .refused(error)
         )
-        if error.requiresReview { undoableArchive = nil }
         return .alreadyFinished
     }
 
@@ -761,9 +961,44 @@ final class InboxSessionModel {
         return task
     }
 
+    /// Cancels a set archive that is still working through its messages.
+    ///
+    /// Honest about what it can promise: the request currently with Gmail cannot be recalled, so
+    /// this stops the run *before the next message* and reports the remainder as never attempted.
+    /// A set of twelve cancelled after four is four archived messages and eight untouched ones,
+    /// and the result says exactly that.
+    func cancelMutation() {
+        guard isMutating else { return }
+        mutationTask?.cancel()
+    }
+
     private func currentArchiveCapability() async -> MailMutationCapability {
         guard let archiver else { return .unsupported }
         return await archiver.archiveCapability()
+    }
+
+    /// Re-establishes the undo offer for `account` from the local transaction file.
+    ///
+    /// Called whenever a window is published, which is what makes the offer survive a relaunch:
+    /// the app comes up, restores or loads a window, reads the most recent undoable transaction
+    /// for the connected account, and offers it again. Four things have to hold, and all four
+    /// are checked here rather than at the moment the button is pressed, so an offer is never
+    /// shown that could not be honoured:
+    ///
+    /// - the transaction belongs to the account that is connected *now*;
+    /// - it is an archive, and it confirmed at least one message;
+    /// - it is still in the ``MailMutationTransaction/UndoState/undoable`` state;
+    /// - the grant still covers archiving, since undo is a write like any other.
+    ///
+    /// An offer already in memory is left alone: it is the same value, and reassigning it on
+    /// every published page would be extra churn for no change.
+    private func restoreUndoOffer(for account: MailAccount) async {
+        guard archiveCapability.isGranted else {
+            undoableArchive = nil
+            return
+        }
+        guard undoableArchive == nil else { return }
+        undoableArchive = await mutationRecords.latestUndoableTransaction(for: account)
     }
 
     // MARK: - Cleanup previews
@@ -849,6 +1084,7 @@ final class InboxSessionModel {
             )
         )
         refreshSavedPlan()
+        await restoreUndoOffer(for: account)
         return true
     }
 
@@ -947,6 +1183,10 @@ final class InboxSessionModel {
         )
 
         refreshSavedPlan()
+        // After `archiveCapability`, because an offer is only shown when the grant still covers
+        // undoing it. This is the call that makes the offer survive a relaunch: every published
+        // window re-derives it from the local transaction file for the account on screen.
+        await restoreUndoOffer(for: account)
 
         guard persist else { return }
 
@@ -993,10 +1233,11 @@ final class InboxSessionModel {
         nextPageToken = nil
         loadedPageCount = 0
         restoredFromCacheAt = nil
-        // A reload, a scope change, a sign-out, and a re-connect all throw the window away, and
-        // an undo offer that outlived the window it referred to would be pointing at a message
-        // the app can no longer show the user. The result banner goes with it. See
-        // ``UndoableArchive`` for the full list of things that end the offer.
+        // Dropped rather than ended. The offer is durable, so the next published window
+        // re-derives it from the transaction file for whichever account is connected then —
+        // which is both how it survives a reload and how a sign-in as somebody else cannot
+        // inherit the previous account's offer. The result banner has no such backing store and
+        // simply goes.
         undoableArchive = nil
         mutationActivity = nil
         archiveCapability = .unsupported
