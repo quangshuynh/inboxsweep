@@ -37,11 +37,12 @@ nonisolated protocol MailAccountAuthorizing: Sendable {
 
 /// Reads bounded windows of message metadata.
 ///
-/// There is no counterpart to this protocol for *writing*. The app exposes no operation to
-/// delete, archive, label, mark, move, or send mail, and the absence is structural: no such
-/// method exists to call. The cleanup planner names such actions in order to describe them and
-/// reaches this boundary not at all. See `SafetyBoundaryTests` for the assertions that keep it
-/// that way.
+/// Still has no method that writes anything, and still will not gain one. Since this interval
+/// the app *can* change one thing about a mailbox — whether a single named message is in the
+/// inbox — and that lives behind ``MailMessageArchiving``, a separate protocol a provider
+/// vends only if it can perform it. Keeping the two apart is what lets a reader be a reader:
+/// nothing that holds only this protocol has a path to a mutation, and `SafetyBoundaryTests`
+/// asserts that no method here is named after one.
 nonisolated protocol MailMessageFetching: Sendable {
 
     /// Fetches one page of message metadata.
@@ -51,8 +52,30 @@ nonisolated protocol MailMessageFetching: Sendable {
 }
 
 /// A mail account InboxSweep can connect to and read metadata from.
+///
+/// Reading is required of every provider. Writing is not: ``messageArchiver`` is optional, and
+/// a provider that returns `nil` cannot be asked to change anything because there is no object
+/// to ask. That is how the synthetic mailbox stays synthetic without anybody having to
+/// remember to guard it.
 nonisolated protocol MailProvider: MailAccountAuthorizing, MailMessageFetching {
 
     /// A short name for the provider, for display only.
     var displayName: String { get }
+
+    /// The narrow mutation boundary, when this provider has one.
+    ///
+    /// Vended *by the provider* rather than supplied alongside it, so the object that performs
+    /// a mutation is always the one holding the authorization the messages were read with.
+    /// There is no way to pair one account's archiver with another account's window, because
+    /// there is no way to hand them to the session separately.
+    var messageArchiver: (any MailMessageArchiving)? { get }
+}
+
+nonisolated extension MailProvider {
+
+    /// Providers cannot write unless they say otherwise.
+    ///
+    /// The default is the safe one on purpose: a new provider is read-only until somebody
+    /// deliberately implements a mutation boundary for it.
+    var messageArchiver: (any MailMessageArchiving)? { nil }
 }
