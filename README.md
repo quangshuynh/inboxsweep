@@ -4,13 +4,13 @@ A privacy-conscious Gmail cleanup assistant for macOS.
 
 **InboxSweep recommends; you authorize.** It reads your Gmail metadata, groups it by sender,
 says which senders look worth cleaning up and why, and shows what a cleanup *would* affect. The
-one change it can make is archiving a **single message you select and confirm** — and undoing
-it. It cannot act on a sender, run a cleanup plan, or delete anything.
+one change it can make is archiving the **messages you tick and confirm as a list** — and undoing
+them. It cannot act on a sender, run a cleanup plan, or delete anything.
 
-> **One write, and you press it.** Archiving removes the `INBOX` label from one named message
-> and nothing else. There is no bulk operation, no sender-level action, and no way for a
-> recommendation to carry itself out. See [Archiving](#archiving-one-message) and
-> [Privacy posture](#privacy-posture).
+> **One kind of write, and you press it.** Archiving removes the `INBOX` label from each message
+> you named, one request at a time. There is no sender-level action, no cross-sender cleanup, and
+> no way for a recommendation to carry itself out — the closest it gets is ticking boxes you then
+> check. See [Archiving](#archiving-messages) and [Privacy posture](#privacy-posture).
 
 <!-- macOS · SwiftUI · Swift 6 -->
 
@@ -31,8 +31,11 @@ it. It cannot act on a sender, run a cleanup plan, or delete anything.
   header.
 - **Saves the loaded window to this Mac**, so relaunching restores the dashboard without
   re-reading the mailbox, and says on screen when what you are looking at came from disk.
-- **Archives one selected message**, after a confirmation naming its sender, subject, and date
-  — and offers **Undo archive**, which is a real Gmail request rather than a local correction.
+- **Archives the messages you tick and confirm as a list**, after a confirmation naming every
+  one of them by subject and date — one Gmail request per message, each with its own outcome, so
+  a run where some are refused reports "8 archived, 2 failed" rather than "failed".
+- **Offers Undo that survives quitting the app**, restoring exactly the messages that archive
+  confirmed. A real Gmail request, not a local correction.
 - Keeps a small, bounded local record of what it changed, holding message IDs and no mail.
 - Handles signed-out, restoring, connecting, loading, loaded, empty, and error states.
 - Runs entirely against synthetic data when no Google account is configured, so the whole app
@@ -45,14 +48,16 @@ None of the following is implemented, and the UI does not pretend otherwise:
 | Not implemented | |
 | --- | --- |
 | Delete, trash, or permanently remove | Mark as read, star, or label |
-| Unsubscribe (of any kind) | Archive a sender, or archive in bulk |
+| Unsubscribe (of any kind) | Archive a sender in one click, or across senders |
 | AI classification of any message | Executing a cleanup plan |
 | Background monitoring or notifications | Automatic or scheduled archiving |
 | Analytics or telemetry | CI, badges, or releases |
 
-Archiving is the one exception, and it is deliberately the narrowest one available: one message,
-named individually, after a confirmation, undoable. There is no control anywhere that archives
-more than one message, and no path from a proposal or a saved plan to a mutation.
+Archiving is the one exception, and it is deliberately narrow: **messages you named individually**,
+frozen into a list you confirm, sent one request at a time, undoable. There is no control anywhere
+that archives a sender, a plan, or anything you did not tick, and no path from a proposal or a
+saved plan to a mutation. A cleanup preview can *fill in* a selection for you to check and edit;
+it cannot carry itself out.
 
 `List-Unsubscribe` headers are *recorded* as an observation. Nothing in this version reads
 that flag to decide anything, and the app never contacts an unsubscribe URL.
@@ -215,7 +220,7 @@ messages can change it. `SenderObservationTests` covers each of these cases.
 No observation is combined into a score, a rank, or a recommendation. `SafetyBoundaryTests`
 asserts that `SenderSummary` has no property named for a judgement.
 
-## Archiving one message
+## Archiving messages
 
 The app's only write. Full detail in **[Docs/Archiving.md](Docs/Archiving.md)**.
 
@@ -229,20 +234,24 @@ POST /gmail/v1/users/me/messages/{id}/modify   {"addLabelIds":["INBOX"]}     # u
 
 Those two are the complete set of mutating requests the app can build.
 
-**The flow.** Open a sender → **Review…** → select one message → **Archive message…** → a
-confirmation naming the sender, subject, and received date, and saying that archiving removes
-the message from your Inbox and does not delete it → confirm → one request → the result, with
-**Undo archive** beside it.
+**The flow.** Open a sender → **Review…** → tick messages (individually, **Select all shown**, or
+**Fill from preview** then edit) → **Archive N messages…** → a confirmation listing every message
+by subject and received date, saying they will be removed from your Inbox and not deleted →
+confirm → one request per message → a per-message result, with **Undo** beside it.
 
 | | |
 | --- | --- |
-| **Scope** | One message you selected. Not its thread, not its sender, not anything else. |
+| **Scope** | The messages you ticked. Not their threads, not their sender, nothing else. |
 | **Effect** | `INBOX` removed. Read state, star, importance, and Gmail category untouched. |
-| **Undo** | A real Gmail request, not a local correction. Succeeds only when Gmail confirms. |
-| **Undo lifetime** | Until you undo, archive something else, reload, change scope, disconnect, dismiss the result, or quit. Not persisted, no timer. |
-| **In flight** | No Cancel once Gmail has the request — it may already have applied it, and the sheet says so. Duplicate submission is refused by the session, not only by a disabled button. |
-| **Local state** | Reconciled from the labels on Gmail's reply, only after it confirms. Summaries, proposals, protection, plan membership, and the cache all recompute. |
-| **Record** | Operation, message ID, account, timestamp, outcome. No subject, no sender, no body. Bounded to 50 entries, deleted on disconnect. |
+| **Execution** | One `messages.modify` per message, strictly one at a time. Not `batchModify`, which reports no per-message result and so could not be reconciled against. |
+| **Frozen set** | The confirmation shows an immutable snapshot. If the window stops matching it, the operation is refused whole and re-reviewed — never narrowed. |
+| **Partial failure** | Per-message outcomes: archived, failed, not sent. Successes are never rolled back because something else failed; failures stay in your Inbox locally and remotely. |
+| **Protection** | No convenience action ever ticks a protected message. You can tick one yourself, and the confirmation says so. |
+| **Undo** | A real Gmail request per message, restoring only what that transaction confirmed. Can itself partly fail, and then narrows to what is still archived. |
+| **Undo lifetime** | **Survives dismissing the sheet, reloading, and quitting the app.** One undoable archive per account: a new one supersedes the last. Ends on undo, supersede, or disconnect. No timer. |
+| **In flight** | **Stop** stops before the next message — the request already sent cannot be recalled, and the sheet says so. A repeated confirmation of the same frozen set is refused by the session, not only by a disabled button. |
+| **Local state** | Reconciled per message from the labels on Gmail's reply, only after it confirms. Summaries, proposals, protection, plan membership, and the cache all recompute. |
+| **Transaction** | Operation, confirmed message IDs, selected count, account, timestamp, undo state. No subject, no sender, no body. Bounded to 50, deleted on disconnect. |
 
 **If you signed in before archiving existed**, your read-only grant keeps working and is not
 treated as broken. The Archive control becomes **Enable archiving…**, which asks for the extra
@@ -251,7 +260,9 @@ persists the widened scope, keeping the refresh token Google does not reissue.
 
 **Recommendations still cannot execute.** Proposals, dry-run previews, and saved plans are
 advisory. A saved plan naming "archive messages older than 30 days" reopens a preview when
-restored, and that is all it can ever do.
+restored, and that is all it can ever do. **Fill from preview** is the only bridge between a
+recommendation and a change, and it writes ticks into a checkbox column — you still read the
+list, edit it, open a confirmation, and press the button yourself.
 
 ## Local persistence
 
@@ -376,14 +387,15 @@ xcodebuild -project InboxSweep.xcodeproj -scheme InboxSweep -destination 'platfo
 Claims below describe what this version actually does. Nothing more is implied.
 
 - **One kind of write, and you confirm each one.** InboxSweep can remove the `INBOX` label from
-  a single message you selected, and put it back. Those two requests are the complete set of
-  mutations the app can construct.
+  a message you selected, and put it back. Those two requests are the complete set of mutations
+  the app can construct — a set of twelve is twelve of the first, never a batch request.
 - **No message is deleted, trashed, marked, labelled, or sent.** There is no feature to do any
   of it, and no scope that would permit permanent deletion.
-- **Nothing acts in bulk or on its own.** There is no archive-sender, archive-all, execute-plan,
-  scheduled, or background operation. The cleanup planner produces a description of what an
-  action *would* reach; building one makes no request of any kind, and there is no control
-  anywhere that carries one out.
+- **Nothing acts on its own, or on anything you did not name.** There is no archive-sender,
+  archive-all, cross-sender, execute-plan, scheduled, or background operation. The cleanup planner
+  produces a description of what an action *would* reach; building one makes no request of any
+  kind, and the only thing that description can do is pre-tick checkboxes you then inspect, edit,
+  and confirm yourself.
 - **Metadata only.** Message requests use `format=metadata` with four named headers (`From`,
   `Subject`, `Date`, `List-Unsubscribe`). Bodies and attachments are never requested — even
   though `gmail.modify` would now permit them — and there is nowhere in the domain model to put
@@ -442,16 +454,21 @@ not been independently audited and makes no anonymity guarantees.
 - The dry-run planner offers a fixed set of cutoffs (keep newest 5; 30 and 90 days). There is
   no way to type an arbitrary one, though a saved plan's file format would carry one.
 - The message review is per sender. There is no way to see every loaded message at once.
-- **Archiving is one message at a time, by design.** There is no multi-select, no sender-level
-  archive, and no way to carry out a previewed plan. Clearing a large sender means confirming
-  each message, which is the point rather than an oversight — but it does mean the dry-run
-  preview describes a cleanup the app cannot perform for you.
+- **Archiving is per sender and explicitly selected, by design.** There is no sender-level
+  one-click archive, no cross-sender cleanup, and no way to carry out a previewed plan. A large
+  cleanup means ticking the messages — helped by **Fill from preview** — and confirming the list,
+  which is the point rather than an oversight.
+- **A large set takes as long as it takes.** Messages go out one request at a time, so a set of
+  several hundred is a visible wait. The alternative, `batchModify`, reports no per-message
+  result and was rejected for that reason rather than for performance.
 - **`gmail.modify` grants more than the app uses.** Google publishes nothing narrower that can
   archive, so the restraint is enforced by the code and its tests rather than by the permission.
   A user auditing the grant in their Google Account will see a broad permission; the app's
   limits are not visible from there.
-- The undo offer is session-lifetime and is not restored after a relaunch. Once it is gone, the
-  message is in All Mail and moving it back is a Gmail operation.
+- **Only the most recent archive is undoable, per account.** Archiving again supersedes the
+  previous offer — the superseded transaction stays in the file as history, but there is no undo
+  stack and no history UI. Once an offer is gone, those messages are in All Mail and moving them
+  back is a Gmail operation.
 - The mutation record is not surfaced in the UI. It is read by the session and kept for undo and
   local correctness; there is no screen that lists it yet.
 - Archiving is message-level, so a conversation whose other messages are still in the Inbox

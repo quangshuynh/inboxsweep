@@ -325,7 +325,7 @@ struct MessageSetArchiveTests {
 
         #expect(session.mutationActivity?.error == .selectionChanged)
         #expect(session.mutationActivity?.receipt == nil, "A stale set was partly executed")
-        let archiver = try #require(await provider.messageArchiver as? StubMessageArchiver)
+        let archiver = try #require(provider.messageArchiver as? StubMessageArchiver)
         #expect(archiver.allRequests.isEmpty, "A stale set reached Gmail")
     }
 
