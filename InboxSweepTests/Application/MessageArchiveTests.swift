@@ -77,12 +77,59 @@ struct MessageArchiveTests {
         #expect(session.archiveCapability == .requiresAdditionalPermission)
         #expect(!session.canArchive(messageID: MailMessageID("m-1")))
 
+        let capabilityQueriesBefore = archiver.capabilityCallCount
         await session.requestArchivePermission().value
 
         #expect(session.archiveCapability == .granted)
         #expect(session.canArchive(messageID: MailMessageID("m-1")))
         #expect(archiver.upgradeCallCount == 1)
         #expect(session.notice == nil)
+
+        // Re-derived from the provider rather than taken from what `authorizeArchiving()`
+        // returned: the provider holds the grant, so only it can answer what the next archive
+        // attempt will actually find.
+        #expect(
+            archiver.capabilityCallCount > capabilityQueriesBefore,
+            "The session trusted the upgrade's return value instead of re-asking the provider"
+        )
+    }
+
+    @Test("A granted permission republishes the window, so the screen offering it updates")
+    func grantingRepublishesTheWindow() async throws {
+        // The defect this pins down was found on a real account: granting the permission moved
+        // only `archiveCapability`, and the sheet that offers the action draws everything else
+        // from the snapshot — so it went on offering to request a permission the user had
+        // already granted until it was closed and reopened.
+        let archiver = StubMessageArchiver(capability: .requiresAdditionalPermission)
+        let (session, _, _) = await makeSession(
+            messages: [message("m-1"), message("m-2")],
+            archiver: archiver
+        )
+        let before = try #require(session.state.snapshot)
+
+        await session.requestArchivePermission().value
+
+        // A fresh snapshot, carrying the same mail: the permission changed, the window did not.
+        let after = try #require(session.state.snapshot)
+        #expect(after.loadedMessageCount == before.loadedMessageCount)
+        #expect(after.senders == before.senders)
+        #expect(session.canArchive(messageID: MailMessageID("m-1")))
+    }
+
+    @Test("A declined permission also re-asks the provider rather than assuming")
+    func decliningAlsoRepublishes() async throws {
+        let archiver = StubMessageArchiver(
+            capability: .requiresAdditionalPermission,
+            upgradeResult: .failure(.permissionDeclined)
+        )
+        let (session, _, _) = await makeSession(messages: [message("m-1")], archiver: archiver)
+
+        let capabilityQueriesBefore = archiver.capabilityCallCount
+        await session.requestArchivePermission().value
+
+        #expect(archiver.capabilityCallCount > capabilityQueriesBefore)
+        #expect(session.archiveCapability == .requiresAdditionalPermission)
+        #expect(session.state.snapshot != nil, "A declined upgrade lost the loaded window")
     }
 
     @Test("A declined upgrade explains itself and leaves the rest of the session working")

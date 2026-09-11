@@ -497,14 +497,33 @@ final class InboxSessionModel {
 
         return runMutation { [self] in
             do {
-                archiveCapability = try await archiver.authorizeArchiving()
-                notice = archiveCapability.isGranted ? nil : SessionNotice.archivePermissionDeclined
+                let granted = try await archiver.authorizeArchiving()
+                notice = granted.isGranted ? nil : SessionNotice.archivePermissionDeclined
             } catch {
                 let mutationError = MailMutationError.wrapping(error)
-                // Re-asked rather than assumed: a declined upgrade leaves the read-only grant
-                // exactly as it was, and the session carries on reading.
-                archiveCapability = await currentArchiveCapability()
+                // A declined upgrade leaves the read-only grant exactly as it was, and the
+                // session carries on reading. A cancelled one is not worth a notice at all.
                 notice = mutationError == .cancelled ? nil : SessionNotice.archivePermissionDeclined
+            }
+
+            // Asked of the provider rather than taken from the return value, and then
+            // republished — both halves matter.
+            //
+            // Asking again is the more honest of the two: the provider is the thing that holds
+            // the grant, and a capability re-derived from it cannot disagree with what the next
+            // archive attempt will actually find.
+            //
+            // Republishing is what makes the change *visible*. A granted permission used to
+            // move nothing but this one scalar, and the screen that offers the action is a
+            // sheet whose every other value comes from the snapshot — so the button kept
+            // offering to request a permission the user had already granted until the sheet was
+            // closed and reopened. Observed on a real account. Every other operation in this
+            // session ends by republishing; this one had no business being the exception.
+            archiveCapability = await currentArchiveCapability()
+            if case .loaded(let snapshot) = state {
+                // `persist: false`: no mail changed, so the cache file would be rewritten
+                // byte-for-byte identical.
+                await publishSnapshot(for: snapshot.account, isLoadingMore: false, persist: false)
             }
         }
     }

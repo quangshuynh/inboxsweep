@@ -41,6 +41,7 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
     private var recordedArchiveRequests: [MailArchiveRequest] = []
     private var recordedUndoRequests: [MailArchiveRequest] = []
     private var recordedUpgradeCallCount = 0
+    private var recordedCapabilityCallCount = 0
 
     init(
         capability: MailMutationCapability = .granted,
@@ -63,6 +64,12 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
     var archiveRequests: [MailArchiveRequest] { lock.withLock { recordedArchiveRequests } }
     var undoRequests: [MailArchiveRequest] { lock.withLock { recordedUndoRequests } }
     var upgradeCallCount: Int { lock.withLock { recordedUpgradeCallCount } }
+
+    /// How many times the session asked what the grant currently covers.
+    ///
+    /// The basis for asserting that a permission change is re-derived from the provider rather
+    /// than assumed from whatever `authorizeArchiving()` happened to return.
+    var capabilityCallCount: Int { lock.withLock { recordedCapabilityCallCount } }
 
     /// Every request this archiver was asked to perform, in order — the basis for asserting
     /// that a double submission produced one call rather than two.
@@ -91,7 +98,10 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
     // MARK: - MailMessageArchiving
 
     func archiveCapability() async -> MailMutationCapability {
-        lock.withLock { capability }
+        lock.withLock {
+            recordedCapabilityCallCount += 1
+            return capability
+        }
     }
 
     func authorizeArchiving() async throws -> MailMutationCapability {
