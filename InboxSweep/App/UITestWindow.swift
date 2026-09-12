@@ -385,7 +385,7 @@ final class UITestWindow {
     /// earlier "the element is no longer in the accessibility tree" failures have the same shape.
     ///
     /// `parent` covers child windows generally; `isSheet` covers the case that matters.
-    private nonisolated static func isPlaceable(_ window: NSWindow) -> Bool {
+    private static func isPlaceable(_ window: NSWindow) -> Bool {
         window.canBecomeMain && !window.isSheet && window.parent == nil
     }
 
