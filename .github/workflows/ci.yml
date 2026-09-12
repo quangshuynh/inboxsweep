@@ -139,10 +139,15 @@ jobs:
       - name: UI tests
         if: success() || failure()
         env:
-          # EXPERIMENT, this run only. Turns the deterministic-window harness off, so the suite
-          # runs the way it would on a machine with nothing protecting it. A previous run has
-          # already measured 20 of 20 with the harness on; this measures whether the harness is
-          # needed here at all. Nothing about what a case asserts changes between the two.
+          # The runner does not need the deterministic-window harness, and this is the measurement
+          # rather than an assumption: with it off, the full suite passed 20 of 20 twice, in 536s
+          # and 549s, on a runner whose only foreground-capable process is Finder. With it on it
+          # also passed 20 of 20. On the machine this was written on, the same commit with the
+          # harness on scored 19 of 20.
+          #
+          # So CI takes the simpler path and a desk keeps its protection, which is the default.
+          # Two runs is not a stability claim; it is two runs, and the switch is here so anyone
+          # can take the measurement again.
           TEST_RUNNER_INBOXSWEEP_UI_TEST_PLAIN_WINDOW: "1"
         run: |
           set -o pipefail

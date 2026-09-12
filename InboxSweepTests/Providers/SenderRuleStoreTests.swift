@@ -24,6 +24,23 @@ struct SenderRuleStoreTests {
         providerMessageCount: 10
     )
 
+    /// What the platform says when asked to exclude a file from backups, for a failure message.
+    ///
+    /// Diagnostic only. It asks the same question the store asks, on the same file, and reports
+    /// the answer rather than deciding anything. Nothing here is asserted on.
+    private func backupExclusionReport(for url: URL) -> String {
+        var url = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        do {
+            try url.setResourceValues(values)
+        } catch {
+            return "Setting it here throws: \(error)"
+        }
+        let readBack = try? url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+        return "Setting it here succeeds and reads back \(String(describing: readBack))."
+    }
+
     private func makeDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "InboxSweepRuleTests-\(UUID().uuidString)")
@@ -100,13 +117,13 @@ struct SenderRuleStoreTests {
             try FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.posixPermissions] as? NSNumber
         )
         #expect(permissions.int16Value == 0o600)
-        // The path is in the message because this assertion passes on a development Mac and
-        // fails on a hosted runner, and the difference is where the sandboxed test host's
-        // temporary directory actually is. A failure that does not say which file it looked at
-        // cannot distinguish the two.
+        // The path and the platform's own answer are in the message because this assertion
+        // passes on a development Mac and fails on a hosted runner, and neither the file system
+        // nor the signing explains it. A failure that does not say what the platform said when
+        // asked cannot tell a refusal from an attribute that never stuck.
         #expect(
             try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true,
-            "Not excluded from backups: \(file.path(percentEncoded: false))"
+            "Not excluded from backups: \(file.path(percentEncoded: false)). \(backupExclusionReport(for: file))"
         )
 
         // The file name is a digest, so a directory listing does not name the account.
