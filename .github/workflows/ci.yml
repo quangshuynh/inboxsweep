@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The project's deployment target is macOS 26.5, so it needs the 26.5 SDK or newer.
+  # Xcode 26.6 is the default on the macos-26 image and is what the project is developed
+  # against; naming it here makes the toolchain a stated fact rather than whatever the
+  # image happens to default to.
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+  PROJECT: InboxSweep.xcodeproj
+  SCHEME: InboxSweep
+  DESTINATION: platform=macOS,arch=arm64
+  # No Apple Developer identity exists on a hosted runner, and the app does not need one to
+  # build or to run its own tests. Ad-hoc signing is still real signing: arm64 macOS refuses
+  # to launch an unsigned bundle, so the test host has to carry a signature.
+  SIGNING: >-
+    CODE_SIGN_STYLE=Manual
+    CODE_SIGN_IDENTITY=-
+    CODE_SIGNING_REQUIRED=YES
+    CODE_SIGNING_ALLOWED=YES
+    DEVELOPMENT_TEAM=
+
+jobs:
+  build:
+    name: Build (Debug and Release)
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Record the toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks | grep macosx
+
+      - name: Clean Debug build
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination "$DESTINATION" \
+            -derivedDataPath DerivedData-Debug \
+            $SIGNING clean build
+
+      - name: Clean Release build
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Release -destination "$DESTINATION" \
+            -derivedDataPath DerivedData-Release \
+            $SIGNING clean build
+
+  test:
+    name: Tests (unit and UI)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Record the toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      # The clean-desktop question this suite has been arguing with for three intervals.
+      # Whatever else is on the runner's screen is recorded before anything is launched, so a
+      # UI result can be read against what was actually in front of it.
+      - name: Record what else owns the screen
+        run: |
+          echo "Foreground-capable processes:"
+          osascript -e 'tell application "System Events" to get name of every application process whose background only is false' || true
+          echo "Displays:"
+          system_profiler SPDisplaysDataType 2>/dev/null | grep -E "Resolution|UI Looks" || true
+
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination "$DESTINATION" \
+            -derivedDataPath DerivedData \
+            $SIGNING build-for-testing
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination "$DESTINATION" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath UnitTests.xcresult \
+            -only-testing:InboxSweepTests \
+            $SIGNING test-without-building
+
+      - name: UI tests
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination "$DESTINATION" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath UITests.xcresult \
+            -only-testing:InboxSweepUITests \
+            $SIGNING test-without-building
+
+      - name: Upload result bundles
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresults
+          path: "*.xcresult"
+          retention-days: 7
+
+  hygiene:
+    name: Hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: No em dashes in tracked text
+        run: Scripts/check_no_em_dashes.sh
+
+      - name: No real mailbox data or credentials in tracked files
+        run: Scripts/check_privacy.sh
