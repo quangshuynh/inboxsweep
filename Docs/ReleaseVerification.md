@@ -346,6 +346,42 @@ the suite assert *more* than it did. The one timeout that changed is
 `windowReadyTimeout`, which is new, and it is sized against the app's own bounded retry budget
 rather than against a hope.
 
+### What ten consecutive complete runs measured
+
+Ten complete runs of the whole test plan, back to back, on the machine this was developed on.
+Each run is the unit target and the UI target together.
+
+| | Runs | Cases |
+| --- | --- | --- |
+| Unit | 10 of 10 clean | **0 failures** in roughly 7,430 cases |
+| UI | **6 of 10** clean | 9 failures in 200 cases, 4.5% |
+
+The longest clean streak was four consecutive runs. Failures cluster rather than spread: two runs
+account for seven of the nine, and six runs have none at all. No case failed more than twice, and
+the six cases that failed at least once are spread across unrelated journeys.
+
+**Every one of the nine is the same shape**, and it is the shape of a machine rather than of a
+defect: an element the runner found a moment earlier becomes unreachable, or a click is accepted
+and does nothing, and the assertion that notices it is the next one. The messages are "appeared
+but never became clickable: it is no longer in the app's accessibility tree", "Unable to find hit
+point for ScrollView", and a screen that never opened after a press that was reported as
+delivered.
+
+That is what happens when another application takes the screen while the suite is driving the
+app, and this machine has several that do: the earlier runner log naming Teams, a browser, Finder
+and a chat client as interrupting elements is in section 5 above. The app-side placement recovers
+within half a second of noticing, which is why most runs are clean, and it cannot recover from an
+interruption that lands between a check and the click it guards.
+
+**This is reported rather than worked around.** None of the nine was made to pass by a retry, a
+sleep, a skip, or a weakened assertion. Interval 10's rate was one failure in six of eleven runs
+with no diagnosis; this is one failure in four of ten runs, every failure diagnosed to a family,
+and the unit suite moved from "did not fail today" to zero failures in ten measured runs.
+
+What would settle it is a machine with nothing else running, which is what the next interval's CI
+work is for. Whether the full-screen workaround is needed at all on a clean runner is an open
+question and an explicitly reserved part of that interval.
+
 ### Two product defects the harness work found
 
 Both were found by running the app by hand, because the suite could not run at the time, and both
