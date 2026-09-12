@@ -50,14 +50,30 @@ gets a warning with the matched evidence shown, not a quiet downgrade.
 
 ### Step 2: bulk-mail signals are counted
 
-Eight of them, drawn from the loaded window: things like the presence of `List-Unsubscribe`
-headers, Gmail's own Promotions or Updates categories, a high unread proportion, a regular
-cadence, and repeated subject shapes. Each one that fires becomes a sentence you can read.
+Eight independent observations, each a fact the mailbox stated rather than a conclusion:
+
+| Signal | Fires when |
+| --- | --- |
+| High volume | The sender is above the message-count threshold in the loaded window |
+| Promotions category | Gmail itself filed the mail under Promotions |
+| List metadata | The messages carry `List-Unsubscribe` headers |
+| Automated sender | The address itself looks like an automated one |
+| Recurring cadence | The gaps between messages are regular |
+| Mostly unread | Most of the loaded messages were never opened |
+| No engagement markers | Nothing from this sender is starred or marked important |
+| Wide window | The sender has been writing across most of the loaded span |
+
+Each one that fires becomes a sentence you can read on the sender's detail pane.
 
 ### Step 3: a pattern is matched, or not
 
-The counted signals are matched against the known patterns. A sender that matches none gets no
-proposal at all, which is the common case and is not a failure.
+A named pattern (a newsletter, a promotional sender, a notification service) requires **three
+specific signals to agree**, never one. A sender that matches no pattern but trips four signals
+is still put forward for review on the count alone, and strength is the count of agreeing
+signals translated into a named band.
+
+A sender that matches none of that gets no proposal at all, which is the common case and is not
+a failure.
 
 ## Explainable by construction
 

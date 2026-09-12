@@ -181,7 +181,10 @@ struct MutationTransactionStoreTests {
             try FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.posixPermissions] as? NSNumber
         )
         #expect(permissions.int16Value == 0o600)
-        #expect(try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        #expect(
+            try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true,
+            "Not excluded from backups: \(file.path(percentEncoded: false))"
+        )
     }
 
     @Test("The file names messages and never describes them")

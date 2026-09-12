@@ -1,10 +1,11 @@
 name: CI
 
+# Every branch, because the point is to find out before a pull request exists. A same-repo pull
+# request shows the push run's checks, so a pull_request trigger here would only run everything
+# twice, and macOS minutes on a private repository are billed at ten times the rate.
 on:
   push:
-    branches: [main, "**"]
-  pull_request:
-    branches: [main]
+    branches: ["**"]
   workflow_dispatch:
 
 concurrency:

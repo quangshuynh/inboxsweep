@@ -100,7 +100,14 @@ struct SenderRuleStoreTests {
             try FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.posixPermissions] as? NSNumber
         )
         #expect(permissions.int16Value == 0o600)
-        #expect(try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        // The path is in the message because this assertion passes on a development Mac and
+        // fails on a hosted runner, and the difference is where the sandboxed test host's
+        // temporary directory actually is. A failure that does not say which file it looked at
+        // cannot distinguish the two.
+        #expect(
+            try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true,
+            "Not excluded from backups: \(file.path(percentEncoded: false))"
+        )
 
         // The file name is a digest, so a directory listing does not name the account.
         #expect(!file.lastPathComponent.contains("@"))
