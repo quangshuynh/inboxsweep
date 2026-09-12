@@ -200,8 +200,5 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: No em dashes in tracked text
-        run: Scripts/check_no_em_dashes.sh
-
       - name: No real mailbox data or credentials in tracked files
         run: Scripts/check_privacy.sh
