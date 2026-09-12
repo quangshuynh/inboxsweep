@@ -55,7 +55,13 @@ fi
 # A home directory naming a person is both a privacy leak and an instruction nobody else can
 # follow. The container path the app actually uses is named after the bundle identifier, which
 # is why it is allowed to appear.
-if paths=$(git grep -nIE "/Users/[A-Za-z0-9._-]+/" -- . ':!Scripts/check_privacy.sh' 2>/dev/null); then
+#
+# /Users/runner is excluded, and only that one: it is the account every GitHub-hosted macOS
+# runner uses, it names nobody, and anyone can reproduce a path under it. The verification
+# record quotes measured output from those runners verbatim, which is the point of a record.
+paths=$(git grep -nIE "/Users/[A-Za-z0-9._-]+/" -- . ':!Scripts/check_privacy.sh' 2>/dev/null |
+    grep -v "/Users/runner/" || true)
+if [ -n "$paths" ]; then
     fail "absolute paths into a developer's home directory:"
     echo "$paths" | sed 's/^/    /'
 fi
