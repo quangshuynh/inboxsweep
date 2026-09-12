@@ -5,22 +5,22 @@ import Foundation
 /// ### Why this is written down rather than inherited
 ///
 /// `URLSession` follows redirects by default, up to twenty of them, across schemes, converting
-/// `POST` to `GET` on the way — and it does all of that inside `data(for:)` where no test can
+/// `POST` to `GET` on the way, and it does all of that inside `data(for:)` where no test can
 /// see it. For a Gmail API call that default is fine. For a `POST` to a URL a stranger put in a
 /// mail header it is not: the app would be following that stranger's `Location` header to
 /// wherever it pointed, and nobody could say afterwards where the request had gone.
 ///
 /// So redirects are not followed by the session at all. ``UnsubscribeHTTPTransport`` refuses
 /// them at the delegate, and ``OneClickUnsubscribeClient`` performs the loop itself against
-/// this policy — which makes the whole of it a value a test can assert on.
+/// this policy, which makes the whole of it a value a test can assert on.
 ///
 /// ### The policy
 ///
 /// - **Method-preserving redirects only.** 307 and 308 are followed, because they re-send the
-///   same `POST` with the same body — the same request, at a new address. 301, 302, and 303 are
+///   same `POST` with the same body: the same request, at a new address. 301, 302, and 303 are
 ///   **not** followed: every one of them means "do a `GET` instead", and a `GET` to a landing
 ///   page is not the request RFC 8058 defines. Those are terminal, and reported as
-///   ``UnsubscribeOutcome/requestSent`` — the endpoint received the request, and what it did
+///   ``UnsubscribeOutcome/requestSent``: the endpoint received the request, and what it did
 ///   with it is not something a redirect can tell us.
 /// - **HTTPS to HTTPS only.** A `Location` naming `http` is refused outright rather than
 ///   downgraded silently. So is `mailto`, `javascript`, `data`, `file`, and every custom
@@ -88,7 +88,7 @@ nonisolated enum UnsubscribeRedirectPolicy {
             return .refuse(.malformedRedirect)
         }
 
-        // Resolved against the current URL, because a `Location` may legitimately be relative —
+        // Resolved against the current URL, because a `Location` may legitimately be relative
         // and a relative one can only ever stay on the same https origin, which is the safe
         // direction.
         guard let resolved = URL(string: location, relativeTo: base.url)?.absoluteURL else {

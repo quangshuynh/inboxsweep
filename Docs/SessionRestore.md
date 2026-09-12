@@ -1,7 +1,7 @@
 # Session restore
 
-How InboxSweep remembers a sign-in between launches, what it stores where, and — because the
-two are easy to confuse — what was actually measured versus what is merely expected.
+How InboxSweep remembers a sign-in between launches, what it stores where, and, because the
+two are easy to confuse: what was actually measured versus what is merely expected.
 
 ---
 
@@ -43,7 +43,7 @@ Two pieces of error handling then hid it completely:
 - `GmailProvider.connect()` wrote the credential with `try? credentialStore.save(...)`. The
   `-34018` was discarded. Sign-in looked perfect.
 - `GmailProvider.restoreConnection()` read it with `(try? credentialStore.load()) ?? nil` and
-  treated `nil` as "no account" — the same answer a genuine first launch produces.
+  treated `nil` as "no account": the same answer a genuine first launch produces.
 
 So the app signed out on *every* relaunch, rebuilt or not. The correlation with rebuilding was
 coincidental: a developer only relaunches after rebuilding.
@@ -60,10 +60,10 @@ a test, so no test could observe a Keychain that refused every write.
 `KeychainCredentialStore` consults both of macOS's keychains, in preference order, and uses the
 first one *this process can actually use*:
 
-1. **Data protection keychain** — preferred. App-scoped by the system rather than by an ACL.
+1. **Data protection keychain**: preferred. App-scoped by the system rather than by an ACL.
    Available to a build signed with a provisioning profile that grants an application-identifier
    or keychain-access-groups entitlement.
-2. **Login (file) keychain** — the fallback. Reachable by any signed app for its own items,
+2. **Login (file) keychain**: the fallback. Reachable by any signed app for its own items,
    protected by the login keychain and an ACL naming this app.
 
 A save writes to exactly one of them and deletes any copy left in the other, so a build that
@@ -78,12 +78,12 @@ The distinction that matters is between a keychain this process **cannot use** a
 | `errSecMissingEntitlement`, `errSecNotAvailable` | Wrong keychain for this process | Skip it |
 | `errSecAuthFailed`, `errSecInteractionNotAllowed`, `errSecInteractionRequired`, `errSecUserCanceled` | Refused | `CredentialStoreError.accessDenied` |
 | `errSecDecode`, `errSecInvalidData`, or undecodable JSON | Stored bytes unusable | Discarded, reported as `.malformedStoredData` |
-| anything else | — | `.unhandled(status)` |
+| anything else | Not recognised | `.unhandled(status)` |
 
 ### What is stored
 
 Only `GmailStoredCredentials`: the refresh token, the granted scopes, and the account address.
-Access tokens are never persisted — they last about an hour and are cheap to re-obtain, so
+Access tokens are never persisted: they last about an hour and are cheap to re-obtain, so
 storing them would add exposure for no benefit.
 
 Accessibility on the data protection keychain is `kSecAttrAccessibleAfterFirstUnlock`: the token
@@ -95,9 +95,9 @@ attribute is not meaningful on the file keychain and is not set there.
 `MailRestoreOutcome` has three cases rather than two, so the app can tell a first launch from a
 failed restore:
 
-- `.noStoredCredentials` — nothing stored. Signed-out screen, silently. The ordinary case.
-- `.restored(account)` — a working connection.
-- `.unusable(failure)` — something was stored and could not be used. The signed-out screen, plus
+- `.noStoredCredentials`, nothing stored. Signed-out screen, silently. The ordinary case.
+- `.restored(account)`: a working connection.
+- `.unusable(failure)`: something was stored and could not be used. The signed-out screen, plus
   a `SessionNotice` saying which of *revoked*, *scopes changed*, *unreadable*, or *malformed*
   applies. A provider outage instead gets an error screen with **Try again**, because retrying is
   the right move and re-authorizing is not.
@@ -107,15 +107,15 @@ failed restore:
 being discovered as an unexplained signed-out screen next launch.
 
 `MailDisconnectOutcome` covers the third: signing *out*. `disconnect()` used to return nothing,
-with a `try?` around both the revoke and the delete. The serious half of that was the delete —
+with a `try?` around both the revoke and the delete. The serious half of that was the delete:
 a Keychain that refuses to remove this app's item leaves the refresh token exactly where it
 was, and the window says "signed out" either way. Three outcomes now:
 
-- `.complete` — the credential is gone and the grant was revoked, or there was none to revoke.
+- `.complete`: the credential is gone and the grant was revoked, or there was none to revoke.
   No notice.
-- `.grantNotRevoked` — gone from this Mac; Google was not reached. A notice says the permission
+- `.grantNotRevoked`: gone from this Mac; Google was not reached. A notice says the permission
   is still listed on the account.
-- `.storedCredentialRetained(reason:)` — **the credential is still on this Mac.** A notice names
+- `.storedCredentialRetained(reason:)`: **the credential is still on this Mac.** A notice names
   the Keychain Access item to delete and the Google page to withdraw the access on.
 
 Signing out still always succeeds from the user's side: the session ends and the window clears
@@ -138,7 +138,7 @@ InboxSweep.app/Contents/MacOS/InboxSweep --keychain-selfcheck
 ```
 
 `--keychain-selfcheck-reset` removes the marker. Two more modes answer the question a
-successful save cannot — *which* keychain it went to, given that the fallback is silent:
+successful save cannot, *which* keychain it went to, given that the fallback is silent:
 
 ```bash
 InboxSweep.app/Contents/MacOS/InboxSweep --keychain-probe     # per keychain, no fallback
@@ -209,7 +209,7 @@ keychain out of reach on this machine are in
   built or tested. The fallback exists precisely so that the code path is the same either way,
   but "production Keychain persistence is proven" is not a claim this document makes.
 - **The data protection keychain itself.** Preferred, reached, and refused with a measured
-  status code — never exercised end to end on this app.
+  status code, never exercised end to end on this app.
 - **Keychain prompts under a changed signing identity.** Not exercised; re-signing with a
   *different* certificate was not tested.
 
@@ -223,7 +223,7 @@ The credential store answers *who*; `FileInboxCacheStore` answers *what was load
   container's Application Support directory. Owner-only permissions, excluded from backups.
 - At most one account's window is kept. Saving a second account's window deletes the first.
 - A cached window is only ever shown **after** a credential restore succeeds, and only for the
-  account that restore produced. A restore that fails shows no cache at all — personal mail is
+  account that restore produced. A restore that fails shows no cache at all: personal mail is
   never displayed without the authenticated account it belongs to.
 - The file records the account address it was written for, and a window whose address does not
   match the restored account is discarded rather than shown.

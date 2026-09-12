@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What InboxSweep has changed in this mailbox, newest first — and nothing else.
+/// What InboxSweep has changed in this mailbox, newest first, and nothing else.
 ///
 /// ### The one question this screen answers
 ///
@@ -14,7 +14,7 @@ import SwiftUI
 /// Opening it, scrolling it, and opening a row send nothing to Gmail and nothing to anybody
 /// else. The history comes out of the local transaction file and the message details out of the
 /// window already in memory. The only control here that can reach a mailbox is **Undo**, which
-/// is the existing undo — the same offer the review screen makes, for the same single
+/// is the existing undo: the same offer the review screen makes, for the same single
 /// transaction, through the same path. A row cannot archive anything, an older row cannot become
 /// undoable by being visible, and **no unsubscribe row has any control on it at all**: there is
 /// no re-send, no retry, and no undo, because an unsubscribe has no inverse to offer.
@@ -23,7 +23,7 @@ import SwiftUI
 ///
 /// Archives and unsubscribes are interleaved by time and rendered differently, because they say
 /// different things. An archive row counts messages and says where its undo stands; an
-/// unsubscribe row names a destination and says what InboxSweep did — "Unsubscribe request
+/// unsubscribe row names a destination and says what InboxSweep did: "Unsubscribe request
 /// sent", "Opened unsubscribe page", "Opened email unsubscribe request". None of the three
 /// claims the user was unsubscribed, which is not something this app can observe.
 ///
@@ -50,6 +50,11 @@ struct ActivityView: View {
             footer
         }
         .frame(minWidth: 760, idealWidth: 900, minHeight: 460, idealHeight: 580)
+        // Escape closes it, which is what every macOS sheet does and what this one did not.
+        // Safe here because closing changes nothing: the only exits from this screen are Done and
+        // Escape, and neither touches a mailbox. The sheets that *can* act keep Escape bound to
+        // their own Cancel, which backs out of the confirmation rather than out of the sheet.
+        .onExitCommand { dismiss() }
         .task(id: session.mutationActivity?.id) { await reload() }
         // A second trigger for the second kind of entry, so an unsubscribe performed while this
         // screen is open shows up the way an undo does.
@@ -88,7 +93,7 @@ struct ActivityView: View {
 
     /// The boundary, stated on the screen rather than left to documentation.
     static let scopeNote = """
-        Everything InboxSweep has done for this account, on this Mac — messages it archived, and \
+        Everything InboxSweep has done for this account, on this Mac: messages it archived, and \
         unsubscribes it sent or opened for you. Changes you made in Gmail itself are not listed \
         here, and neither is an unsubscribe you did yourself: InboxSweep only records what it did.
         """
@@ -105,14 +110,14 @@ struct ActivityView: View {
         }
     }
 
-    /// Nothing archived yet — which is a perfectly good state and is not apologised for.
+    /// Nothing archived yet, which is a perfectly good state and is not apologised for.
     private var emptyState: some View {
         ContentUnavailableView {
             Label("No activity yet", systemImage: "clock")
         } description: {
             Text("""
                 InboxSweep hasn't done anything to this account yet. When you archive messages, each \
-                archive is listed here with what it did and whether it can still be undone — and when \
+                archive is listed here with what it did and whether it can still be undone, and when \
                 you unsubscribe from a sender, what InboxSweep sent or opened is listed too.
                 """)
         }
@@ -187,7 +192,7 @@ struct ActivityView: View {
 
     /// Reads the history for the connected account.
     ///
-    /// Re-run when a mutation finishes — which on this screen means an undo — so the row the
+    /// Re-run when a mutation finishes (which on this screen means an undo) so the row the
     /// user just acted on updates in place rather than going stale behind them.
     private func reload() async {
         entries = await session.activityTimeline()
@@ -227,6 +232,14 @@ private struct ActivityRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if let attribution = entry.ruleAttribution {
+                    Text(attribution)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("activity.row.ruleAttribution")
+                }
+
                 if let status = entry.statusSummary {
                     Label(status, systemImage: statusSymbolName)
                         .font(.caption)
@@ -236,6 +249,10 @@ private struct ActivityRow: View {
             }
         }
         .padding(.vertical, 4)
+        // A container of separately meaningful lines, not one label. Without `.contain`, SwiftUI
+        // is free to merge the row into a single element and a test asking whether the rule
+        // attribution is present would be asking about something that had been folded away.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activity.row")
     }
 
@@ -335,6 +352,13 @@ private struct ActivityDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("activity.detail.explanation")
 
+            if let attribution = entry.ruleAttribution {
+                Label(attribution, systemImage: "wand.and.stars.inverse")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("activity.detail.ruleAttribution")
+            }
+
             if let status = entry.statusSummary {
                 Label(status, systemImage: "info.circle")
                     .font(.callout)
@@ -429,7 +453,7 @@ private struct ActivityDetailView: View {
 ///
 /// The populated variant seeds the transaction store directly rather than archiving anything:
 /// ``SampleMailProvider`` vends no mutation boundary, so there is nothing in a sample run that
-/// could produce a transaction — which is the point, and also why the states this screen has to
+/// could produce a transaction, which is the point, and also why the states this screen has to
 /// get right are otherwise only visible on a real account.
 ///
 /// It covers the four that read differently: a complete archive with its undo still open, a
@@ -499,7 +523,7 @@ private struct ActivityPreview: View {
         }
 
         // The sample mailbox's own identifiers, so the detail view has metadata to resolve for
-        // the newest entry and nothing to resolve for the older ones — which is the graceful
+        // the newest entry and nothing to resolve for the older ones, which is the graceful
         // degradation this screen has to show.
         let loaded = SampleMailbox.messages().prefix(3).map(\.id.rawValue)
 
@@ -521,7 +545,7 @@ private struct ActivityPreview: View {
 ///
 /// Notice what it does not carry. There is no count, because an unsubscribe is not about a
 /// number of messages. There is no undo state, because there is no undo. And there is no
-/// control of any kind — a row on this screen cannot re-send anything, which is what makes
+/// control of any kind: a row on this screen cannot re-send anything, which is what makes
 /// scrolling past it free.
 private struct UnsubscribeActivityRow: View {
 

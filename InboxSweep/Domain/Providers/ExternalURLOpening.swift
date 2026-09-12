@@ -5,12 +5,12 @@ import Foundation
 /// A boundary of its own, distinct from every transport in the app, because what happens on
 /// the other side of it is categorically different: nothing is fetched, nothing comes back, and
 /// InboxSweep learns nothing except whether macOS accepted the URL. That is what makes browser
-/// and mail handoff *handoff* rather than a quieter kind of request — and having it as a
+/// and mail handoff *handoff* rather than a quieter kind of request, and having it as a
 /// protocol is what lets a test prove that the browser path produced no HTTP traffic at all,
 /// by handing the session an opener that records and a transport that would have recorded.
 ///
 /// The allow-list lives in ``UnsubscribeHandoff``, not in implementations, so every opener in
-/// the app — production, fake, or future — is bound by the same rule.
+/// the app (production, fake, or future) is bound by the same rule.
 nonisolated protocol ExternalURLOpening: Sendable {
 
     /// Asks the system to open `url`, returning whether it accepted.
@@ -28,7 +28,7 @@ nonisolated enum UnsubscribeHandoff {
 
     /// The only two schemes the app will open, and what each is for.
     ///
-    /// `https` goes to a browser; `mailto` goes to a mail client. Everything else is refused —
+    /// `https` goes to a browser; `mailto` goes to a mail client. Everything else is refused,
     /// `http` included, because an unsubscribe page reached over an unencrypted connection is a
     /// page whose form the user is about to fill in.
     static let permittedSchemes: Set<String> = ["https", "mailto"]

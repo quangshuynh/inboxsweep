@@ -241,7 +241,7 @@ struct MessageSelectionTests {
         ))
         #expect(session.canArchive(frozen))
 
-        // Two of the three are gone from the mailbox — somebody archived them in Gmail itself.
+        // Two of the three are gone from the mailbox: somebody archived them in Gmail itself.
         await provider.setFetchBehavior(.pages([MailMessagePage(
             messages: messages.filter { $0.id != MailMessageID("m-2") && $0.id != MailMessageID("m-3") }
         )]))

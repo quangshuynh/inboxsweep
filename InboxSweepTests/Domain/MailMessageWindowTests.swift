@@ -4,8 +4,8 @@ import Testing
 
 /// How pages of loaded messages combine into one window.
 ///
-/// The behaviour that matters here is what happens when the same message arrives twice —
-/// which Gmail does at a page boundary — because every per-sender count the dashboard shows
+/// The behaviour that matters here is what happens when the same message arrives twice,
+/// which Gmail does at a page boundary, because every per-sender count the dashboard shows
 /// is derived from this window.
 @Suite("Mail message window")
 struct MailMessageWindowTests {

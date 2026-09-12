@@ -2,13 +2,13 @@ import Foundation
 
 /// Aggregated, read-only facts about one sender across the messages loaded so far.
 ///
-/// Every count and date in this type is scoped to the *loaded window* — the messages the app
-/// has actually fetched — not to the whole mailbox. The naming reflects that, because a
+/// Every count and date in this type is scoped to the *loaded window*: the messages the app
+/// has actually fetched, not to the whole mailbox. The naming reflects that, because a
 /// summary that quietly implied full-mailbox totals would mislead the user at exactly the
 /// moment they are deciding what to do about a sender.
 ///
-/// Notably absent: any judgement. Every field below is something the mailbox already said —
-/// a count, a date, a header that was present, a label the provider had already applied — and
+/// Notably absent: any judgement. Every field below is something the mailbox already said,
+/// a count, a date, a header that was present, a label the provider had already applied, and
 /// nothing here combines them into a score or a recommendation. That separation is deliberate:
 /// ``SenderCleanupProposal`` is where the app draws conclusions, and keeping it a distinct
 /// type means the facts on the dashboard can always be read without the verdict beside them.
@@ -42,7 +42,7 @@ nonisolated struct SenderSummary: Identifiable, Hashable, Sendable {
     /// The provider's own inbox categories seen on this sender's loaded messages.
     ///
     /// Gmail applies these itself; InboxSweep only reports which ones turned up. A sender can
-    /// appear in more than one, which is why this is a set rather than a single value — and
+    /// appear in more than one, which is why this is a set rather than a single value, and
     /// why it is not called a "category": the app is not assigning one.
     let categoryLabels: Set<MailLabel>
 
@@ -56,7 +56,7 @@ nonisolated struct SenderSummary: Identifiable, Hashable, Sendable {
     ///
     /// `nil` when fewer than two of the loaded messages carry a usable date, because a cadence
     /// needs at least one interval to measure. Computed across the loaded window only, so it
-    /// describes how often this sender appeared *in what was fetched* — extending the window
+    /// describes how often this sender appeared *in what was fetched*: extending the window
     /// can change it.
     let averageIntervalBetweenLoadedMessages: TimeInterval?
 

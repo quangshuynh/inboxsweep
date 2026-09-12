@@ -3,7 +3,7 @@ import Foundation
 /// Drives Google's OAuth 2.0 authorization-code flow with PKCE.
 ///
 /// Everything token-shaped stays inside this type and the actor that owns it. Errors raised
-/// here carry only Google's `error` code and our own wording — never the response body, an
+/// here carry only Google's `error` code and our own wording, never the response body, an
 /// authorization code, or a token.
 nonisolated struct GmailOAuthClient: Sendable {
 
@@ -133,7 +133,7 @@ nonisolated struct GmailOAuthClient: Sendable {
     /// Asks Google to invalidate the grant. Best-effort: failures are the caller's to ignore.
     ///
     /// This is the only network call the app makes that changes anything, and what it changes
-    /// is InboxSweep's own access — not the mailbox.
+    /// is InboxSweep's own access, not the mailbox.
     func revoke(token: String) async throws {
         var request = URLRequest(url: Self.revocationEndpoint)
         request.httpMethod = "POST"

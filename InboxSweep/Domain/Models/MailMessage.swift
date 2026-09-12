@@ -48,7 +48,7 @@ nonisolated struct MailMessage: Identifiable, Hashable, Sendable {
     /// contacting it, and "a header existed" cannot support that while "this exact HTTPS URL,
     /// declared one-click by this exact second header" can.
     ///
-    /// Still metadata, and still parsed at the provider boundary — ``ListUnsubscribeParser``
+    /// Still metadata, and still parsed at the provider boundary: ``ListUnsubscribeParser``
     /// turns the sender's text into typed values there, so the raw header never travels through
     /// the app as a string something could later hand to a URL loader.
     let unsubscribe: MessageUnsubscribeMetadata

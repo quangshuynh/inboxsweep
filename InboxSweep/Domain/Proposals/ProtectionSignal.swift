@@ -53,7 +53,7 @@ nonisolated struct ProtectionSignal: Identifiable, Hashable, Sendable {
     /// same outcome. A ``clear`` signal protects a sender; a ``suggestive`` one downgrades it
     /// to review.
     nonisolated enum Confidence: Hashable, Sendable {
-        /// Corroborated — more than one message, or the sender's whole loaded window.
+        /// Corroborated, more than one message, or the sender's whole loaded window.
         case clear
         /// A single, uncorroborated hit. Enough to be careful about, not enough to conclude.
         case suggestive
@@ -94,7 +94,7 @@ nonisolated struct ProtectionSignal: Identifiable, Hashable, Sendable {
             let base = "\(messages) \(ProposalPhrasing.mentionsMention(messageCount)) "
                 + "\(topic.evidencePhrase) in the subject line"
             return confidence == .suggestive
-                ? "\(base) — a single mention, so it may not be what it looks like"
+                ? "\(base), a single mention, so it may not be what it looks like"
                 : base
         }
     }

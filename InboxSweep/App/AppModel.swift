@@ -37,6 +37,13 @@ final class AppModel {
     /// sign-out and back in, rather than a second one left behind.
     private let mutationRecords = FileMutationTransactionStore()
 
+    /// The local rules the user has authorized.
+    ///
+    /// Held here for the same reason the other three are. It is the only one of them that names
+    /// senders, and it is deleted with the rest when the account is disconnected; see
+    /// ``FileSenderRuleStore``.
+    private let ruleStore = FileSenderRuleStore()
+
     init() {
         let configuration = GmailOAuthConfiguration.load()
         isProviderConfigured = configuration != nil
@@ -47,7 +54,8 @@ final class AppModel {
             ),
             cache: cache,
             planStore: planStore,
-            mutationRecords: mutationRecords
+            mutationRecords: mutationRecords,
+            ruleStore: ruleStore
         )
 
         #if DEBUG
@@ -77,7 +85,7 @@ final class AppModel {
     /// so the signed-out screen appears whether or not this Mac has a saved sign-in.
     ///
     /// The UI test for that screen used to launch the app with no arguments at all, which made
-    /// it pass or fail on whether the developer happened to be connected to Gmail — and, when
+    /// it pass or fail on whether the developer happened to be connected to Gmail, and, when
     /// they were, drove a test run through their real mailbox. Nothing else about the launch
     /// changes: the same provider, the same configuration, the same screen. Only the Keychain
     /// is left out of it, and the real item is neither read nor written.
@@ -90,7 +98,7 @@ final class AppModel {
     /// sample run must not disturb the real account's stored window.
     ///
     /// It also runs without any way to archive. ``SampleMailProvider`` vends no mutation
-    /// boundary, so the sample session has no archiver at all — the Archive control is absent
+    /// boundary, so the sample session has no archiver at all: the Archive control is absent
     /// rather than disabled, because there is no mailbox behind it to change.
     ///
     /// Its transaction store is in-memory, and empty unless ``SampleActivity`` was asked for. A
@@ -98,7 +106,7 @@ final class AppModel {
     /// write, and the undo it restores from those records is still refused for want of a grant.
     ///
     /// Unsubscribing is the same story with one difference. *Detection* works on synthetic mail,
-    /// because reading a sender's headers is domain work and needs no boundary — so the options
+    /// because reading a sender's headers is domain work and needs no boundary, so the options
     /// screen and the review are visible here. *Execution* is off unless
     /// ``SampleUnsubscribe/launchArgument`` was given, and even then it is
     /// ``SampleUnsubscriber``, which has no transport and answers in-process.
@@ -107,6 +115,10 @@ final class AppModel {
         session = InboxSessionModel(
             provider: SampleMailProvider(),
             mutationRecords: SampleActivity.recordStore(),
+            // In memory, and empty unless a launch argument seeded one. Invented mail has no
+            // business leaving a rules file on somebody's Mac, and a sample run must never write
+            // to the real account's.
+            ruleStore: SampleRules.store(),
             // Nothing synthetic opens a real browser or mail client. Under the sample
             // unsubscribe argument a handoff has to *succeed* for its outcome and its Activity
             // row to be visible, and launching Safari at a `.example` host during a UI test is
@@ -127,7 +139,8 @@ final class AppModel {
             ),
             cache: cache,
             planStore: planStore,
-            mutationRecords: mutationRecords
+            mutationRecords: mutationRecords,
+            ruleStore: ruleStore
         )
     }
     #endif

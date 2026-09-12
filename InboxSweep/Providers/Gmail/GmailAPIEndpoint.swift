@@ -5,7 +5,7 @@ import Foundation
 /// The `method` is a constant, not a parameter. Every request this type can construct is a
 /// `GET`, and there is no initializer that produces anything else. Writes live in
 /// ``GmailMutationRequest``, which is a different type with a different constant and its own
-/// two-item list of what it can express — so "which requests change something?" is answered by
+/// two-item list of what it can express, so "which requests change something?" is answered by
 /// looking at which type they are, not by reading their URLs.
 nonisolated struct GmailAPIRequest: GmailAuthorizedRequest, Equatable {
     let method = "GET"
@@ -35,7 +35,7 @@ nonisolated enum GmailAPIEndpoint {
     /// about what that did and did not change. It is a **request-shape** change and nothing
     /// else: `metadataHeaders` names which headers a `format=metadata` response includes, and
     /// the `gmail.metadata` scope already covers every one of them. No OAuth scope was added,
-    /// none was widened, and the consent screen asks for exactly what it asked for before —
+    /// none was widened, and the consent screen asks for exactly what it asked for before,
     /// which is the answer to requirement 11's "investigate before changing scopes".
     ///
     /// Without it the app could see *that* a sender supports unsubscribing and could never see
@@ -48,7 +48,7 @@ nonisolated enum GmailAPIEndpoint {
     /// `URL.appending(path:)` passes `/` straight through, so an identifier containing one
     /// would silently redirect the request to a different endpoint. Identifiers come from
     /// Gmail's own responses rather than from the user, so this has never been reachable in
-    /// practice — but the request builders are the app's narrowest promise about which
+    /// practice, but the request builders are the app's narrowest promise about which
     /// endpoints it can reach, and a promise that depends on the server behaving is not one
     /// worth making. Doubly so now that one of those builders performs a write.
     static func pathSegment(for messageID: MailMessageID) -> String {
@@ -77,8 +77,8 @@ nonisolated enum GmailAPIEndpoint {
         var components = URLComponents(url: base.appending(path: "messages"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "maxResults", value: String(limit))]
 
-        // `labelIds` is the only filter `gmail.metadata` permits — `q=` is rejected under this
-        // scope — so every scope the app offers has to be expressible as a label Gmail already
+        // `labelIds` is the only filter `gmail.metadata` permits: `q=` is rejected under this
+        // scope, so every scope the app offers has to be expressible as a label Gmail already
         // applies. That is a constraint worth keeping: it means the app can only ask for slices
         // Gmail itself defined, never ones it invented from message content.
         if let labelID = labelID(for: scope) {
@@ -107,7 +107,7 @@ nonisolated enum GmailAPIEndpoint {
 
     /// Fetches metadata for a single message.
     ///
-    /// `format=metadata` is what keeps bodies and attachments out of the response entirely —
+    /// `format=metadata` is what keeps bodies and attachments out of the response entirely:
     /// the app could not read a message's contents from this response even by mistake.
     static func messageMetadata(id: MailMessageID) -> GmailAPIRequest {
         var components = URLComponents(url: messageURL(messageID: id), resolvingAgainstBaseURL: false)!

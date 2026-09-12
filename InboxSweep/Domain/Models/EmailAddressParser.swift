@@ -25,7 +25,7 @@ nonisolated enum EmailAddressParser {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !decoded.isEmpty else { return .unknown }
 
-        // `Display Name <addr@example.com>` — the common, well-formed shape.
+        // `Display Name <addr@example.com>`: the common, well-formed shape.
         if let angleStart = decoded.firstIndex(of: "<"),
            let angleEnd = decoded[angleStart...].firstIndex(of: ">") {
             return EmailAddress(

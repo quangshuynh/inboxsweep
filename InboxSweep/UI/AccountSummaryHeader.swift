@@ -3,7 +3,7 @@ import SwiftUI
 /// The header above the sender list: which account, how much was loaded, how many senders.
 ///
 /// Phrased as "loaded" rather than "total" throughout, because the app has only seen a window
-/// of the mailbox and it would be easy — and misleading — to imply otherwise.
+/// of the mailbox and it would be easy (and misleading) to imply otherwise.
 struct AccountSummaryHeader: View {
 
     let snapshot: InboxSnapshot

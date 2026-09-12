@@ -19,8 +19,37 @@ struct RootView: View {
             .onChange(of: appModel.session.state) { _, _ in
                 UITestWindow.keepFrontmostIfRequested()
             }
+            .overlay(alignment: .topLeading) { windowStateProbe }
         #endif
     }
+
+    #if DEBUG
+    /// A zero-size element carrying ``UITestWindow/Phase``, for the UI suite to wait on.
+    ///
+    /// Present only under the deterministic-window launch argument, so an ordinary Debug launch
+    /// and every Release launch have nothing extra in their accessibility tree. It draws nothing,
+    /// occupies no space, and is not focusable.
+    ///
+    /// ### This exact shape, because the alternatives were measured and are worse
+    ///
+    /// A `Color` with an identifier and a label, in an overlay, at a zero frame. Three variations
+    /// were tried and each was measured over a full run: `accessibilityElement(children: .ignore)`
+    /// at a one-point frame, a one-point `Text` at low opacity, and moving it out of the overlay
+    /// into a `ZStack` beside the content. All three were published on some launches and absent
+    /// on others, and the last produced a run in which nineteen of twenty cases failed waiting
+    /// for it. This is the shape that was measured to work.
+    @ViewBuilder
+    private var windowStateProbe: some View {
+        if UITestWindow.isRequested {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .accessibilityIdentifier(UITestWindow.stateIdentifier)
+                .accessibilityLabel(UITestWindow.shared.phase.rawValue)
+                .accessibilityHidden(false)
+                .allowsHitTesting(false)
+        }
+    }
+    #endif
 
     @ViewBuilder
     private var content: some View {

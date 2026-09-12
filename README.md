@@ -4,12 +4,12 @@ A privacy-conscious Gmail cleanup assistant for macOS.
 
 **InboxSweep recommends; you authorize.** It reads your Gmail metadata, groups it by sender,
 says which senders look worth cleaning up and why, and shows what a cleanup *would* affect. The
-one change it can make is archiving the **messages you tick and confirm as a list** — and undoing
+one change it can make is archiving the **messages you tick and confirm as a list**, and undoing
 them. It cannot act on a sender, run a cleanup plan, or delete anything.
 
 > **One kind of write, and you press it.** Archiving removes the `INBOX` label from each message
 > you named, one request at a time. There is no sender-level action, no cross-sender cleanup, and
-> no way for a recommendation to carry itself out — the closest it gets is ticking boxes you then
+> no way for a recommendation to carry itself out: the closest it gets is ticking boxes you then
 > check. See [Archiving](#archiving-messages) and [Privacy posture](#privacy-posture).
 
 <!-- macOS · SwiftUI · Swift 6 -->
@@ -17,14 +17,14 @@ them. It cannot act on a sender, run a cleanup plan, or delete anything.
 ## What it does
 
 - Connects a Google account with OAuth 2.0 (authorization code + PKCE, no client secret).
-- Requests two scopes: `gmail.metadata` to read headers, labels, and dates — not bodies — and
+- Requests two scopes: `gmail.metadata` to read headers, labels, and dates (not bodies) and
   `gmail.modify`, the narrowest permission Google publishes that can archive.
 - Fetches a bounded window of message metadata with bounded concurrency, cancellation support,
-  and pagination — **250 messages by default, up to a documented ceiling of 2,500** — from the
+  and pagination (**250 messages by default, up to a documented ceiling of 2,500**) from the
   Inbox, any of Gmail's four categories, or All mail.
 - Normalizes Gmail's responses into app-owned domain models.
 - Groups messages by sender and shows per-sender counts in a native macOS dashboard.
-- Reports **sender observations** — Gmail's own categories, `List-Unsubscribe` presence,
+- Reports **sender observations**: Gmail's own categories, `List-Unsubscribe` presence,
   read/unread counts, the span of loaded mail, and how often the sender arrives.
 - Detects **unsubscribe opportunities** from a sender's own headers, distinguishes one-click,
   browser, and email mechanisms, shows the exact destination, and acts only on an explicit
@@ -35,10 +35,13 @@ them. It cannot act on a sender, run a cleanup plan, or delete anything.
 - **Saves the loaded window to this Mac**, so relaunching restores the dashboard without
   re-reading the mailbox, and says on screen when what you are looking at came from disk.
 - **Archives the messages you tick and confirm as a list**, after a confirmation naming every
-  one of them by subject and date — one Gmail request per message, each with its own outcome, so
+  one of them by subject and date, one Gmail request per message, each with its own outcome, so
   a run where some are refused reports "8 archived, 2 failed" rather than "failed".
 - **Offers Undo that survives quitting the app**, restoring exactly the messages that archive
   confirmed. A real Gmail request, not a local correction.
+- **Archives future mail from one sender you authorized**, through a local rule you create on
+  its own review screen, which runs only while the app is loading mail and never touches
+  protected mail or anything that arrived before the rule.
 - Keeps a small, bounded local record of what it changed, holding message IDs and no mail.
 - Handles signed-out, restoring, connecting, loading, loaded, empty, and error states.
 - Runs entirely against synthetic data when no Google account is configured, so the whole app
@@ -52,8 +55,8 @@ None of the following is implemented, and the UI does not pretend otherwise:
 | --- | --- |
 | Delete, trash, or permanently remove | Mark as read, star, or label |
 | Automatic or bulk unsubscribe | Archive a sender in one click, or across senders |
-| Sender rules, Gmail filters, or blocking | Executing a cleanup plan |
-| AI classification of any message | Automatic or scheduled archiving |
+| Gmail filters, blocking, or anything server-side | Executing a cleanup plan |
+| AI classification of any message | Scheduled or background archiving |
 | Background monitoring or notifications | CI, badges, or releases |
 | Analytics or telemetry | |
 
@@ -65,11 +68,18 @@ it cannot carry itself out.
 
 Unsubscribing is the second exception, and it is a separate capability rather than a wider first
 one. InboxSweep reads the `List-Unsubscribe` and `List-Unsubscribe-Post` headers a sender wrote,
-shows you the exact destination, and — only after you confirm it twice — sends one
+shows you the exact destination, and (only after you confirm it twice) sends one
 standards-defined request, opens the page in your browser, or opens a prepared message in your
 mail app. It never unsubscribes on its own, never retries, never acts across senders, and never
 creates a rule or a filter. Unlike archiving, it cannot be undone, and the app says so before
 you decide. Full detail in **[Docs/Unsubscribe.md](Docs/Unsubscribe.md)**.
+
+A **sender rule** is the third, and it is the only thing InboxSweep does to a mailbox without
+asking at the time. You create each one yourself, on a screen that prints the exact address it
+matches and the exact thing it will do; it has one action, which is to archive; it runs only
+while the app is loading mail, because nothing in this app runs when the app is closed; it never
+touches mail that arrived before it, and it never archives a message that looks worth keeping.
+It is not a Gmail filter and cannot become one. Full detail in **[Docs/Rules.md](Docs/Rules.md)**.
 
 ## Architecture
 
@@ -100,19 +110,19 @@ Adapters      GmailProvider + OAuth, API client, InboxSweep/Providers/Gmail
 
 Three seams make the whole adapter testable without a network or a Google account:
 
-- **`HTTPTransport`** — every HTTP request the adapter makes goes through it.
-- **`WebAuthenticating`** — wraps `ASWebAuthenticationSession`, so sign-in can be faked.
-- **`InboxCacheStoring`** — persistence is a protocol the domain owns, so the session's
+- **`HTTPTransport`**: every HTTP request the adapter makes goes through it.
+- **`WebAuthenticating`**: wraps `ASWebAuthenticationSession`, so sign-in can be faked.
+- **`InboxCacheStoring`**: persistence is a protocol the domain owns, so the session's
   relaunch behaviour is testable without touching the file system, and the default
   implementation stores nothing.
-- **`MailMessageArchiving`** — the mutation boundary, separate from the read boundary and
+- **`MailMessageArchiving`**: the mutation boundary, separate from the read boundary and
   *optional*. A provider vends one only if it can write, so the synthetic mailbox has no code
   path to a mutation rather than a guard someone has to remember.
 
 Notable decisions:
 
 - **`MailMessage` has no field for a message body.** Metadata-only is structural, not a
-  convention someone has to remember — and it means a cache file cannot contain mail content
+  convention someone has to remember, and it means a cache file cannot contain mail content
   even in principle.
 - **Read state is derived from labels**, so `isUnread` and the label set can never disagree.
 - **Sender sorting is a total order.** Every sort ends in the sender's grouping key, so the
@@ -135,7 +145,7 @@ Notable decisions:
   evidence unlocks a cleanup suggestion for a sender that raised a protection signal.
 - **A failed restore is not the same as a first launch.** `MailRestoreOutcome` has three cases
   rather than two, so "nothing stored" and "the Keychain refused us" cannot produce the same
-  silent signed-out screen — which is how a credential-persistence bug survived a whole
+  silent signed-out screen, which is how a credential-persistence bug survived a whole
   interval. See [Docs/SessionRestore.md](Docs/SessionRestore.md).
 - **Plan counts and the messages behind them come from one pass.** The per-message
   classification the review screen renders *is* what the entry counts are summed from, so a
@@ -172,7 +182,7 @@ https://www.googleapis.com/auth/gmail.modify     change which labels a message c
 `gmail.metadata` is narrower than the more common `gmail.readonly`, which would also hand the
 app every message body.
 
-`gmail.modify` is what archiving needs, and it is **broader than what the app does with it** —
+`gmail.modify` is what archiving needs, and it is **broader than what the app does with it**:
 it would also permit trashing, marking read, applying arbitrary labels, and reading bodies.
 Google publishes no narrower permission that can remove the `INBOX` label: `gmail.labels`
 governs label *definitions*, not applying them to a message. The alternative is not a smaller
@@ -180,8 +190,8 @@ scope; it is not having an archive feature. Since the permission cannot be narro
 is in the code, and the signed-out screen says so before you are sent to Google rather than
 letting the consent screen contradict the app.
 
-The app never requests `https://mail.google.com/` — the full-access scope, and the only one that
-permits **permanent deletion** — nor `gmail.send`, `gmail.compose`, `gmail.insert`,
+The app never requests `https://mail.google.com/` (the full-access scope, and the only one
+that permits **permanent deletion**), nor `gmail.send`, `gmail.compose`, `gmail.insert`,
 `gmail.labels`, `gmail.settings.*`, or contacts.
 
 `SafetyBoundaryTests` asserts all of the above, and that:
@@ -203,7 +213,7 @@ headers even though `gmail.modify` would now permit bodies.
 ## Sender observations
 
 Each sender row and detail pane reports facts, not judgements. Every one is scoped to the
-**loaded window** — the messages actually fetched — never to the whole mailbox, and the UI
+**loaded window**, the messages actually fetched, never to the whole mailbox, and the UI
 says so.
 
 | Observation | Definition |
@@ -213,14 +223,14 @@ says so.
 | Starred / Important | How many carry `STARRED` / `IMPORTANT`. |
 | Gmail categories | The union of Gmail's own category labels (Promotions, Social, Updates, Forums, Personal) seen on the loaded messages. Gmail assigns these; InboxSweep only reports which turned up, which is why a sender can show more than one. |
 | `List-Unsubscribe` | How many loaded messages carried the header. |
-| Unsubscribe | What the sender's headers amount to: no option, details unclear, one-click, a page, or an email request. A reading, not an action — see [Docs/Unsubscribe.md](Docs/Unsubscribe.md). |
+| Unsubscribe | What the sender's headers amount to: no option, details unclear, one-click, a page, or an email request. A reading, not an action; see [Docs/Unsubscribe.md](Docs/Unsubscribe.md). |
 | First / latest loaded | Oldest and newest received dates in the loaded window. The oldest is a floor on how far back the app has looked, not the sender's first-ever message. |
 | Recent subjects | Up to three subjects, newest first, for recognising the sender. |
 | Frequency | Mean gap between consecutive loaded messages. |
 
 **The frequency rule.** Take the loaded messages from one sender that carry a usable date,
 call the count *n*, and take the span from the oldest to the newest. Frequency is
-`span ÷ (n − 1)` — the mean interval between consecutive messages — rendered as "about one
+`span ÷ (n − 1)` (the mean interval between consecutive messages) rendered as "about one
 message every *X*". It is `nil`, and nothing is shown, when *n* < 2 or the span is zero,
 because a cadence needs at least one real interval to measure. Messages the normalizer could
 not date are excluded, so one undated message cannot report a sender as writing once every few
@@ -249,13 +259,45 @@ Those two are the complete set of mutating requests the app can build.
 by subject and received date, saying they will be removed from your Inbox and not deleted →
 confirm → one request per message → a per-message result, with **Undo** beside it.
 
-**Sender-level review.** For a sender with forty messages, **Review messages to archive…** — in
-the sender inspector and on a sender's dry-run row — opens that same review with the current
+**Sender-level review.** For a sender with forty messages, **Review messages to archive…** (in
+the sender inspector and on a sender's dry-run row) opens that same review with the current
 preview's messages already ticked, minus anything protected. It is not *Archive sender*: it opens
 a screen and changes nothing. You still inspect the list, edit it in both directions, open a
 confirmation, and press the button, and the confirmation says that only the messages listed are
-changed and that future mail from that sender is unaffected. There is no whole-sender operation,
-no rule, and no schedule anywhere behind it.
+changed and that future mail from that sender is unaffected. There is no whole-sender operation
+behind it, and confirming an archive creates no rule. Authorizing future behaviour is a separate
+thing you do deliberately, on its own screen; see [Sender rules](Docs/Rules.md).
+
+## Sender rules
+
+The one standing authorization in the app. Everything else it can do is a single act you
+confirmed; a rule keeps acting, on mail nobody has seen, until you turn it off.
+
+| | |
+| --- | --- |
+| What it matches | One exact normalized address. No domain, prefix, display-name, subject, or similarity match anywhere |
+| What it does | Archives a newly loaded Inbox message. One action, an enum with one case |
+| When it runs | While InboxSweep loads mail, which is when you open it or press Reload. **Never while the app is closed** |
+| What it will not touch | Mail that arrived before the rule, protected mail, mail already out of the Inbox, or a message it has already tried this session |
+| How it runs | One rule at a time, one message at a time, through the same message-level archive request a person pressing Archive makes. At most 50 messages a pass |
+| Undo | **None**, deliberately, and Activity says so. See [Docs/Rules.md](Docs/Rules.md#undo) |
+| Where it lives | A local file on this Mac, account-scoped, at most 25 rules, deleted when you disconnect |
+
+Creating one takes a dedicated review screen and two deliberate presses. InboxSweep may suggest
+that a rule could be useful; the affordance that says so opens the review, and the review creates
+nothing. There is exactly one call site in the app that writes a rule and it is the confirming
+button on that sheet.
+
+A rule's work appears in Activity labelled **by rule**, with the rule named underneath. It says
+*by rule*, never *by Gmail*: InboxSweep sent those requests.
+
+**Rules** is reachable from the dashboard footer, beside Activity. Each row shows what it matches,
+what it does, whether it is on, and what it can actually do right now. Turning one off takes one
+press; deleting one asks first.
+
+The one privacy cost is stated rather than buried: a rules file is the first thing InboxSweep
+writes down that names a **sender**. [Docs/Rules.md](Docs/Rules.md#privacy-the-one-new-thing-on-disk)
+explains why that is unavoidable and how it is bounded.
 
 ## Activity
 
@@ -264,17 +306,17 @@ records that make undo survive a relaunch. Full detail in **[Docs/Activity.md](D
 
 It is a reader: opening it, listing it, and opening a row send nothing to Gmail. The only control
 on it that can reach a mailbox is the existing **Undo**, offered on the one transaction the app
-already considers undoable — being listed never makes an older change actionable.
+already considers undoable: being listed never makes an older change actionable.
 
 Each entry says what was attempted, what Gmail confirmed, what did not go through, and where its
 undo stands. Partial operations stay partial: *"Archived 8 of 10 messages"* does not become
 *"Archived 8 messages"* later, and putting some of them back does not turn a complete archive
 into a failed one.
 
-It holds counts and message identifiers — **no subjects, no senders, no mail**. Where the loaded
+It holds counts and message identifiers, **no subjects, no senders, no mail**. Where the loaded
 window still describes the messages, the detail view resolves them dynamically; where it does
 not, it says so and the counts stand on their own. A row reads *"Archived 15 messages from one
-sender"* only when the cache can describe every message it names and they agree — derived at draw
+sender"* only when the cache can describe every message it names and they agree: derived at draw
 time, with nothing stored to make it possible, and never a claim that the sender itself was
 archived or that its future mail is affected.
 
@@ -291,12 +333,12 @@ depend on a toolbar being easy to get at.
 | **Scope** | The messages you ticked. Not their threads, not their sender, nothing else. |
 | **Effect** | `INBOX` removed. Read state, star, importance, and Gmail category untouched. |
 | **Execution** | One `messages.modify` per message, strictly one at a time. Not `batchModify`, which reports no per-message result and so could not be reconciled against. |
-| **Frozen set** | The confirmation shows an immutable snapshot carrying the account, sender, loaded scope, and exact messages. If the account, permission, scope, sender, window, or Inbox membership stops matching — or the confirmation has already run — the operation is refused whole and re-reviewed, never narrowed and never re-derived from fresher planner output. |
+| **Frozen set** | The confirmation shows an immutable snapshot carrying the account, sender, loaded scope, and exact messages. If the account, permission, scope, sender, window, or Inbox membership stops matching (or the confirmation has already run) the operation is refused whole and re-reviewed, never narrowed and never re-derived from fresher planner output. |
 | **Partial failure** | Per-message outcomes: archived, failed, not sent. Successes are never rolled back because something else failed; failures stay in your Inbox locally and remotely. |
 | **Protection** | No convenience action ever ticks a protected message. You can tick one yourself, and the confirmation says so. |
 | **Undo** | A real Gmail request per message, restoring only what that transaction confirmed. Can itself partly fail, and then narrows to what is still archived. |
 | **Undo lifetime** | **Survives dismissing the sheet, reloading, and quitting the app.** One undoable archive per account: a new one supersedes the last. Ends on undo, supersede, or disconnect. No timer. |
-| **In flight** | **Stop** stops before the next message — the request already sent cannot be recalled, and the sheet says so. A repeated confirmation of the same frozen set is refused by the session, not only by a disabled button. |
+| **In flight** | **Stop** stops before the next message: the request already sent cannot be recalled, and the sheet says so. A repeated confirmation of the same frozen set is refused by the session, not only by a disabled button. |
 | **Local state** | Reconciled per message from the labels on Gmail's reply, only after it confirms. Summaries, proposals, protection, plan membership, and the cache all recompute. |
 | **Transaction** | Operation, confirmed message IDs, selected count, account, timestamp, undo state. No subject, no sender, no body. Bounded to 50, deleted on disconnect. |
 
@@ -309,7 +351,7 @@ persists the widened scope, keeping the refresh token Google does not reissue.
 advisory. A saved plan naming "archive messages older than 30 days" reopens a preview when
 restored, and that is all it can ever do. **Fill from preview** and **Review messages to
 archive…** are the only bridges between a recommendation and a change, and both write ticks into
-a checkbox column — you still read the list, edit it, open a confirmation, and press the button
+a checkbox column: you still read the list, edit it, open a confirmation, and press the button
 yourself.
 
 ## Local persistence
@@ -321,7 +363,7 @@ relaunch restores the dashboard instead of re-reading the mailbox.
 one file named after a SHA-256 digest of the account address, written atomically with
 `0600` permissions and excluded from backups.
 
-**What is stored** — message metadata only:
+**What is stored**, which is message metadata only:
 
 | Stored | Not stored |
 | --- | --- |
@@ -396,7 +438,7 @@ synthetic credentials under a test-only service name and deletes them afterwards
 
 ### Check that a sign-in survives a relaunch
 
-A launch argument writes a synthetic Keychain marker, reports what it found, and exits — so
+A launch argument writes a synthetic Keychain marker, reports what it found, and exits, so
 cross-launch persistence can be checked without a Google password:
 
 ```bash
@@ -414,8 +456,8 @@ InboxSweep.app/Contents/MacOS/InboxSweep --keychain-probe     # each keychain, n
 InboxSweep.app/Contents/MacOS/InboxSweep --keychain-backend   # where the real credential is
 ```
 
-All four work in Release as well as Debug — the signed Release app is the build whose Keychain
-behaviour most needs measuring — and all four are inert without their launch argument, reach no
+All four work in Release as well as Debug: the signed Release app is the build whose Keychain
+behaviour most needs measuring, and all four are inert without their launch argument, reach no
 UI, and print no token. Measured results and the signing configuration behind them are in
 [Docs/ReleaseVerification.md](Docs/ReleaseVerification.md); the design is in
 [Docs/SessionRestore.md](Docs/SessionRestore.md).
@@ -436,7 +478,7 @@ Claims below describe what this version actually does. Nothing more is implied.
 
 - **One kind of write, and you confirm each one.** InboxSweep can remove the `INBOX` label from
   a message you selected, and put it back. Those two requests are the complete set of mutations
-  the app can construct — a set of twelve is twelve of the first, never a batch request.
+  the app can construct: a set of twelve is twelve of the first, never a batch request.
 - **No message is deleted, trashed, marked, labelled, or sent.** There is no feature to do any
   of it, and no scope that would permit permanent deletion.
 - **Nothing acts on its own, or on anything you did not name.** There is no archive-sender,
@@ -446,7 +488,7 @@ Claims below describe what this version actually does. Nothing more is implied.
   and confirm yourself.
 - **Metadata only.** Message requests use `format=metadata` with five named headers (`From`,
   `Subject`, `Date`, `List-Unsubscribe`, `List-Unsubscribe-Post`). Bodies and attachments are
-  never requested — even though `gmail.modify` would now permit them — and there is nowhere in
+  never requested (even though `gmail.modify` would now permit them) and there is nowhere in
   the domain model to put them.
 - **No Google token ever leaves Google.** A one-click unsubscribe goes to the sender's own host
   over a transport that has never held a credential, carries no `Authorization` header, no
@@ -455,7 +497,7 @@ Claims below describe what this version actually does. Nothing more is implied.
 - **A local record of what was changed.** One bounded file holds an operation, a message ID, an
   account, a timestamp, and an outcome per mutation. No mail. It is deleted on disconnect.
 - **Local by default.** Message metadata lives in memory while the app runs and in one file
-  inside the app's own sandbox container between launches — see
+  inside the app's own sandbox container between launches; see
   [Local persistence](#local-persistence) for exactly what that file holds. The networking
   layer uses an ephemeral `URLSession`, so responses are not written to an on-disk URL cache.
   InboxSweep sends your mail to no server other than Google's own API.
@@ -471,7 +513,7 @@ Claims below describe what this version actually does. Nothing more is implied.
   secret; the client ID is supplied at runtime and its path is gitignored.
 
 What is *not* claimed: the cache file is protected by the app sandbox, file permissions, and
-whatever full-disk encryption the Mac has — InboxSweep does not encrypt it itself. The app has
+whatever full-disk encryption the Mac has: InboxSweep does not encrypt it itself. The app has
 not been independently audited and makes no anonymity guarantees.
 
 ## Known limitations
@@ -480,16 +522,25 @@ not been independently audited and makes no anonymity guarantees.
   been loaded*, not the whole mailbox. The UI says "Messages loaded" and shows how far back
   the window reaches for exactly this reason. **Load more messages** extends it a page at a
   time, and the extended window is what gets stored.
-- A restored window is as old as its label says. InboxSweep never refreshes it on its own —
-  there is no background monitoring — so **Reload** is the only thing that fetches current
+- A restored window is as old as its label says. InboxSweep never refreshes it on its own and
+  there is no background monitoring, so **Reload** is the only thing that fetches current
   mail.
+- **A sender rule does nothing while InboxSweep is closed.** It is not a Gmail filter and the app
+  holds no permission to create one, so matching mail arrives in your Inbox as usual and is
+  archived the next time you open the app or press Reload. If you want mail never to reach your
+  Inbox, that is a filter you make in Gmail.
+- **A rule-driven archive has no Undo.** The app keeps one undoable archive per account, and
+  letting something automatic take that offer would mean losing an undo you meant to keep. The
+  reasoning and the alternative are in [Docs/Rules.md](Docs/Rules.md#undo).
 - Sender observations describe the loaded window only. Loading more messages can change a
   sender's frequency, category set, and unsubscribe count, and it is meant to.
 - The cache is not migrated between schema versions. A version bump discards the stored
   window and the next launch fetches it again.
 - The dashboard sorts through a toolbar picker; the table's column headers are not clickable.
 - Sender detail lists the loaded messages but cannot open one: there is no body to show.
-- Only the inbox is read. `MailboxScope.allMail` exists at the boundary but no UI selects it.
+- Each load reads one scope. The load bar's picker chooses it (Inbox, any of Gmail's four
+  categories, or All mail), and changing it discards the loaded window and reads the new scope,
+  because a window mixing two of them would make every count describe something nobody could name.
 - Gmail label *names* for custom labels are not resolved; unknown labels are carried through
   by their provider-side identifier.
 - A `gmail.metadata` OAuth client stays in Google's "Testing" mode without verification, so
@@ -508,8 +559,8 @@ not been independently audited and makes no anonymity guarantees.
 - The message review is per sender. There is no way to see every loaded message at once.
 - **Archiving is per sender and explicitly selected, by design.** There is no sender-level
   one-click archive, no cross-sender cleanup, and no way to carry out a previewed plan. A large
-  cleanup means ticking the messages — helped by **Fill from preview** and by **Review messages
-  to archive…**, both of which only tick boxes — and confirming the list, which is the point
+  cleanup means ticking the messages (helped by **Fill from preview** and by **Review messages
+  to archive…**, both of which only tick boxes) and confirming the list, which is the point
   rather than an oversight.
 - **Sender-level review preselects from the loaded window only.** A sender with four hundred
   messages of which 250 are loaded gets candidates from the 250. Loading more and reopening the
@@ -522,7 +573,7 @@ not been independently audited and makes no anonymity guarantees.
   A user auditing the grant in their Google Account will see a broad permission; the app's
   limits are not visible from there.
 - **Only the most recent archive is undoable, per account.** Archiving again supersedes the
-  previous offer — the superseded transaction stays in the file as history, but there is no undo
+  previous offer: the superseded transaction stays in the file as history, but there is no undo
   stack and no history UI. Once an offer is gone, those messages are in All Mail and moving them
   back is a Gmail operation.
 - The mutation record is not surfaced in the UI. It is read by the session and kept for undo and
@@ -537,8 +588,8 @@ not been independently audited and makes no anonymity guarantees.
   of which use the login keychain. The data protection keychain is preferred and refuses this
   app with `errSecMissingEntitlement (-34018)`, because a macOS app with these capabilities is
   signed without a provisioning profile and so has no keychain access group. No Developer ID
-  certificate is installed on the development machine, so a distribution build — which is where
-  that path would be exercised — has not been produced. See
+  certificate is installed on the development machine, so a distribution build, which is where
+  that path would be exercised, has not been produced. See
   [Docs/ReleaseVerification.md](Docs/ReleaseVerification.md).
 - A clean build prints one `appintentsmetadataprocessor` note about there being no
   `AppIntents.framework` dependency. It is stdout from a build phase Xcode runs for every app
@@ -552,16 +603,17 @@ InboxSweep/               App target
   App/                    Entry point and composition root
   Domain/                 Provider-agnostic models, aggregation, boundaries
     Persistence/          The cache protocol and the window it stores
+    Rules/                Sender rules: the value, the matcher, the store protocol
   Application/            Session state for the UI
   Providers/Gmail/        Gmail adapter (the only Gmail-aware code)
-  Providers/Persistence/  On-disk cache, plan, and mutation-record stores
+  Providers/Persistence/  On-disk cache, plan, mutation-record, and rule stores
   Providers/Sample/       Synthetic mailbox, debug builds only
   Providers/Networking/   HTTPTransport seam
   UI/                     SwiftUI views
   Config/                 Your local OAuth client plist (gitignored)
 InboxSweepTests/          Unit tests, fixtures, and test doubles
 InboxSweepUITests/        Launch and dashboard UI tests
-Docs/                     OAuth setup, session restore, archiving, unsubscribing, activity, release verification
+Docs/                     OAuth setup, session restore, archiving, unsubscribing, rules, activity, release verification
 ```
 
 ## Licence

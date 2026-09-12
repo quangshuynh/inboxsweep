@@ -5,7 +5,7 @@ import Foundation
 /// ### Why this is not a Boolean
 ///
 /// `isSubscription` would answer a question nobody is actually asking. The questions that
-/// matter are *what mechanism is there*, *how do we know*, and *how sure can anyone be* — and
+/// matter are *what mechanism is there*, *how do we know*, and *how sure can anyone be*, and
 /// a Boolean collapses all three into a claim the app cannot support. A sender with a
 /// malformed header is not "not a subscription"; a sender with a perfectly good one-click
 /// endpoint may still be the bank.
@@ -54,7 +54,7 @@ nonisolated struct UnsubscribeOpportunity: Hashable, Sendable, Identifiable {
 
     /// Why this sender may be worth being careful with, carried through unchanged.
     ///
-    /// Protection never *hides* an unsubscribe mechanism — a bank's mail can carry a perfectly
+    /// Protection never *hides* an unsubscribe mechanism: a bank's mail can carry a perfectly
     /// real one, and concealing it would be the app deciding what somebody may know about their
     /// own mailbox. What it does is change the tone: see ``cautionNote``.
     let protection: SenderProtectionAssessment
@@ -72,7 +72,7 @@ nonisolated struct UnsubscribeOpportunity: Hashable, Sendable, Identifiable {
         /// No loaded message from this sender carried a `List-Unsubscribe` header.
         case noEvidence
 
-        /// A header was there, and nothing usable came out of it — every value refused, or
+        /// A header was there, and nothing usable came out of it, every value refused, or
         /// values that contradict each other. Nothing can be acted on, and saying "no
         /// unsubscribe option" would be a different and untrue statement.
         case ambiguousMetadata
@@ -96,7 +96,7 @@ nonisolated struct UnsubscribeOpportunity: Hashable, Sendable, Identifiable {
 
         /// Whether this state came from a `List-Unsubscribe` header at all.
         ///
-        /// True for the three actionable states and for ``ambiguousMetadata`` — the family the
+        /// True for the three actionable states and for ``ambiguousMetadata``: the family the
         /// interval's brief calls "list-header unsubscribe available", of which one-click, web,
         /// and mail are the specific members.
         var camesFromListHeader: Bool { self != .noEvidence }
@@ -157,7 +157,7 @@ nonisolated struct UnsubscribeOpportunity: Hashable, Sendable, Identifiable {
             case .moderate:
                 """
                 The destination below came from this sender's own List-Unsubscribe header. That the \
-                header exists does not mean the sender will honour it — only that this is where \
+                header exists does not mean the sender will honour it: only that this is where \
                 they said to go.
                 """
             case .standardsDefined:
@@ -190,7 +190,7 @@ nonisolated struct UnsubscribeOpportunity: Hashable, Sendable, Identifiable {
     /// ### Why a protected sender still sees its mechanism
     ///
     /// Archive protection exists because archiving mail somebody wanted is a loss. Unsubscribing
-    /// is a different risk in the other direction — it affects mail that has not arrived — and
+    /// is a different risk in the other direction (it affects mail that has not arrived) and
     /// the sender most likely to be carrying a real, honoured unsubscribe header *and* to be
     /// worth thinking twice about is exactly the bank, the airline, and the pharmacy. Hiding the
     /// mechanism from those would leave a user unable to turn off marketing mail from their own
@@ -202,7 +202,7 @@ nonisolated struct UnsubscribeOpportunity: Hashable, Sendable, Identifiable {
         guard protection.hasAnySignal else { return nil }
         let signals = protection.signals.prefix(2).map(\.displayName).joined(separator: ", ")
         return """
-            Mail from this sender looks like something you may need — \(signals.lowercased()). \
+            Mail from this sender looks like something you may need: \(signals.lowercased()). \
             Unsubscribing affects what this sender sends you in future, which can include messages \
             like receipts, statements, or security notices if they come through the same list. \
             InboxSweep is showing you the mechanism, not recommending you use it.
@@ -219,7 +219,7 @@ nonisolated struct UnsubscribeOpportunity: Hashable, Sendable, Identifiable {
             return """
                 None of the \(loadedMessageCount) loaded messages from this sender carries a \
                 List-Unsubscribe header, so InboxSweep has no unsubscribe mechanism to offer. \
-                That does not mean there isn't one — many senders put an unsubscribe link in the \
+                That does not mean there isn't one: many senders put an unsubscribe link in the \
                 message body, which InboxSweep never reads.
                 """
         case .ambiguousMetadata:

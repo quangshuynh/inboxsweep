@@ -21,7 +21,7 @@ import Foundation
 ///
 /// Recurrence and bulk categories can corroborate; neither can raise the confidence band on
 /// its own. A sender that arrives every day with no `List-Unsubscribe` header is
-/// ``UnsubscribeOpportunity/Availability/noEvidence``, not a guess — which is the rule that
+/// ``UnsubscribeOpportunity/Availability/noEvidence``, not a guess, which is the rule that
 /// keeps a daily transactional notice from being read as a mailing list.
 nonisolated enum UnsubscribeOpportunityBuilder {
 
@@ -42,7 +42,7 @@ nonisolated enum UnsubscribeOpportunityBuilder {
         let withHeader = messages.filter(\.unsubscribe.headerWasPresent)
 
         // Corroboration, which is added to every reading that has any metadata at all and to
-        // none that has not. It never decides anything by itself — see the type's own note.
+        // none that has not. It never decides anything by itself; see the type's own note.
         let corroboration = corroboratingEvidence(summary: summary)
 
         guard !withHeader.isEmpty else {
@@ -63,7 +63,7 @@ nonisolated enum UnsubscribeOpportunityBuilder {
 
         // The newest message whose header yields something usable. A sender whose latest mail
         // carries a malformed header but whose message from last week carries a good one still
-        // gets an offer — from the good one, named as such.
+        // gets an offer, from the good one, named as such.
         let source = newestFirst.first { $0.unsubscribe.hasActionableTarget }
         let metadata = source?.unsubscribe ?? newestFirst[0].unsubscribe
 
@@ -130,7 +130,7 @@ nonisolated enum UnsubscribeOpportunityBuilder {
     /// One-click is ``UnsubscribeOpportunity/Confidence/standardsDefined`` because RFC 8058
     /// specifies the request exactly; everything else usable is `moderate`, because a URL in a
     /// header is a destination the sender named and not a protocol. Disagreement between a
-    /// sender's own messages takes a band off whatever it would otherwise have been — the value
+    /// sender's own messages takes a band off whatever it would otherwise have been: the value
     /// on offer is one of several the sender has used, and that is less certain than one.
     private static func confidence(
         for mechanism: UnsubscribeMechanism,
@@ -142,7 +142,7 @@ nonisolated enum UnsubscribeOpportunityBuilder {
         return UnsubscribeOpportunity.Confidence(rawValue: base.rawValue - 1) ?? .low
     }
 
-    /// Facts about the sender's mail that support — but never establish — a reading.
+    /// Facts about the sender's mail that support (but never establish) a reading.
     private static func corroboratingEvidence(summary: SenderSummary?) -> [UnsubscribeEvidence] {
         guard let summary else { return [] }
         var evidence: [UnsubscribeEvidence] = []

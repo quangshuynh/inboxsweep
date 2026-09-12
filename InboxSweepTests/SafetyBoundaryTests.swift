@@ -45,8 +45,8 @@ struct SafetyBoundaryTests {
 
     @Test("The requested scopes do not include the body-reading read scope")
     func requestsNoBodyReadScope() {
-        // `gmail.modify` does imply body access — Google grants no narrower permission that can
-        // archive — so the limit that matters is enforced by the request surface below rather
+        // `gmail.modify` does imply body access: Google grants no narrower permission that can
+        // archive, so the limit that matters is enforced by the request surface below rather
         // than by the scope. What is still true, and worth keeping true, is that the app never
         // asks for `gmail.readonly`, and never asks Gmail for a body format.
         #expect(!GmailScope.requested.contains("https://www.googleapis.com/auth/gmail.readonly"))
@@ -103,7 +103,7 @@ struct SafetyBoundaryTests {
     // MARK: - The mutation surface
     //
     // The whole of what this app can do to a mailbox, enumerated. If any assertion in this
-    // section has to be changed, the change is the point — it means the app's power over
+    // section has to be changed, the change is the point. It means the app's power over
     // somebody's mail has grown, and that should never happen as a side effect.
 
     @Test("There are exactly two mutating requests, and both are message-level modify calls")
@@ -113,7 +113,7 @@ struct SafetyBoundaryTests {
 
         for request in requests {
             #expect(request.method == "POST")
-            // `/users/me/messages/{id}/modify` — one message, named individually.
+            // `/users/me/messages/{id}/modify`, one message, named individually.
             #expect(request.url.path().hasSuffix("/messages/message-id/modify"))
             #expect(!request.url.path().contains("/threads/"), "A mutation reached the thread endpoint")
         }
@@ -177,7 +177,7 @@ struct SafetyBoundaryTests {
         ] {
             // `pathComponents` decodes each segment, so the whole hostile identifier appearing
             // as *one* component is the proof that its slashes were encoded rather than
-            // honoured. Six fixed segments, the identifier, and — for a mutation — `modify`.
+            // honoured. Six fixed segments, the identifier, and (for a mutation) `modify`.
             let components = url.pathComponents
             let fixed = ["/", "gmail", "v1", "users", "me", "messages"]
             #expect(Array(components.prefix(6)) == fixed)
@@ -247,10 +247,15 @@ struct SafetyBoundaryTests {
         // descriptive after a partial undo otherwise needed the subjects copied in beside it.
         // The point of this case is that the record became one integer richer and no closer to
         // holding somebody's mail.
+        //
+        // `origin` arrived in Interval 11 for the same shape of reason: a second thing can now
+        // cause an archive, and a history that could not say which would let a rule's work read
+        // as the user's. It holds a case name and, for a rule, that rule's `UUID`, nothing that
+        // came out of a mailbox.
         let propertyNames = Set(Mirror(reflecting: transaction).children.compactMap(\.label))
         #expect(propertyNames == [
             "id", "operation", "accountAddress", "succeededMessageIDs", "selectedMessageCount",
-            "confirmedMessageCount", "occurredAt", "undoState",
+            "confirmedMessageCount", "occurredAt", "undoState", "origin",
         ])
         // Growing from one message to many, and then to a browsable history, did not grow what a
         // transaction knows about mail.
@@ -266,11 +271,21 @@ struct SafetyBoundaryTests {
         )
         #expect(entryProperties == [
             "id", "operation", "messageIDs", "selectedCount", "occurredAt", "undoState",
-            "confirmedCount",
+            "confirmedCount", "origin",
         ])
         #expect(entryProperties.isDisjoint(with: [
             "subject", "sender", "from", "body", "snippet", "labels", "query",
         ]))
+
+        // What an origin can actually contain, spelled out: two fixed words and a rule
+        // identifier. In particular a rule-driven entry does **not** write the sender the rule
+        // matches, even though the rules file holds one. Two files naming the same address is
+        // twice the exposure for a row that already reads correctly without it.
+        #expect(MailMutationOrigin.confirmed.storedValue == "confirmed")
+        #expect(MailMutationOrigin.senderReviewed.storedValue == "senderReviewed")
+        let ruleID = UUID()
+        #expect(MailMutationOrigin.rule(ruleID).storedValue == "rule:\(ruleID.uuidString)")
+        #expect(!MailMutationOrigin.rule(ruleID).storedValue.contains("@"))
     }
 
     @Test("A frozen selection names messages and an account, and carries no instruction")
@@ -280,7 +295,7 @@ struct SafetyBoundaryTests {
             accountAddress: "someone@example.com"
         ))
 
-        // Identifiers and an account. No label, no query, no sender, no action, no plan — so the
+        // Identifiers and an account. No label, no query, no sender, no action, no plan, so the
         // only thing a set can express is "these exact messages", which is the property that
         // makes a confirmation checkable.
         let propertyNames = Set(Mirror(reflecting: selection).children.compactMap(\.label))
@@ -340,7 +355,7 @@ struct SafetyBoundaryTests {
         #expect(requested == GmailAPIEndpoint.metadataHeaders)
         // `List-Unsubscribe-Post` joined the list in Interval 10. It is written out here rather
         // than only compared against the constant, so adding a sixth header is a change somebody
-        // has to make in a test as well as in the adapter — and so this line records that the
+        // has to make in a test as well as in the adapter, and so this line records that the
         // header set grew by one and the *scope set* did not.
         #expect(requested == ["From", "Subject", "Date", "List-Unsubscribe", "List-Unsubscribe-Post"])
     }
@@ -416,7 +431,7 @@ struct SafetyBoundaryTests {
         let contentBearingNames: Set<String> = ["body", "bodyText", "html", "snippet", "payload", "attachments", "raw"]
 
         #expect(propertyNames.isDisjoint(with: contentBearingNames))
-        // `hasListUnsubscribeHeader` became `unsubscribe` in Interval 10 — parsed values in
+        // `hasListUnsubscribeHeader` became `unsubscribe` in Interval 10: parsed values in
         // place of a Boolean. Still metadata, and still nowhere to put a body: the type it holds
         // can only contain destinations and recorded refusals.
         #expect(propertyNames == ["id", "threadID", "sender", "subject", "receivedAt", "labels", "unsubscribe"])
@@ -450,7 +465,7 @@ struct SafetyBoundaryTests {
     @Test("Loading mail parses the unsubscribe header and contacts nobody")
     func recordsUnsubscribeWithoutActingOnIt() async throws {
         // Interval 10 gave the app an unsubscribe feature, so this test's claim narrowed and
-        // got sharper. *Loading* mail still contacts no unsubscribe address — parsing is
+        // got sharper. *Loading* mail still contacts no unsubscribe address: parsing is
         // parsing, and a destination sitting in a parsed value is not a request. What can reach
         // one is a user opening a review and confirming it twice, which is asserted separately.
         let messages = [
@@ -591,7 +606,7 @@ struct SafetyBoundaryTests {
         let requestsBeforeReview = transport.requests.count
         let snapshot = try #require(model.state.snapshot)
 
-        // Every sender, every sort order, every action — including the ones whose names sound
+        // Every sender, every sort order, every action, including the ones whose names sound
         // like verbs the app cannot perform.
         for sender in snapshot.senders {
             for order in MessageReviewSortOrder.allCases {
@@ -622,7 +637,7 @@ struct SafetyBoundaryTests {
         let propertyNames = Set(Mirror(reflecting: row).children.compactMap(\.label))
         #expect(propertyNames == ["message", "protectionReason", "membership"])
 
-        // The membership itself is an enum case over an exclusion reason — there is nothing on
+        // The membership itself is an enum case over an exclusion reason: there is nothing on
         // it that names a Gmail operation or carries anything to send.
         let membershipProperties = Set(Mirror(reflecting: membership).children.compactMap(\.label))
         #expect(membershipProperties.isDisjoint(with: ["request", "provider", "endpoint"]))
@@ -644,7 +659,7 @@ struct SafetyBoundaryTests {
         )
 
         // Sender keys and an action identifier. No message identifiers, no provider, no
-        // schedule, no "execute" of any shape — and, as with a plan, nothing that could stand
+        // schedule, no "execute" of any shape, and, as with a plan, nothing that could stand
         // in for one if a later interval forgot to add the permission first.
         let propertyNames = Set(Mirror(reflecting: plan).children.compactMap(\.label))
         #expect(propertyNames == [
@@ -692,7 +707,7 @@ struct SafetyBoundaryTests {
     @Test("The read boundary still offers nothing that could change a mailbox")
     func readBoundaryHasNoMutatingOperation() {
         // The separation this interval had to preserve. Archiving exists now, and it lives on
-        // its own protocol — `MailMessageFetching` still has exactly one method and it fetches.
+        // its own protocol: `MailMessageFetching` still has exactly one method and it fetches.
         // A future change that adds a write here rather than there has to edit this list.
         let forbidden = ["archive", "trash", "delete", "modify", "label", "markRead", "send", "unsubscribe", "execute", "apply", "perform"]
         let boundaryMethodNames = ["fetchMessages", "connect", "disconnect", "restoreConnection", "currentConnection", "storedAuthorizationState"]
@@ -726,7 +741,7 @@ struct SafetyBoundaryTests {
     // MARK: - Nothing reaches a mutation on its own
     //
     // The most important section in the suite. The app's write is reachable from exactly one
-    // place — a person selecting a message and confirming — and these cases exercise every
+    // place (a person selecting a message and confirming) and these cases exercise every
     // *other* path that might plausibly grow into one.
 
     @Test("Loading, previewing, saving a plan, and restoring one archive nothing")
@@ -775,7 +790,7 @@ struct SafetyBoundaryTests {
             scope: .inbox,
             // The action is literally called "archive messages older than a day", and every
             // loaded message qualifies. Restoring it must still produce a preview and nothing
-            // more — there is no path from a saved plan to the mutation boundary.
+            // more: there is no path from a saved plan to the mutation boundary.
             selections: [SavedCleanupSelection(senderKey: key, action: .archiveMessagesOlderThan(days: 1))],
             loadedMessageCount: 20,
             savedAt: .now
@@ -886,7 +901,7 @@ struct SafetyBoundaryTests {
                 let preselectable = model.preselectableMessageIDs(forSenderKey: sender.id, under: action)
 
                 if !preselectable.isEmpty {
-                    // Freezing every one of them into a confirmation — the last step before the
+                    // Freezing every one of them into a confirmation: the last step before the
                     // button, performed here for every sender and every action in the app.
                     let frozen = model.makeArchiveSelection(forSenderKey: sender.id, messageIDs: preselectable)
                     _ = frozen.map(model.canArchive)
@@ -1042,7 +1057,7 @@ struct SafetyBoundaryTests {
                 _ = candidates.preselectionSummary
 
                 // Preselecting, then unticking one, then ticking something the app refused to
-                // pick — every edit the review screen allows.
+                // pick, every edit the review screen allows.
                 if !candidates.isEmpty {
                     _ = model.makeArchiveSelection(forSenderKey: sender.id, messageIDs: candidates.messageIDs)
                     _ = model.makeArchiveSelection(
@@ -1127,7 +1142,7 @@ struct SafetyBoundaryTests {
             "sender", "senderKey", "senderAddress", "query", "labelQuery", "rule", "plan", "action",
         ]))
 
-        // Three: the candidate set — the one new type a sender-level action produces — carries
+        // Three: the candidate set (the one new type a sender-level action produces) carries
         // identifiers and counts. There is nothing on it to carry out, and nothing that could
         // stand in for a request.
         let candidates = SenderReviewCandidates.derive(
@@ -1211,16 +1226,23 @@ struct SafetyBoundaryTests {
     @Test("The confirmation says a sender's future mail is untouched, because nothing schedules anything")
     func confirmationDeniesAnyFutureEffect() {
         // The sentence is asserted because it is a promise the app is making on screen, and the
-        // thing that makes it true — there being no rule, filter, or schedule anywhere — is
-        // asserted beside it.
+        // thing that makes it true is asserted beside it.
+        //
+        // Interval 11 narrowed the promise and this case with it. The app now has exactly one way
+        // to authorize future behaviour, and it is a ``SenderRule`` the user creates on its own
+        // review screen. What an archive confirmation may still say is that *it* creates nothing:
+        // what it may no longer say is that the app has no rules.
         let note = ArchiveSelectionSnapshot.senderScopeNote
         #expect(note.contains("Only the messages listed here will be changed"))
         #expect(note.contains("Future messages from this sender are not affected"))
         #expect(note.contains("creates no rule"))
+        // And it does not overclaim on behalf of the rest of the app.
+        #expect(!note.contains("InboxSweep creates no rule"))
+        #expect(!note.contains("nothing on its own"))
 
         // Nothing the app persists has anywhere to hold a rule about future mail. The saved plan
         // is the only file that stores a *choice*, and it stores sender keys and action
-        // identifiers — no message, no schedule, no enablement.
+        // identifiers, no message, no schedule, no enablement.
         let planRecord = CleanupPlanDTO.Record(
             version: CleanupPlanDTO.schemaVersion,
             accountAddress: "someone@example.com",
@@ -1268,7 +1290,7 @@ struct SafetyBoundaryTests {
     func unsubscribeReachesNoGmailEndpoint() {
         // The mutating surface did not grow. There are still exactly two mutating Gmail
         // requests, they are still the two INBOX label changes, and unsubscribe is not among
-        // them — because unsubscribe is not a Gmail operation.
+        // them, because unsubscribe is not a Gmail operation.
         #expect(GmailMutationEndpoint.allRequestBuilders().count == 2)
 
         for request in GmailMutationEndpoint.allRequestBuilders() {
@@ -1315,7 +1337,7 @@ struct SafetyBoundaryTests {
     @Test("No Google access token can reach an unsubscribe host, because they share no object")
     func noGoogleTokenReachesAnUnsubscribeHost() async throws {
         // Driven end to end: a real provider, a real connect that mints a token, a real load,
-        // and then a one-click unsubscribe — with a *separate* recording transport under the
+        // and then a one-click unsubscribe, with a *separate* recording transport under the
         // unsubscribe client, so everything it sends is inspectable.
         let unsubscribeTransport = RecordingHTTPTransport { _, _ in HTTPResponse(statusCode: 200) }
         let gmailTransport = RecordingHTTPTransport(
@@ -1409,7 +1431,7 @@ struct SafetyBoundaryTests {
             "rule", "filter", "schedule", "isEnabled", "autoRun", "appliesToFutureMessages", "blocked",
         ]))
 
-        // Gmail's own settings and filter APIs are not merely unused — the scopes that would be
+        // Gmail's own settings and filter APIs are not merely unused: the scopes that would be
         // needed to reach them are on the prohibited list.
         #expect(GmailScope.prohibited.contains("https://www.googleapis.com/auth/gmail.settings.basic"))
         #expect(GmailScope.prohibited.contains("https://www.googleapis.com/auth/gmail.settings.sharing"))
@@ -1490,7 +1512,7 @@ struct SafetyBoundaryTests {
         let snapshot = try #require(model.state.snapshot)
         for sender in snapshot.senders {
             let opportunity = model.unsubscribeOpportunity(forSenderKey: sender.id)
-            // Reading it fully — including freezing a review, which is also a read.
+            // Reading it fully, including freezing a review, which is also a read.
             _ = opportunity.evidence
             _ = opportunity.mechanisms
             _ = model.makeUnsubscribeReview(forSenderKey: sender.id)
@@ -1499,7 +1521,7 @@ struct SafetyBoundaryTests {
         #expect(!snapshot.senders.isEmpty)
         #expect(transport.requests.allSatisfy { ($0.url?.host ?? "").hasSuffix("googleapis.com") })
         // Every *mailbox* request is a GET. The one non-GET in a full connect is the OAuth token
-        // exchange, which goes to Google's own token endpoint — asserted separately by
+        // exchange, which goes to Google's own token endpoint: asserted separately by
         // `theOnlyNonGETCallsAreToGoogleTokenEndpoints`, and excluded by host here rather than
         // by loosening the claim.
         #expect(
@@ -1534,7 +1556,7 @@ struct SafetyBoundaryTests {
             }
         }
 
-        // And an entry carries no way to carry anything out — no provider, no request, no
+        // And an entry carries no way to carry anything out, no provider, no request, no
         // endpoint, and no action. It is a transaction, whatever the cache could say about it,
         // and a flag saying whether the *existing* undo happens to name it.
         let entry = ActivityEntry(
@@ -1548,8 +1570,12 @@ struct SafetyBoundaryTests {
                 undoState: .undoable
             )
         )
+        //
+        // `rule` arrived in Interval 11 so a row can name the authorization that produced it. It
+        // is a `SenderRule`, which is a description of an instruction and holds nothing that can
+        // carry one out: no provider, no boundary, no request.
         let propertyNames = Set(Mirror(reflecting: entry).children.compactMap(\.label))
-        #expect(propertyNames == ["transaction", "resolvedMessages", "isUndoable"])
+        #expect(propertyNames == ["transaction", "resolvedMessages", "isUndoable", "rule"])
         #expect(propertyNames.isDisjoint(with: [
             "provider", "archiver", "request", "endpoint", "action", "session", "perform", "execute",
         ]))
@@ -1691,7 +1717,7 @@ struct SafetyBoundaryTests {
         #expect(propertyNames.isDisjoint(with: derivedNames))
 
         // The saved-plan record is the only other file the app writes, and it has no field for
-        // a proposal either — nor for a message.
+        // a proposal either, nor for a message.
         let planRecord = CleanupPlanDTO.Record(
             version: CleanupPlanDTO.schemaVersion,
             accountAddress: "someone@example.com",
@@ -1742,5 +1768,182 @@ struct SafetyBoundaryTests {
                 #expect(!text.contains(word), "A proposal called a sender \"\(word)\"")
             }
         }
+    }
+
+    // MARK: - Sender rules
+    //
+    // Interval 11 gave the app its first standing authorization: a rule that archives one
+    // sender's future mail without asking at the time. Everything in this section is about the
+    // verbs it deliberately does not have, and about the distance between noticing something and
+    // being allowed to act on it.
+
+    @Test("A rule has exactly one action, and it is not any of the ones it must never have")
+    func rulesHaveOneAction() {
+        // An enum with one case rather than a parameter, so a second verb is an edit here.
+        #expect(SenderRule.Action.allCases == [.archiveNewInboxMail])
+
+        let forbidden = [
+            "unsubscribe", "delete", "trash", "spam", "report", "block", "forward", "reply",
+            "send", "compose", "markread", "markunread", "star", "label", "filter", "mute",
+        ]
+        for action in SenderRule.Action.allCases {
+            for verb in forbidden {
+                #expect(
+                    !action.rawValue.lowercased().contains(verb),
+                    "A rule action can express \(verb): \(action.rawValue)"
+                )
+            }
+        }
+    }
+
+    @Test("A rule cannot unsubscribe, and says so where somebody would read it")
+    func rulesCannotUnsubscribe() {
+        // Structural first: the one action is archiving, so there is no case to construct that
+        // would reach the unsubscribe boundary, and a rule carries nothing that could.
+        let rule = SenderRule(
+            accountAddress: "someone@example.com",
+            senderKey: "news@example.com",
+            senderDisplayValue: "News",
+            createdAt: .now
+        )
+        let propertyNames = Set(Mirror(reflecting: rule).children.compactMap(\.label))
+        #expect(propertyNames == [
+            "id", "accountAddress", "senderKey", "senderDisplayValue", "action", "isEnabled",
+            "createdAt",
+        ])
+        #expect(propertyNames.isDisjoint(with: [
+            "unsubscribe", "unsubscribeURL", "endpoint", "destination", "mechanism", "url",
+            "provider", "archiver", "unsubscriber", "request", "schedule", "interval",
+        ]))
+
+        // And stated, because the promise is worth making to the person granting it. Interval 10
+        // established that unsubscribing is authorized once per action, after reading a
+        // destination; a sender rule must not become a way around that.
+        #expect(SenderRule.Action.boundaryNote.contains("never unsubscribes"))
+    }
+
+    @Test("A rule cannot create a Gmail filter, because no request in the app can")
+    func rulesCannotCreateGmailFilters() {
+        // The scope that would be needed does not exist in the app and is named as prohibited.
+        #expect(GmailScope.prohibited.contains("https://www.googleapis.com/auth/gmail.settings.basic"))
+        #expect(!GmailScope.requested.contains("https://www.googleapis.com/auth/gmail.settings.basic"))
+
+        // And there is still no request builder that could reach one. A rule executes through
+        // the same two mutating requests that existed before rules did.
+        #expect(GmailMutationEndpoint.allRequestBuilders().count == 2)
+        for request in GmailMutationEndpoint.allRequestBuilders() {
+            let url = request.url.absoluteString.lowercased()
+            #expect(!url.contains("settings"))
+            #expect(!url.contains("filters"))
+            #expect(!url.contains("forwarding"))
+        }
+    }
+
+    @Test("Rules add no Gmail scope and no new verb on the mutation boundary")
+    func rulesAddNoProviderCapability() {
+        #expect(GmailScope.requested == [
+            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.modify",
+        ])
+
+        let boundaryMethodNames = ["archiveCapability", "authorizeArchiving", "archive", "restoreToInbox"]
+        #expect(boundaryMethodNames.count == 4, "The mutation boundary gained or lost a method")
+        for name in boundaryMethodNames {
+            for verb in ["rule", "sender", "filter", "auto", "schedule", "batch", "all"] {
+                #expect(
+                    !name.lowercased().contains(verb),
+                    "The mutation boundary gained something for rules: \(name)"
+                )
+            }
+        }
+    }
+
+    @Test("A stored rule holds an address and nothing else about anybody's mail")
+    func storedRulesHoldNoMail() {
+        let rule = SenderRule(
+            accountAddress: "someone@example.com",
+            senderKey: "news@example.com",
+            senderDisplayValue: "News",
+            createdAt: .now
+        )
+        let entryProperties = Set(
+            Mirror(reflecting: SenderRuleDTO.entry(from: rule)).children.compactMap(\.label)
+        )
+
+        // The account address is written once at the top of the file, not onto every entry, and
+        // nothing here describes a message. A rule is an instruction, not a log: there is no
+        // record of what it has matched, no count, and no message identifier.
+        #expect(entryProperties == [
+            "id", "senderKey", "senderDisplayValue", "action", "isEnabled", "createdAt",
+        ])
+        #expect(entryProperties.isDisjoint(with: [
+            "subject", "subjects", "body", "snippet", "messageIDs", "matchCount", "lastRunAt",
+            "accountAddress", "query", "labels",
+        ]))
+    }
+
+    @Test("A rule read back with an action this build does not know is dropped, not approximated")
+    func unknownRuleActionsAreRefused() {
+        let entry = SenderRuleDTO.Entry(
+            id: UUID().uuidString,
+            senderKey: "news@example.com",
+            senderDisplayValue: "News",
+            action: "deleteEverythingForever",
+            isEnabled: true,
+            createdAt: .now
+        )
+        // Running the one action this build happens to have, in place of one it does not
+        // recognise, would be performing a verb the user authorized something else for.
+        #expect(SenderRuleDTO.rule(from: entry, accountAddress: "someone@example.com") == nil)
+
+        // The unknown-sender bucket is refused for a different reason: it is not an identity.
+        let unknownSender = SenderRuleDTO.Entry(
+            id: UUID().uuidString,
+            senderKey: EmailAddress.unknownGroupingKey,
+            senderDisplayValue: "Unknown sender",
+            action: SenderRule.Action.archiveNewInboxMail.rawValue,
+            isEnabled: true,
+            createdAt: .now
+        )
+        #expect(SenderRuleDTO.rule(from: unknownSender, accountAddress: "someone@example.com") == nil)
+    }
+
+    @Test("A mailbox that changed in Gmail does not fabricate a rule entry in Activity")
+    @MainActor
+    func externalChangesFabricateNoRuleActivity() async {
+        // A message that is already out of the Inbox when InboxSweep loads it. Somebody archived
+        // it in Gmail, or a Gmail filter did. A rule matching that sender must find nothing to do,
+        // and (the part that matters) must not write a transaction claiming InboxSweep did it.
+        let archiver = StubMessageArchiver()
+        let records = EphemeralMutationRecordStore()
+        let alreadyArchived = MailMessage(
+            id: MailMessageID("m-external"),
+            sender: EmailAddressParser.parse("news@example.com"),
+            subject: "Archived in Gmail, not here",
+            receivedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            labels: [.categoryPromotions]
+        )
+        let provider = StubMailProvider(
+            fetch: .pages([MailMessagePage(messages: [alreadyArchived])]),
+            archiver: archiver
+        )
+        let session = InboxSessionModel(
+            provider: provider,
+            mutationRecords: records,
+            ruleStore: EphemeralSenderRuleStore(rules: [
+                SenderRule(
+                    accountAddress: MailAccount.testAccount.emailAddress.address,
+                    senderKey: "news@example.com",
+                    senderDisplayValue: "News",
+                    createdAt: Date(timeIntervalSince1970: 1_600_000_000)
+                )
+            ]),
+            fetchRequest: MailFetchRequest(limit: 10, scope: .allMail)
+        )
+        await session.connect().value
+
+        #expect(archiver.archiveRequests.isEmpty, "A rule sent a request for a message not in the Inbox")
+        #expect(await session.activityHistory().isEmpty, "A rule invented an Activity entry for an external change")
+        #expect(session.ruleRun == nil)
     }
 }

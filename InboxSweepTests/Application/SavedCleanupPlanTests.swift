@@ -5,7 +5,7 @@ import Testing
 /// Remembering which senders a user picked, and what they chose to preview for each.
 ///
 /// The riskiest thing about persisting a plan is that a saved plan *looks* like an intention to
-/// act. It is not one, and cannot become one — so alongside the round trip and the staleness
+/// act. It is not one, and cannot become one, so alongside the round trip and the staleness
 /// rules, these cases pin down that restoring a plan does nothing but re-open a preview.
 @MainActor
 @Suite("Saved cleanup plans")

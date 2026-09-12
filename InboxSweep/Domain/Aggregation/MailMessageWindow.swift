@@ -3,8 +3,8 @@ import Foundation
 /// Combines pages of loaded messages into the single window the app reasons about.
 ///
 /// Pagination is the reason this exists. Gmail's list endpoint can return the same message ID
-/// on two consecutive pages — mail arriving while the user reads shifts the page boundary —
-/// and a window that simply appended each page would count that message twice: twice in the
+/// on two consecutive pages, because mail arriving while the user reads shifts the page
+/// boundary, and a window that simply appended each page would count that message twice: twice in the
 /// sender's total, twice in its unread count, and twice in the mean gap between its messages.
 /// The fetcher already removes duplicates *within* one page; this removes them *across* pages,
 /// and across the boundary between a window restored from disk and the pages added to it.

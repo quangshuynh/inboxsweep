@@ -303,7 +303,7 @@ struct InboxSessionModelTests {
 
         await model.disconnect().value
 
-        // Signed out either way — the whole point is that the screen cannot distinguish these,
+        // Signed out either way: the whole point is that the screen cannot distinguish these,
         // so the notice has to.
         #expect(model.state == .signedOut)
         let notice = try #require(model.notice)

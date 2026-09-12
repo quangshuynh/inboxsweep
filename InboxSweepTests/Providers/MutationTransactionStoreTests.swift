@@ -7,7 +7,7 @@ import Testing
 ///
 /// This file matters more than it did when it held single-message records. It is now what makes
 /// undo survive a relaunch, so what comes out of it becomes a list of messages the app sends
-/// requests about — which is why the malformed-entry cases below are as detailed as the
+/// requests about, which is why the malformed-entry cases below are as detailed as the
 /// round-trip ones.
 ///
 /// Writes to a temporary directory, never to the developer's own container.
@@ -187,7 +187,7 @@ struct MutationTransactionStoreTests {
     @Test("The file names messages and never describes them")
     func fileHoldsNoMail() async throws {
         // The record exists for undo and for the user's own visibility. Copying a subject or a
-        // sender in would put the same mailbox content in a second file for no gain — the cache
+        // sender in would put the same mailbox content in a second file for no gain: the cache
         // already holds it for every message in the loaded window.
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -392,7 +392,7 @@ struct MutationTransactionStoreTests {
         let migrated = try #require(await store.transactions(for: account()).first)
         #expect(migrated.id == identifier)
         #expect(migrated.succeededCount == 3)
-        // No confirmed count in version 2, so the identifier count is what it means — exact for
+        // No confirmed count in version 2, so the identifier count is what it means: exact for
         // every entry that has not been narrowed by a partial undo.
         #expect(migrated.confirmedMessageCount == 3)
         #expect(migrated.outcome == .confirmed)
@@ -412,7 +412,7 @@ struct MutationTransactionStoreTests {
         )
 
         let unusable = [
-            // Fewer confirmed than are still undoable — the record contradicts itself.
+            // Fewer confirmed than are still undoable: the record contradicts itself.
             #"{"id":"\#(UUID().uuidString)","op":"archive","message_ids":["a","b"],"selected":4,"at":0,"undo":"undoable","confirmed":1}"#,
             // More confirmed than were ever selected.
             #"{"id":"\#(UUID().uuidString)","op":"archive","message_ids":["a"],"selected":2,"at":0,"undo":"undoable","confirmed":5}"#,
@@ -464,7 +464,7 @@ struct MutationTransactionStoreTests {
     @Test("A file that somehow grew past the bound is still read back bounded")
     func oversizedFilesArePrunedOnRead() async throws {
         // Pruning happens on the way out as well as on the way in, so a file written by another
-        // build — or edited by hand — cannot put an unbounded history in front of the user.
+        // build (or edited by hand) cannot put an unbounded history in front of the user.
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = FileMutationTransactionStore(directory: directory)
@@ -487,7 +487,7 @@ struct MutationTransactionStoreTests {
 
     @Test("A file whose entries name another account is read for neither")
     func fileHeaderDecidesTheAccount() async throws {
-        // Entries carry no address of their own — the header names the account once — so the
+        // Entries carry no address of their own (the header names the account once) so the
         // property that matters is that reading for a *different* account returns nothing at all
         // rather than the header's entries relabelled.
         let directory = temporaryDirectory()

@@ -9,7 +9,7 @@ nonisolated struct SenderProtectionAssessment: Hashable, Sendable {
         /// Nothing in the loaded window suggests this sender needs protecting.
         case none
 
-        /// Something does, but weakly — a single subject line, one reply-shaped message.
+        /// Something does, but weakly: a single subject line, one reply-shaped message.
         /// Enough to stop InboxSweep proposing cleanup, not enough to say why with confidence.
         case possible
 
@@ -48,7 +48,7 @@ nonisolated enum SenderProtection {
 
     /// How many messages must carry a protective topic before it is treated as corroborated.
     ///
-    /// A single match among many messages is common and often accidental — one order
+    /// A single match among many messages is common and often accidental, one order
     /// confirmation from a shop that otherwise only sends offers. Two is not proof either,
     /// which is why even a corroborated signal produces a *warning*, never a claim.
     static let corroboratingMessageCount = 2
@@ -57,13 +57,13 @@ nonisolated enum SenderProtection {
     ///
     /// Rules, in the order the signals are reported:
     ///
-    /// 1. **Starred** — any starred message. A star is a deliberate act by the user, so one is
+    /// 1. **Starred**, any starred message. A star is a deliberate act by the user, so one is
     ///    enough and it is never treated as weak.
-    /// 2. **Marked Important** — any message Gmail flagged. Gmail's judgement, reported as
+    /// 2. **Marked Important**, any message Gmail flagged. Gmail's judgement, reported as
     ///    Gmail's, and again enough on its own.
-    /// 3. **Personal correspondence** — subjects beginning `Re:` or `Fwd:`. Two or more, or one
+    /// 3. **Personal correspondence**: subjects beginning `Re:` or `Fwd:`. Two or more, or one
     ///    alongside Gmail's Personal category, is corroborated; a single one is suggestive.
-    /// 4. **Protective subject topics** — account/security, financial, receipts, travel,
+    /// 4. **Protective subject topics**: account/security, financial, receipts, travel,
     ///    government/tax, employment, healthcare. Corroborated at
     ///    ``corroboratingMessageCount`` messages, or when every loaded message from the sender
     ///    matches; suggestive at one.
@@ -132,7 +132,7 @@ nonisolated enum SenderProtection {
         if message.isImportant { return .markedImportant }
         if let subject = message.subject {
             // Whole-sender topics are already reflected in the proposal; here the question is
-            // narrower — does *this* subject line say something worth keeping?
+            // narrower: does *this* subject line say something worth keeping?
             if let topic = SubjectTopic.topics(in: subject).first(where: \.isProtective) {
                 return .protectedTopic(topic)
             }

@@ -7,8 +7,8 @@ import Foundation
 /// A request that was accepted is not a subscription that was cancelled. HTTP can tell the app
 /// that a server took its request; nothing can tell the app that a mailing list removed
 /// anybody, and there is no case in here that claims it. The strongest thing the app will say
-/// is ``requestAccepted`` — worded on screen as "Unsubscribe request sent", never "You are
-/// unsubscribed" — and `SafetyBoundaryTests` asserts that no wording in this file says
+/// is ``requestAccepted``: worded on screen as "Unsubscribe request sent", never "You are
+/// unsubscribed", and `SafetyBoundaryTests` asserts that no wording in this file says
 /// otherwise.
 ///
 /// The handoff cases are weaker still, and honestly so: opening a browser is something
@@ -18,7 +18,7 @@ nonisolated enum UnsubscribeOutcome: Hashable, Sendable {
     /// The endpoint answered 2xx to the one-click request.
     case requestAccepted(host: String, statusCode: Int)
 
-    /// The request reached the endpoint, and its answer does not establish what became of it —
+    /// The request reached the endpoint, and its answer does not establish what became of it,
     /// a redirect to a landing page, most often.
     case requestSent(host: String, statusCode: Int)
 
@@ -31,7 +31,7 @@ nonisolated enum UnsubscribeOutcome: Hashable, Sendable {
     /// The user's mail client was opened with the unsubscribe message prepared, unsent.
     case mailClientOpened(domain: String)
 
-    /// The handoff could not be made — no browser, no mail client, a refused URL.
+    /// The handoff could not be made, no browser, no mail client, a refused URL.
     case handoffFailed(UnsubscribeFailure)
 
     /// The mechanism cannot be performed by this build or this provider.
@@ -69,7 +69,7 @@ nonisolated enum UnsubscribeOutcome: Hashable, Sendable {
     /// Whether InboxSweep did the thing the user asked for.
     ///
     /// True for a delivered request and for an opened handoff. Not a claim that anybody was
-    /// unsubscribed — see the type's note.
+    /// unsubscribed; see the type's note.
     var didWhatWasAsked: Bool {
         switch self {
         case .requestAccepted, .requestSent, .browserOpened, .mailClientOpened: true
@@ -88,7 +88,7 @@ nonisolated enum UnsubscribeOutcome: Hashable, Sendable {
     /// Whether trying the same thing again could sensibly work.
     ///
     /// Consulted only to decide whether to *offer* the user a second attempt. Nothing retries
-    /// on its own — see ``UnsubscribeRetryPolicy``.
+    /// on its own; see ``UnsubscribeRetryPolicy``.
     var isWorthOfferingAgain: Bool { failure?.isWorthOfferingAgain ?? false }
 
     // MARK: - Wording
@@ -112,7 +112,7 @@ nonisolated enum UnsubscribeOutcome: Hashable, Sendable {
         switch self {
         case .requestAccepted(let host, _):
             return """
-                \(host) accepted the request. That means it was received — it is not confirmation that \
+                \(host) accepted the request. That means it was received: it is not confirmation that \
                 you have been removed from the list, which is something only the sender can do and \
                 only later mail can show. If messages keep arriving after a week or two, the sender \
                 didn't act on it.
@@ -132,8 +132,8 @@ nonisolated enum UnsubscribeOutcome: Hashable, Sendable {
         case .browserOpened(let host):
             return """
                 \(host) is open in your browser. InboxSweep stopped there: it hasn't read the page, \
-                filled anything in, or submitted anything. Finishing the unsubscribe — including \
-                anything the page asks you to confirm — is up to you.
+                filled anything in, or submitted anything. Finishing the unsubscribe, including \
+                anything the page asks you to confirm, is up to you.
                 """
 
         case .mailClientOpened(let domain):
@@ -196,7 +196,7 @@ nonisolated enum UnsubscribeFailure: Error, Hashable, Sendable {
     /// A redirect with no usable `Location`.
     case malformedRedirect
 
-    /// The system declined to open the URL — no browser, no mail client, or a refusal.
+    /// The system declined to open the URL, no browser, no mail client, or a refusal.
     case couldNotOpen
 
     /// The URL was not one the app is willing to hand to the system at all.
@@ -217,7 +217,7 @@ nonisolated enum UnsubscribeFailure: Error, Hashable, Sendable {
     /// Whether offering the user another attempt makes sense.
     ///
     /// Note what is false here. A rejected endpoint is not offered again automatically and a
-    /// stale review is not offered at all — the user re-opens the review, which re-reads the
+    /// stale review is not offered at all: the user re-opens the review, which re-reads the
     /// metadata, and decides again.
     var isWorthOfferingAgain: Bool {
         switch self {
@@ -260,7 +260,7 @@ nonisolated enum UnsubscribeFailure: Error, Hashable, Sendable {
         case .malformedRedirect:
             return "The endpoint redirected without saying where to. Nothing further was sent."
         case .couldNotOpen:
-            return "macOS didn't open it — there may be no app set up to handle this kind of link."
+            return "macOS didn't open it. There may be no app set up to handle this kind of link."
         case .refusedDestination:
             return """
                 That destination isn't one InboxSweep will hand to your browser or mail app. Only \
@@ -274,7 +274,7 @@ nonisolated enum UnsubscribeFailure: Error, Hashable, Sendable {
         case .reviewIsStale:
             return """
                 The mail this review was based on has changed since you opened it, so InboxSweep \
-                didn't act on it — the destination it would send to might no longer be the one you \
+                didn't act on it: the destination it would send to might no longer be the one you \
                 read. Nothing was sent. Open the review again.
                 """
         case .alreadyPerformed:

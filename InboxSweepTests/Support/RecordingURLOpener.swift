@@ -32,7 +32,7 @@ final class RecordingURLOpener: ExternalURLOpening, @unchecked Sendable {
 /// A one-click boundary that records requests and answers however a test asks it to.
 ///
 /// Separate from ``RecordingHTTPTransport`` because some tests need to assert at the *boundary*
-/// — that it was never called at all — rather than at the wire.
+/// (that it was never called at all) rather than at the wire.
 final class RecordingUnsubscriber: MailUnsubscribing, @unchecked Sendable {
 
     private let lock = NSLock()

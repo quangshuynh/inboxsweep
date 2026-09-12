@@ -37,8 +37,8 @@ nonisolated enum UnsubscribeEvidence: Hashable, Sendable, Identifiable {
 
     /// The sender arrives repeatedly, at roughly this interval.
     ///
-    /// Corroboration only. On its own it says nothing about unsubscribing — a monthly bank
-    /// statement recurs too — which is why it can never raise confidence past what the headers
+    /// Corroboration only. On its own it says nothing about unsubscribing: a monthly bank
+    /// statement recurs too, which is why it can never raise confidence past what the headers
     /// support.
     case recurringSender(messageCount: Int, averageInterval: TimeInterval?)
 

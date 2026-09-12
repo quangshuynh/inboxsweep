@@ -26,7 +26,7 @@ struct UnsubscribeReviewSheet: View {
 
     let session: InboxSessionModel
 
-    /// The frozen review. Constant for the life of this sheet, by construction — except when
+    /// The frozen review. Constant for the life of this sheet by construction, except when
     /// the user deliberately picks a different mechanism, which freezes a new one.
     @State var review: UnsubscribeReviewSnapshot
 
@@ -169,13 +169,13 @@ struct UnsubscribeReviewSheet: View {
             switch review.mechanismKind {
             case .oneClick:
                 point("paperplane", "Sends one request to \(review.destinationHost), in the format the unsubscribe standard defines.")
-                point("lock.slash", "Sends nothing about you or your mailbox with it — no address, no message, no Google sign-in.")
+                point("lock.slash", "Sends nothing about you or your mailbox with it: no address, no message, no Google sign-in.")
                 point("arrow.triangle.branch", "Follows at most \(UnsubscribeRedirectPolicy.maximumRedirects) redirects, https only, and refuses to be sent anywhere unencrypted.")
                 point("arrow.clockwise", "Sends it once. InboxSweep never retries an unsubscribe on its own.")
             case .webPage:
                 point("safari", "Opens \(review.destinationHost) in your browser, and stops there.")
                 point("hand.raised", "Doesn't read the page, fill anything in, submit anything, or sign you in.")
-                point("person", "Anything the page asks for — a confirmation, a login — is yours to do or not.")
+                point("person", "Anything the page asks for, a confirmation or a login, is yours to do or not.")
             case .mail:
                 point("envelope", "Opens a new message to \(review.destinationHost) in your mail app, already addressed.")
                 point("paperplane.slash", "Does not send it. InboxSweep has no permission to send mail and no way to.")
@@ -290,7 +290,7 @@ struct UnsubscribeReviewSheet: View {
 
                         Button("Use this instead") { choose(alternative) }
                             .disabled(isRunning)
-                            .help("Switches this review to that mechanism. Nothing is sent — you still confirm.")
+                            .help("Switches this review to that mechanism. Nothing is sent, and you still confirm.")
                     }
                 }
             }

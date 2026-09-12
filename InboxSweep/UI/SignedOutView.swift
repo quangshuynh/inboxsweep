@@ -5,7 +5,7 @@ import SwiftUI
 /// This screen is the app's consent conversation, and since the app gained the ability to
 /// archive a message it is carrying more weight than it used to. Google's own consent sheet
 /// will say something close to "read, compose, send and permanently delete all your email" for
-/// `gmail.modify`, which is both alarming and — for what this app does with it — wrong. The
+/// `gmail.modify`, which is both alarming and (for what this app does with it) wrong. The
 /// only defence against that is to say first, here, exactly what the permission allows, exactly
 /// what InboxSweep does with it, and exactly what it still cannot do, in terms specific enough
 /// to be checked.
@@ -51,7 +51,7 @@ struct SignedOutView: View {
                 InboxSweep groups your mail by sender, says which senders look worth cleaning up \
                 and why, and shows you what a cleanup would affect before anything happens. \
                 The one change it can make is archiving a single message you pick out and \
-                confirm — and undoing it. It cannot act on a sender, run a cleanup plan, or \
+                confirm, and undoing it. It cannot act on a sender, run a cleanup plan, or \
                 delete anything. Deciding what happens stays with you, one message at a time.
                 """)
                 .font(.body)
@@ -85,7 +85,7 @@ struct SignedOutView: View {
                     Google grants the second one as a single permission and describes it in its \
                     broadest terms on the consent screen. InboxSweep's use of it is limited to \
                     adding and removing the Inbox label on one message at a time, at your \
-                    confirmation — that limit is in the app's code, not in the permission.
+                    confirmation: that limit is in the app's code, not in the permission.
                     """)
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {

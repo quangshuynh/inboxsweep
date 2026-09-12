@@ -6,7 +6,7 @@ import Foundation
 ///
 /// The real ``KeychainCredentialStore`` is covered by ``KeychainCredentialStoreTests`` against
 /// the real Keychain. This double covers the other half: what the *provider* does when a store
-/// says no — which is where the original defect lived, not in the Keychain calls themselves.
+/// says no, which is where the original defect lived, not in the Keychain calls themselves.
 nonisolated final class FailingCredentialStore: GmailCredentialStoring, @unchecked Sendable {
 
     private let lock = NSLock()

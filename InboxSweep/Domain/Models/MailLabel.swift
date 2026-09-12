@@ -36,7 +36,7 @@ nonisolated enum MailLabel: Hashable, Sendable {
     ///
     /// These are the provider's classification, not the app's. InboxSweep reports which
     /// categories a sender's mail already carries, and where the proposal rules use one they
-    /// say so by name — "Gmail files this sender under Promotions", never "this is junk".
+    /// say so by name: "Gmail files this sender under Promotions", never "this is junk".
     var isCategory: Bool {
         switch self {
         case .categoryPromotions, .categorySocial, .categoryUpdates, .categoryForums, .categoryPersonal:

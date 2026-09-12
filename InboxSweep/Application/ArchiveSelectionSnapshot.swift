@@ -21,7 +21,7 @@ import Foundation
 ///
 /// This never touches disk. It lives for as long as one sheet is open, it exists to be *read by
 /// the person deciding*, and "Subject, received 14 March" is how a person recognises a message.
-/// ``MailMutationTransaction`` — the thing that is written down and survives a relaunch — names
+/// ``MailMutationTransaction`` (the thing that is written down and survives a relaunch) names
 /// messages and describes none of them, and that distinction is deliberate rather than an
 /// oversight in one of the two.
 nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
@@ -51,7 +51,7 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
     /// The loaded window's identity, in the one field that can change what "still loaded" means
     /// without any individual message moving. Switch from Inbox to All mail between reviewing a
     /// set and confirming it and every identifier is still present, still this sender's, and
-    /// still findable — but the list the user read was a list of inbox mail and the window under
+    /// still findable, but the list the user read was a list of inbox mail and the window under
     /// it is not. Carried so the session can refuse that rather than quietly archive against a
     /// window the user never saw.
     let scope: MailboxScope
@@ -62,6 +62,14 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
     /// When the set was frozen. Shown nowhere; it is the answer to "how stale is this?".
     let frozenAt: Date
 
+    /// How the set was arrived at, carried into the durable transaction.
+    ///
+    /// Never ``MailMutationOrigin/rule(_:)``: a rule does not build one of these, because a rule
+    /// has no confirmation to freeze. The two values this can hold are both explicit
+    /// confirmations, and the distinction between them is *where the ticks came from* rather than
+    /// how much the user agreed to. Both went through the same sheet and the same button.
+    let origin: MailMutationOrigin
+
     init(
         id: UUID = UUID(),
         accountAddress: String,
@@ -69,7 +77,8 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
         senderDisplayValue: String,
         scope: MailboxScope,
         messages: [SelectedMessage],
-        frozenAt: Date
+        frozenAt: Date,
+        origin: MailMutationOrigin = .confirmed
     ) {
         self.id = id
         self.accountAddress = accountAddress
@@ -78,6 +87,7 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
         self.scope = scope
         self.messages = messages
         self.frozenAt = frozenAt
+        self.origin = origin
     }
 
     /// One message, as the confirmation describes it.
@@ -103,16 +113,23 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
     /// The sentence that keeps a sender-level convenience from reading as sender-level authority.
     ///
     /// Shown on the confirmation, not left to documentation, because that is the screen where
-    /// somebody decides — and because a set that arrived there from **Review messages to
+    /// somebody decides, and because a set that arrived there from **Review messages to
     /// archive…** is the one case where a person could reasonably wonder whether they have just
-    /// set something up. They have not. There is no rule, no filter, and no schedule anywhere in
-    /// this app, which is what makes the sentence safe to print.
+    /// set something up. They have not. Confirming an archive creates nothing that outlives it:
+    /// no rule, no filter, no schedule.
+    ///
+    /// Narrowed in Interval 11, because the app gained a way to authorize future behaviour and
+    /// this sentence had said there was none anywhere in it. There is one now, and it is
+    /// ``SenderRule``: the user creates it themselves, on its own review screen, and **this**
+    /// screen is not that screen. Saying "confirming this creates no rule" stays true and stays
+    /// the thing somebody standing here needs to know; saying "this app has no rules" would have
+    /// become a lie printed on a confirmation.
     ///
     /// It lives on the snapshot rather than on the sheet so it is a fact about the frozen set
-    /// rather than a string in a view — and so a test can read it without a main-actor hop.
+    /// rather than a string in a view, and so a test can read it without a main-actor hop.
     static let senderScopeNote = """
         Only the messages listed here will be changed. Future messages from this sender are not \
-        affected — InboxSweep creates no rule and archives nothing on its own.
+        affected: this archives the listed messages once, and creates no rule.
         """
 
     // MARK: - Derived
@@ -123,7 +140,7 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
 
     /// The protected messages in the set, which the confirmation calls out by name.
     ///
-    /// Non-empty only when the user selected them *by hand* — no convenience action puts a
+    /// Non-empty only when the user selected them *by hand*, no convenience action puts a
     /// protected message in a selection. See ``InboxSessionModel/preselectableMessageIDs(for:)``.
     var protectedMessages: [SelectedMessage] { messages.filter(\.isProtected) }
 
@@ -131,7 +148,7 @@ nonisolated struct ArchiveSelectionSnapshot: Identifiable, Equatable, Sendable {
 
     /// The frozen set, as the mutation boundary wants it.
     ///
-    /// `nil` for an empty snapshot, which the session never builds — "archive nothing" is not an
+    /// `nil` for an empty snapshot, which the session never builds: "archive nothing" is not an
     /// operation.
     func selection() -> MailArchiveSelection? {
         MailArchiveSelection(

@@ -3,7 +3,7 @@ import Foundation
 /// What InboxSweep suggests for a sender.
 ///
 /// The vocabulary is chosen as carefully as the rules are. Nothing here says a sender is
-/// junk, spam, useless, or safe to delete — the app is reading metadata from a bounded window
+/// junk, spam, useless, or safe to delete: the app is reading metadata from a bounded window
 /// of a mailbox, which supports "this reads like a mailing list" and does not support "you do
 /// not need this". Every case below is a description of what the mail *looks like*, or an
 /// invitation to go and look.

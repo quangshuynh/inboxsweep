@@ -4,11 +4,11 @@ import Foundation
 ///
 /// A separate type because the recoveries are different. A failed *read* is almost always
 /// "try again" or "connect again"; a failed *write* has to answer a question a read never
-/// raises — did anything happen to the mailbox? Every case below is unambiguous about that,
+/// raises: did anything happen to the mailbox? Every case below is unambiguous about that,
 /// and ``changedTheMailbox`` says so in code rather than leaving it to the wording.
 ///
 /// Associated values are short, already-sanitized strings. No case carries a token, an
-/// authorization code, a raw Gmail response body, a subject, or an address — these are shown
+/// authorization code, a raw Gmail response body, a subject, or an address: these are shown
 /// on screen.
 nonisolated enum MailMutationError: Error, Hashable, Sendable {
 
@@ -45,12 +45,12 @@ nonisolated enum MailMutationError: Error, Hashable, Sendable {
     /// This exact confirmation has already been carried out.
     ///
     /// One confirmation is one operation. The frozen set behind a result that is still on screen
-    /// describes work that is already done, so submitting it again is refused rather than sent —
+    /// describes work that is already done, so submitting it again is refused rather than sent,
     /// which matters most for the messages that *failed*, because a repeat would re-ask about the
     /// ones that succeeded too.
     case alreadyExecuted
 
-    /// The provider no longer has this message — it was moved or deleted elsewhere.
+    /// The provider no longer has this message: it was moved or deleted elsewhere.
     case messageNoLongerAvailable
 
     /// The provider is throttling this account. Waiting and repeating the action is the fix.
@@ -70,7 +70,7 @@ nonisolated enum MailMutationError: Error, Hashable, Sendable {
     /// Every case is `false` today, and that is the point: the app only reports a mutation
     /// error when it knows the mailbox was not touched. A provider response that leaves it
     /// genuinely unknown is reported as ``rejectedByProvider`` with wording that says to
-    /// refresh — see ``recoverySuggestion``.
+    /// refresh; see ``recoverySuggestion``.
     var changedTheMailbox: Bool { false }
 
     /// Whether repeating the same action could plausibly succeed.
@@ -87,7 +87,7 @@ nonisolated enum MailMutationError: Error, Hashable, Sendable {
     /// too.
     ///
     /// The distinction is whether the failure is about *this message* or about *the session*. A
-    /// message Gmail no longer has, a throttle, a dropped connection — those say nothing about
+    /// message Gmail no longer has, a throttle, a dropped connection: those say nothing about
     /// the next message, so the run continues and each one gets its own answer. A withdrawn
     /// grant or a swapped account is true of every message at once, and sending eleven more
     /// requests that are all going to be refused the same way would be eleven pointless writes
@@ -151,7 +151,7 @@ nonisolated extension MailMutationError: LocalizedError {
         case .permissionDeclined:
             "Without that permission InboxSweep can still read and suggest, but it can't archive. Nothing was changed."
         case .authorizationExpired:
-            "The authorization is no longer valid — it expired, or it was withdrawn from your Google Account. Nothing was changed."
+            "The authorization is no longer valid: it expired, or it was withdrawn from your Google Account. Nothing was changed."
         case .accountChanged:
             """
             The message was chosen while a different Gmail account was connected, so InboxSweep \

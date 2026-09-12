@@ -23,7 +23,7 @@ nonisolated struct HTTPResponse: Sendable {
 /// The single seam between the Gmail adapter and the network.
 ///
 /// Every request the adapter makes goes through this protocol, which is what allows the whole
-/// adapter — request construction, status mapping, normalization, pagination, concurrency —
+/// adapter: request construction, status mapping, normalization, pagination, concurrency,
 /// to be exercised in tests against recorded fixtures, with no Gmail account involved.
 nonisolated protocol HTTPTransport: Sendable {
     func send(_ request: URLRequest) async throws -> HTTPResponse

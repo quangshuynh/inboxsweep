@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Renders a ``SessionNotice`` as a quiet, non-blocking box.
 ///
-/// Deliberately not an alert and not an error screen. Both situations it reports — a sign-in
-/// that could not be restored, and one that could not be saved — leave the app perfectly
+/// Deliberately not an alert and not an error screen. Both situations it reports, a sign-in
+/// that could not be restored and one that could not be saved, leave the app perfectly
 /// usable. What they must not do is happen invisibly.
 struct SessionNoticeView: View {
 

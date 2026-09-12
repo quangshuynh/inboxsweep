@@ -33,7 +33,7 @@ nonisolated struct CleanupPlanWindow: Hashable, Sendable {
         }
     }
 
-    /// One paragraph stating exactly what the numbers cover — and what they do not.
+    /// One paragraph stating exactly what the numbers cover, and what they do not.
     var explanation: String {
         if hasMoreBeyondWindow {
             return """
@@ -53,7 +53,7 @@ nonisolated struct CleanupPlanWindow: Hashable, Sendable {
     /// A one-line form for a table footer.
     var shortExplanation: String {
         hasMoreBeyondWindow
-            ? "Counts cover the \(loadedMessageCount) loaded messages only — more mail exists beyond the window."
+            ? "Counts cover the \(loadedMessageCount) loaded messages only; more mail exists beyond the window."
             : "Counts cover all \(loadedMessageCount) loaded \(scopeName) messages."
     }
 }
@@ -102,7 +102,7 @@ nonisolated struct CleanupPlanEntry: Identifiable, Hashable, Sendable {
 
     /// Whether the user planned something for a sender the rules said to protect.
     ///
-    /// Not blocked — the preview is read-only and the user is allowed to look — but said out
+    /// Not blocked (the preview is read-only and the user is allowed to look) but said out
     /// loud, because a warning is the whole reason the protection rules exist.
     var contradictsProtection: Bool {
         protection.isProtected && action.movesMessages && affectedMessageCount > 0
@@ -113,8 +113,8 @@ nonisolated struct CleanupPlanEntry: Identifiable, Hashable, Sendable {
 ///
 /// **A plan is a description, not a command.** It holds counts and sentences; it has no
 /// message identifiers to act on, no reference to a provider, and no method that does
-/// anything. Producing one requires nothing but data already in memory — see
-/// ``CleanupPlanner`` — and the safety tests assert that building one issues no provider call
+/// anything. Producing one requires nothing but data already in memory; see
+/// ``CleanupPlanner``, and the safety tests assert that building one issues no provider call
 /// at all.
 nonisolated struct CleanupPlan: Hashable, Sendable {
 
@@ -145,8 +145,8 @@ nonisolated struct CleanupPlan: Hashable, Sendable {
     /// The sentence the preview leads with, so the read-only boundary is never inferred.
     /// What a preview is, said next to every preview.
     ///
-    /// Reworded once the app gained a single-message archive, because the old sentence — "no
-    /// permission to archive … any message" — stopped being true, and a disclaimer that
+    /// Reworded once the app gained a single-message archive, because the old sentence ("no
+    /// permission to archive … any message") stopped being true, and a disclaimer that
     /// overstates a limit is worse than none: the moment the user finds one thing it got wrong,
     /// the rest of it stops being believable. What is claimed now is the part that is still
     /// exactly true, and it is the part that matters here: **nothing on a preview can be

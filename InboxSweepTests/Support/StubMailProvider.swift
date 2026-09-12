@@ -31,7 +31,7 @@ actor StubMailProvider: MailProvider {
 
     private(set) var connectCallCount = 0
     private(set) var fetchCallCount = 0
-    /// Every request the session made, so a test can assert *what* was asked for — notably
+    /// Every request the session made, so a test can assert *what* was asked for, notably
     /// the page cursor a relaunched session continues from.
     private(set) var fetchRequests: [MailFetchRequest] = []
     /// Indexes into the current `.pages` behaviour, so replacing the behaviour mid-test starts
@@ -54,7 +54,7 @@ actor StubMailProvider: MailProvider {
     /// The unsubscribe boundary this provider vends, or `nil` for one that cannot send a
     /// one-click request.
     ///
-    /// Independent of ``messageArchiver``, exactly as it is on the real adapter — so a test can
+    /// Independent of ``messageArchiver``, exactly as it is on the real adapter, so a test can
     /// describe a provider that can archive and not unsubscribe, or the reverse, and find out
     /// whether the session keeps the two apart.
     nonisolated let unsubscriber: (any MailUnsubscribing)?

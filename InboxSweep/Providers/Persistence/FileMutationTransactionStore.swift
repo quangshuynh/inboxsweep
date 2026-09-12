@@ -14,19 +14,19 @@ import Foundation
 /// for the connected account out of this file and offers to put those messages back. That raises
 /// the bar for what a malformed or half-written file is allowed to do, so every entry is
 /// validated on the way in and an entry this build cannot fully understand is dropped rather
-/// than guessed at — a dropped entry costs an undo offer, and a guessed one would mean sending
+/// than guessed at: a dropped entry costs an undo offer, and a guessed one would mean sending
 /// requests about messages nobody confirmed.
 ///
 /// ### What ends up on disk
 ///
 /// Provider message identifiers, an account address, an operation name, two counts, a timestamp,
-/// and an undo state. **No mail.** No subject, no sender, no snippet, no body —
+/// and an undo state. **No mail.** No subject, no sender, no snippet, no body,
 /// ``MailMutationTransaction`` has nowhere to put any of them, and the Activity screen that
 /// reads this file resolves what it can from the mailbox cache instead of copying it here.
 ///
 /// Unlike the cache, this one *reports* whether a write succeeded. A cache that cannot be
 /// written costs a refetch; a transaction that cannot be written means the app has changed a
-/// mailbox, failed to write that down, and will not be able to offer the undo after a relaunch —
+/// mailbox, failed to write that down, and will not be able to offer the undo after a relaunch,
 /// which the user is told about rather than left to discover.
 actor FileMutationTransactionStore: MailMutationRecording {
 
@@ -35,7 +35,7 @@ actor FileMutationTransactionStore: MailMutationRecording {
 
     /// How many of the most recent transactions are kept, per account.
     ///
-    /// The policy itself — including why this number and how ties are broken — lives in
+    /// The policy itself (including why this number and how ties are broken) lives in
     /// ``MailMutationHistory``, so the in-memory store and this one prune identically rather
     /// than coincidentally.
     static var retainedTransactionLimit: Int { MailMutationHistory.entryLimit }
@@ -76,7 +76,7 @@ actor FileMutationTransactionStore: MailMutationRecording {
         }
 
         // Replace by identifier, then prune. Pruning on the way *out* as well as on the way in
-        // is what keeps a file that somehow grew — an older build, a hand edit — from being read
+        // is what keeps a file that somehow grew (an older build, a hand edit) from being read
         // back unbounded.
         let existing = load(from: url)
         var transactions = existing.transactions.filter { $0.id != transaction.id }
@@ -171,7 +171,7 @@ actor FileMutationTransactionStore: MailMutationRecording {
     ///
     /// Non-throwing in every direction a read can go wrong: a file this build does not
     /// recognise, a file written for a different account, and an individual entry that does not
-    /// parse. Neither is worth an error — the worst case is that an undo is not offered, which
+    /// parse. Neither is worth an error: the worst case is that an undo is not offered, which
     /// is strictly better than offering one built out of something unreadable.
     private func load(from url: URL) -> StoredFile {
         guard let data = try? Data(contentsOf: url),
@@ -184,7 +184,7 @@ actor FileMutationTransactionStore: MailMutationRecording {
                 MutationTransactionDTO.transaction(from: $0, accountAddress: file.accountAddress)
             },
             // Absent in a version-2 or version-3 file, which simply had no unsubscribe feature
-            // to record anything for. Missing is empty, not unreadable — which is what lets a
+            // to record anything for. Missing is empty, not unreadable, which is what lets a
             // file written before this interval keep its archive history and its live undo
             // offer rather than being discarded over a key that was not there.
             unsubscribes: (file.unsubscribes ?? []).compactMap {
@@ -236,25 +236,33 @@ nonisolated enum MutationTransactionDTO {
     /// Bumped from 3 when the file gained a second kind of entry: unsubscribe actions.
     ///
     /// A version-1 file is *discarded*, not migrated. It holds at most one single-message archive
-    /// whose undo offer had already expired by design — that interval's offer did not survive a
-    /// relaunch — so there is nothing in it worth carrying forward, and migrating would mean
+    /// whose undo offer had already expired by design: that interval's offer did not survive a
+    /// relaunch, so there is nothing in it worth carrying forward, and migrating would mean
     /// writing a decoder for a shape no user can still be relying on.
     ///
     /// Versions 2 and 3 are still read, and the 3 → 4 change is the cheapest kind of migration
     /// there is: **a new optional key beside the existing one**. Nothing about a transaction
     /// changed, no entry is reinterpreted, and a version-3 file decodes with its archive history
-    /// and its live undo offer intact and an empty unsubscribe list — which is exactly true,
+    /// and its live undo offer intact and an empty unsubscribe list, which is exactly true,
     /// because a build that wrote version 3 could not perform an unsubscribe. That is what
     /// requirement 16 of this interval asks for: evolve only as much as needed, and leave the
     /// existing guarantees alone.
-    static let schemaVersion = 4
+    ///
+    /// Bumped from 4 in Interval 11 for the same kind of change, and it is worth saying that
+    /// twice: **a new optional key beside the existing ones**. A transaction gained an origin,
+    /// because a second thing can now cause one. Nothing about an existing entry is reinterpreted,
+    /// and a version-4 file decodes with its archive history, its unsubscribe history, and its
+    /// live undo offer intact, every transaction in it reading as
+    /// ``MailMutationOrigin/confirmed``, which is exactly what those were, since rules did not
+    /// exist when that file was written.
+    static let schemaVersion = 5
 
     /// The versions this build will read.
     ///
     /// Version 2 is read rather than discarded, which is the opposite of what happened to
     /// version 1 and for a reason that did not apply then: a version-2 file can hold a **live
     /// undo offer**. Discarding it would mean somebody updates InboxSweep and quietly loses the
-    /// ability to put back the messages they archived ten minutes earlier — a real change to
+    /// ability to put back the messages they archived ten minutes earlier: a real change to
     /// what the app can do for them, made as a side effect of a schema bump.
     ///
     /// The one field version 2 lacks is the confirmed count, which defaults to the number of
@@ -262,7 +270,7 @@ nonisolated enum MutationTransactionDTO {
     /// already been narrowed by a partial undo, where it understates how many the archive
     /// originally confirmed. Understating is the safe direction: it can make an old row read as
     /// a smaller archive than it was, and it can never invent a message.
-    static let readableVersions: Set<Int> = [2, 3, 4]
+    static let readableVersions: Set<Int> = [2, 3, 4, 5]
 
     static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
@@ -298,7 +306,7 @@ nonisolated enum MutationTransactionDTO {
     }
 
     /// One unsubscribe action. Note what is not here: no URL path, no query, no mail address,
-    /// no subject, no sender name — see ``UnsubscribeActionRecord`` for why the host alone.
+    /// no subject, no sender name; see ``UnsubscribeActionRecord`` for why the host alone.
     struct UnsubscribeEntry: Codable, Equatable {
         var id: String
         var mechanism: String
@@ -332,6 +340,10 @@ nonisolated enum MutationTransactionDTO {
         /// identifier count is the answer.
         var confirmedCount: Int?
 
+        /// What caused this operation. Absent before version 5, where the answer is that somebody
+        /// confirmed it, because nothing else could have.
+        var origin: String?
+
         enum CodingKeys: String, CodingKey {
             case id
             case operation = "op"
@@ -340,6 +352,7 @@ nonisolated enum MutationTransactionDTO {
             case occurredAt = "at"
             case undoState = "undo"
             case confirmedCount = "confirmed"
+            case origin
         }
     }
 
@@ -358,8 +371,8 @@ nonisolated enum MutationTransactionDTO {
     /// Rebuilds an unsubscribe entry, or returns `nil` for one this build cannot account for.
     ///
     /// Strict for a different reason than the transaction decoder's. Nothing that comes out of
-    /// here becomes a request — an unsubscribe entry is read-only history with no action behind
-    /// it — so the risk is not a stray write but a **false claim**: a row asserting InboxSweep
+    /// here becomes a request: an unsubscribe entry is read-only history with no action behind
+    /// it, so the risk is not a stray write but a **false claim**: a row asserting InboxSweep
     /// sent a request it did not send, or sent one somewhere it did not. An entry with an
     /// unrecognised mechanism, an unrecognised outcome, an empty host, or an impossible status
     /// is not one this app wrote, and it is dropped rather than displayed.
@@ -396,7 +409,8 @@ nonisolated enum MutationTransactionDTO {
             selectedCount: transaction.selectedMessageCount,
             occurredAt: transaction.occurredAt,
             undoState: transaction.undoState.rawValue,
-            confirmedCount: transaction.confirmedMessageCount
+            confirmedCount: transaction.confirmedMessageCount,
+            origin: transaction.origin.storedValue
         )
     }
 
@@ -423,7 +437,13 @@ nonisolated enum MutationTransactionDTO {
               // selected. Outside that range it is not a count any run of this app produced,
               // and a history row built from it would claim something that never happened.
               confirmedCount >= entry.messageIDs.count,
-              confirmedCount <= entry.selectedCount
+              confirmedCount <= entry.selectedCount,
+              // An origin this build does not recognise is an entry a later version wrote.
+              // Dropped rather than defaulted: reading it as "somebody confirmed this" would put a
+              // row in Activity claiming a person did something a rule did, and reading it as a
+              // rule would invent an authorization. A missing key is not this case; it decodes as
+              // ``MailMutationOrigin/confirmed``, which is what a pre-version-5 entry means.
+              let origin = MailMutationOrigin.decoding(entry.origin)
         else { return nil }
 
         // Duplicates would mean sending two requests for one message and counting it twice.
@@ -439,7 +459,8 @@ nonisolated enum MutationTransactionDTO {
             selectedMessageCount: entry.selectedCount,
             occurredAt: entry.occurredAt,
             undoState: undoState,
-            confirmedMessageCount: confirmedCount
+            confirmedMessageCount: confirmedCount,
+            origin: origin
         )
     }
 }

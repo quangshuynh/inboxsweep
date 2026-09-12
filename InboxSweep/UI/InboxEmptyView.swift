@@ -27,7 +27,7 @@ struct InboxEmptyView: View {
 
             HStack(spacing: 16) {
                 // Reachable from here too, because an empty inbox is one of the states somebody
-                // is most likely to be asking "what did this app do?" about — and the dashboard
+                // is most likely to be asking "what did this app do?" about, and the dashboard
                 // that carries the usual Activity button is not on screen.
                 Button("Activity") { isActivityPresented = true }
                     .buttonStyle(.link)

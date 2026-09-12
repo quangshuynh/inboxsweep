@@ -11,7 +11,7 @@ import SwiftUI
 /// deliberately the one that already makes the user look at individual messages. Ticking rows
 /// and pressing **Archive…** opens a confirmation; nothing else does. A proposal, a dry-run
 /// preview, a saved plan, and a sender row can all lead the user *here*, and every one of them
-/// stops at this boundary — there is no control anywhere that archives a sender or carries out a
+/// stops at this boundary: there is no control anywhere that archives a sender or carries out a
 /// plan.
 ///
 /// ### How the preview and the selection are connected, and how they are not
@@ -20,13 +20,14 @@ import SwiftUI
 /// user can get at those 38. It writes them into the checkbox column and does nothing else: no
 /// request, no confirmation, no countdown. The user then reads the list, unticks what they want
 /// to keep, ticks anything the rules missed, and takes it to a confirmation themselves. It never
-/// fills in a protected message — see ``InboxSessionModel/preselectableMessageIDs(forSenderKey:under:)``
-/// — though the user is free to tick one, and the confirmation says so plainly when they have.
+/// fills in a protected message; see
+/// ``InboxSessionModel/preselectableMessageIDs(forSenderKey:under:)``. The user is free to tick
+/// one, and the confirmation says so plainly when they have.
 ///
 /// The preview itself remains inert. There is no Execute, no Apply, and no sender-level archive.
 ///
-/// Everything else here still changes nothing. There is no message body to show —
-/// ``MailMessage`` has nowhere to hold one — and the plan picker only changes which rows are
+/// Everything else here still changes nothing. There is no message body to show, because
+/// ``MailMessage`` has nowhere to hold one, and the plan picker only changes which rows are
 /// highlighted.
 struct SenderMessageReviewView: View {
 
@@ -38,7 +39,7 @@ struct SenderMessageReviewView: View {
     /// when the review was opened to look rather than to clean.
     ///
     /// Applied **once**, when the screen appears: it chooses the action shown in the picker and
-    /// ticks the candidate rows. From that moment it is inert — it is not consulted again, it does
+    /// ticks the candidate rows. From that moment it is inert: it is not consulted again, it does
     /// not re-apply when the window reloads, and nothing on this screen syncs back to it. What the
     /// user does with those ticks is what the confirmation gets.
     var preselection: SenderReviewCandidates?
@@ -56,34 +57,61 @@ struct SenderMessageReviewView: View {
     /// learns about it until the user asks for a confirmation. That is what makes "selection
     /// alone performs zero writes" true by construction rather than by discipline.
     ///
-    /// Scoped to this sender by construction too — every identifier in here came from this
-    /// screen's own rows — and re-checked against the sender when a set is frozen, so nothing
+    /// Scoped to this sender by construction too, every identifier in here came from this
+    /// screen's own rows, and re-checked against the sender when a set is frozen, so nothing
     /// left over from a re-sort or a reload can smuggle another sender's mail into a set.
     @State private var selectedMessageIDs: Set<MailMessage.ID> = []
-
-    /// The frozen set a confirmation is open for.
+    /// The sheet this screen is presenting, if any.
     ///
-    /// Separate from ``selectedMessageIDs`` so that ticking rows never, by itself, puts the app
-    /// one keystroke away from a mutation. Pressing the button is what fills this in, and what
-    /// goes in is a copy that the table underneath can no longer change.
-    @State private var pendingArchive: ArchiveSelectionSnapshot?
+    /// **One `@State` and one `.sheet` modifier**, rather than one of each per destination, for
+    /// the reason ``SenderDashboardView`` records after hitting it first: stacking `.sheet`
+    /// modifiers on a single view is not something SwiftUI honours. Two happened to work here,
+    /// and adding a third for the rule review broke it in a way that read as a layout problem
+    /// rather than a presentation one, with the sheet's own sections rendering and its footer
+    /// buttons never resolving.
+    ///
+    /// Each case is a different decision about different mail, which is why they are sheets at
+    /// all: this screen is about the messages already here, while unsubscribing and a rule are
+    /// both about mail that has not arrived. Ticking rows never, by itself, puts the app one
+    /// keystroke away from a mutation: pressing a button is what fills this in, and what goes in
+    /// is a copy the table underneath can no longer change.
+    @State private var sheet: Sheet?
 
     /// Said when a frozen set could not be built because the window moved under the selection.
     @State private var selectionIsStale = false
 
-    /// The unsubscribe options screen, when the user has opened it.
-    ///
-    /// A separate sheet rather than a section of this one, because the two answer different
-    /// questions about different mail: this screen is about the messages already here, and that
-    /// one is about the ones that have not arrived. Presenting it from here is a convenience —
-    /// the user is looking at this sender — not a suggestion that unsubscribing is part of the
-    /// archive flow.
-    @State private var isShowingUnsubscribeOptions = false
+    /// The sheets this screen can present.
+    private enum Sheet: Identifiable {
+
+        /// The confirmation for a frozen set of messages. The app's only route to a write.
+        case archive(ArchiveSelectionSnapshot)
+
+        /// What this sender's own headers say about unsubscribing.
+        case unsubscribeOptions
+
+        /// What a rule for this sender would be. **Frozen when the button is pressed**, not
+        /// re-derived while the sheet is on screen: a review that re-derived itself on every body
+        /// evaluation would be a different decision every frame, which is the opposite of what
+        /// freezing is for.
+        case ruleReview(SenderRuleReviewSnapshot)
+
+        /// Why a rule could not be reviewed, when one could not be.
+        case ruleUnavailable
+
+        var id: String {
+            switch self {
+            case .archive(let selection): "archive-\(selection.id)"
+            case .unsubscribeOptions: "unsubscribeOptions"
+            case .ruleReview(let review): "ruleReview-\(review.id)"
+            case .ruleUnavailable: "ruleUnavailable"
+            }
+        }
+    }
 
     /// The preselection that was actually applied, kept so the banner can say what it did.
     ///
     /// A record of something that already happened rather than live state. The user is free to
-    /// untick every row it filled in, and the banner keeps saying what the preview picked — which
+    /// untick every row it filled in, and the banner keeps saying what the preview picked, which
     /// is the honest thing for it to say, because "18 selected from this preview" is a fact about
     /// how the screen opened, not a claim about what is ticked now. The live count sits beside it
     /// in the selection row.
@@ -101,14 +129,25 @@ struct SenderMessageReviewView: View {
             Divider()
             footer
         }
-        // The sheet takes its minimum width, so that is what has to fit all five columns —
-        // an audit screen whose "under this plan" column is off the right edge audits nothing.
+        // The sheet takes its minimum width, so that is what has to fit all five columns: an
+        // audit screen whose "under this plan" column is off the right edge audits nothing.
         .frame(minWidth: 900, idealWidth: 980, minHeight: 480, idealHeight: 620)
-        .sheet(item: $pendingArchive) { frozen in
-            ArchiveSelectionSheet(session: session, selection: frozen)
-        }
-        .sheet(isPresented: $isShowingUnsubscribeOptions) {
-            UnsubscribeOptionsSheet(session: session, summary: summary)
+        // Escape closes it, which is what every macOS sheet does and what this one did not.
+        // Safe here because closing changes nothing: the only exits from this screen are Done and
+        // Escape, and neither touches a mailbox. The sheets that *can* act keep Escape bound to
+        // their own Cancel, which backs out of the confirmation rather than out of the sheet.
+        .onExitCommand { dismiss() }
+        .sheet(item: $sheet) { destination in
+            switch destination {
+            case .archive(let frozen):
+                ArchiveSelectionSheet(session: session, selection: frozen)
+            case .unsubscribeOptions:
+                UnsubscribeOptionsSheet(session: session, summary: summary)
+            case .ruleReview(let review):
+                SenderRuleReviewSheet(session: session, review: review)
+            case .ruleUnavailable:
+                RuleUnavailableSheet(session: session, summary: summary)
+            }
         }
         .onAppear(perform: applyPreselectionIfNeeded)
     }
@@ -118,7 +157,7 @@ struct SenderMessageReviewView: View {
     /// Chooses the action and, when a sender-level entry point asked for one, the starting ticks.
     ///
     /// **This is the whole of what a sender-level action does.** It writes into two pieces of view
-    /// state — which action the picker shows, and which checkboxes are on — and stops. No request
+    /// state (which action the picker shows, and which checkboxes are on) and stops. No request
     /// is made, no confirmation opens, nothing is frozen, and nothing is scheduled. The screen the
     /// user lands on is the same screen they would have reached by opening the review and ticking
     /// the rows themselves; the only difference is that the ticking has been done for them, and
@@ -142,7 +181,7 @@ struct SenderMessageReviewView: View {
 
     /// Recomputed on every render from the session's in-memory window.
     ///
-    /// Cheap — it is filtering and sorting messages already loaded — and recomputing is what
+    /// Cheap (it is filtering and sorting messages already loaded) and recomputing is what
     /// keeps the screen honest: there is no stored review that could still be showing a
     /// sender's old messages after a deeper load changed them.
     private var reviewed: [ReviewedMessage] {
@@ -158,7 +197,7 @@ struct SenderMessageReviewView: View {
 
     /// What this screen can and cannot do, said before anything else on it.
     ///
-    /// Conditional because the old sentence — "no message is opened, moved, or changed" —
+    /// Conditional because the old sentence, "no message is opened, moved, or changed",
     /// stopped being true on this exact screen the moment archiving arrived. It is still true
     /// where the app genuinely cannot write, and saying so there is worth doing; saying it
     /// beside a working Archive button would be worse than saying nothing.
@@ -168,7 +207,7 @@ struct SenderMessageReviewView: View {
             return "\(preamble) Nothing on this screen is sent to Gmail, and no message is opened, moved, or changed."
         }
         return """
-            \(preamble) No message is opened — there is no message body to show. The only thing \
+            \(preamble) No message is opened: there is no message body to show. The only thing \
             that changes your mailbox is Archive, which acts on exactly the messages you tick and \
             then confirm as a list, and can be undone.
             """
@@ -195,8 +234,8 @@ struct SenderMessageReviewView: View {
 
     /// The rows the preview would reach, minus anything protected.
     ///
-    /// Asked of the session rather than computed here, so the one rule that matters — a
-    /// convenience action never picks a protected message — lives beside the archive path it
+    /// Asked of the session rather than computed here, so the one rule that matters (a
+    /// convenience action never picks a protected message) lives beside the archive path it
     /// protects rather than in a view.
     private var preselectableIDs: [MailMessageID] {
         guard let action else { return [] }
@@ -228,7 +267,7 @@ struct SenderMessageReviewView: View {
 
     /// What a sender-level entry point started this review with, and why.
     ///
-    /// Shown whenever the screen was opened from one, including — especially — when it filled in
+    /// Shown whenever the screen was opened from one, including (especially) when it filled in
     /// nothing. A review that opened with no ticks and no sentence would read as a failure, and
     /// the thing it must never read as is an invitation to select everything instead. So the empty
     /// case names its reason and offers nothing: the ordinary controls below are still there, and
@@ -287,6 +326,7 @@ struct SenderMessageReviewView: View {
 
             Spacer()
 
+            ruleControl
             unsubscribeControl
             archiveControl
         }
@@ -294,10 +334,49 @@ struct SenderMessageReviewView: View {
         .padding(.vertical, 8)
     }
 
+    /// The way from this sender's messages to a rule about this sender's future messages.
+    ///
+    /// **Create archive rule…**, with the ellipsis carrying its usual meaning: it opens something
+    /// to read, and nothing has happened when it is closed. Pressing it derives a review and
+    /// presents it. It does not create a rule, does not enable one, and does not archive anything,
+    /// and there is no path from this button to the rule store that skips the review's own
+    /// confirming press.
+    ///
+    /// Offered whether or not this session can execute a rule, for the same reason the archive
+    /// review and the unsubscribe options are: what it opens is a reading, and the review screen
+    /// is the honest place to say whether anything can run. It is replaced by a way into Rules
+    /// once this sender already has one, because the answer to "I want a rule for this sender" when
+    /// there is one is to show it, not to stack a second.
+    @ViewBuilder
+    private var ruleControl: some View {
+        if let existing = session.rule(forSenderKey: summary.id) {
+            Button {
+                // A sender that already has a rule opens Rules rather than a second review.
+                sheet = .ruleUnavailable
+            } label: {
+                Label(existing.isEnabled ? "Rule is on" : "Rule is off", systemImage: "wand.and.stars.inverse")
+            }
+            .help("You already have a rule for this sender. Opens Rules, where you can turn it off or delete it.")
+            .accessibilityIdentifier("messageReview.existingRuleButton")
+        } else {
+            Button {
+                // Frozen here, once, and handed to the sheet. `makeSenderRuleReview` reads the
+                // loaded window and returns a value; it writes nothing, and the sheet's own
+                // confirming button is the only thing in the app that creates a rule.
+                sheet = session.makeSenderRuleReview(forSenderKey: summary.id)
+                    .map(Sheet.ruleReview) ?? .ruleUnavailable
+            } label: {
+                Label("Create archive rule…", systemImage: "wand.and.stars.inverse")
+            }
+            .help("Shows exactly what a rule for this sender would do to future mail. Opening it creates nothing, and archives nothing.")
+            .accessibilityIdentifier("messageReview.createRuleButton")
+        }
+    }
+
     /// The way from this sender's messages to this sender's unsubscribe options.
     ///
     /// **Unsubscribe…**, never *Stop all mail* or *Clean sender*. It is shown only when this
-    /// sender's own headers actually said something — a sender with no metadata gets no control
+    /// sender's own headers actually said something: a sender with no metadata gets no control
     /// rather than a disabled one, because there is nothing behind it to enable.
     ///
     /// Pressing it opens a reading. Nothing is sent, nothing is opened, and the confirmation is
@@ -306,7 +385,7 @@ struct SenderMessageReviewView: View {
     private var unsubscribeControl: some View {
         if unsubscribeOpportunity.availability.camesFromListHeader {
             Button {
-                isShowingUnsubscribeOptions = true
+                sheet = .unsubscribeOptions
             } label: {
                 Label("Unsubscribe…", systemImage: "envelope.badge.shield.half.filled")
             }
@@ -324,7 +403,7 @@ struct SenderMessageReviewView: View {
     /// The selection row: what is ticked, and the three ways to change it in bulk.
     ///
     /// Every control here writes to a `Set` of identifiers and nothing else. None of them
-    /// contacts a provider, opens a confirmation, or starts a countdown — which is why they can
+    /// contacts a provider, opens a confirmation, or starts a countdown, which is why they can
     /// be offered freely even though one of them is driven by a cleanup recommendation.
     @ViewBuilder
     private var selectionControls: some View {
@@ -354,7 +433,7 @@ struct SenderMessageReviewView: View {
                         // Writes identifiers into the checkbox column. That is the whole of it:
                         // the user still has to read the list, edit it, open a confirmation, and
                         // press a button. The preview cannot execute, and this does not make it
-                        // executable — it makes its result editable.
+                        // executable: it makes its result editable.
                         selectedMessageIDs.formUnion(preselectableIDs)
                     }
                     .disabled(preselectableIDs.isEmpty || preselectableIDs.allSatisfy(selectedMessageIDs.contains))
@@ -373,7 +452,7 @@ struct SenderMessageReviewView: View {
                     )
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .help("InboxSweep never picks these for you. You can archive them anyway — the confirmation will say so.")
+                    .help("InboxSweep never picks these for you. You can archive them anyway, and the confirmation will say so.")
                     .accessibilityIdentifier("messageReview.protectedSelectionWarning")
                 }
             }
@@ -392,7 +471,7 @@ struct SenderMessageReviewView: View {
 
     /// The app's only route to changing a mailbox.
     ///
-    /// Shown at all only when the provider can write — the synthetic mailbox gets nothing, not
+    /// Shown at all only when the provider can write: the synthetic mailbox gets nothing, not
     /// a disabled button promising something it could never do. When the provider can write but
     /// the grant does not cover it, the control becomes the request for that permission, which
     /// keeps consenting and archiving two separate presses.
@@ -401,7 +480,7 @@ struct SenderMessageReviewView: View {
         if session.canOfferArchiving {
             if session.archiveCapability.isGranted {
                 Button {
-                    // Read from the table's own ticked rows — not from a proposal, a plan, or a
+                    // Read from the table's own ticked rows, not from a proposal, a plan, or a
                     // recommendation. This is the only thing in the app that opens a
                     // confirmation, and only a person pressing this button performs it.
                     //
@@ -410,11 +489,16 @@ struct SenderMessageReviewView: View {
                     // window stops agreeing rather than acting on whatever is selected by then.
                     let frozen = session.makeArchiveSelection(
                         forSenderKey: summary.id,
-                        messageIDs: selectedMessageIDs
+                        messageIDs: selectedMessageIDs,
+                        // Where the ticks came from, recorded on the transaction so Activity can
+                        // tell the two apart later. It changes nothing about what is archived:
+                        // both are this screen's own checkbox column, and both go through the
+                        // same confirmation.
+                        origin: appliedPreselection == nil ? .confirmed : .senderReviewed
                     )
                     if let frozen {
                         selectionIsStale = false
-                        pendingArchive = frozen
+                        sheet = .archive(frozen)
                     } else {
                         // Refused rather than narrowed. A confirmation for "the ones that are
                         // still there" would be a confirmation of a set nobody approved.
@@ -503,7 +587,7 @@ struct SenderMessageReviewView: View {
                         .font(.callout)
                         .help(reason.explanation(count: 1))
                     } else {
-                        Text("—").foregroundStyle(.tertiary)
+                        Text("None").foregroundStyle(.tertiary)
                     }
                 }
                 .width(min: 95, ideal: 110)
@@ -580,7 +664,7 @@ struct SenderMessageReviewView: View {
                         // what a whole-sender cleanup *would* do, and a button that really
                         // archives the ticked messages. Leaving the difference implicit would be
                         // the easiest way for someone to believe the preview was about to run.
-                        Text("Archiving the messages you tick is the only change InboxSweep can make to this mailbox, and it asks first. The preview above is not something it can carry out — Fill from preview only ticks boxes for you to check.")
+                        Text("Archiving the messages you tick is the only change InboxSweep can make to this mailbox, and it asks first. The preview above is not something it can carry out: Fill from preview only ticks boxes for you to check.")
                             .font(.footnote)
                             .foregroundStyle(.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -600,7 +684,7 @@ struct SenderMessageReviewView: View {
 
     /// The standing offer to put back the last archive, wherever it came from.
     ///
-    /// Shown here — on the screen the user is most likely to be looking at — because the offer
+    /// Shown here (on the screen the user is most likely to be looking at) because the offer
     /// now outlives the sheet that created it and a relaunch of the app. An offer that existed
     /// only inside a dismissed sheet would be an offer nobody could find.
     ///
@@ -640,7 +724,7 @@ struct SenderMessageReviewView: View {
         case .markedImportant: "Important"
         case .protectedTopic(let topic): topic.displayName
         case .replyLikeSubject: "Conversation"
-        case .newerThanCutoff, .amongNewestKept, .actionMovesNoMessages: "—"
+        case .newerThanCutoff, .amongNewestKept, .actionMovesNoMessages: "None"
         }
     }
 }

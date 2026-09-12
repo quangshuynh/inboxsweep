@@ -6,7 +6,7 @@ import Testing
 /// and what it does with the reply.
 ///
 /// Every test runs against ``GmailMailboxStub``, which reproduces Gmail's actual behaviour for
-/// `messages.modify` — apply the label change, echo the whole message back with its new labels.
+/// `messages.modify`: apply the label change, echo the whole message back with its new labels.
 /// That matters: a stub returning a bare `200` would let the adapter claim success without ever
 /// looking at what the mailbox says, which is the one thing it must not be able to do.
 ///
@@ -197,7 +197,7 @@ struct GmailArchiveTests {
         let account = try await provider.connect()
         #expect(account.emailAddress.address == "first.user@example.com")
 
-        // Signing in again lands in a second Google account — all it takes is another account
+        // Signing in again lands in a second Google account; all it takes is another account
         // in the same browser session. The window on screen belongs to the first one.
         var second = fullyGrantedStub(messageCount: 4)
         second.profileEmail = "second.user@example.com"

@@ -19,7 +19,7 @@ nonisolated struct GmailAccessToken: Sendable, Equatable {
 /// The long-lived state worth keeping between launches.
 ///
 /// Only the refresh token and the identifying details are persisted. Access tokens are not
-/// stored, because they expire in about an hour and are cheap to re-obtain — keeping them on
+/// stored, because they expire in about an hour and are cheap to re-obtain: keeping them on
 /// disk would add exposure for no benefit.
 nonisolated struct GmailStoredCredentials: Sendable, Equatable, Codable {
     let refreshToken: String
@@ -29,7 +29,7 @@ nonisolated struct GmailStoredCredentials: Sendable, Equatable, Codable {
     /// Whether the stored grant still covers everything the app needs to *read*.
     ///
     /// Deliberately not "covers everything requested". Since the archive permission was added,
-    /// a grant stored by an earlier version covers reading and not archiving — and that grant
+    /// a grant stored by an earlier version covers reading and not archiving, and that grant
     /// is perfectly good. Discarding it would sign out every existing user over a capability
     /// they have not asked to use, so the two questions are asked separately and only this one
     /// decides whether a stored credential is usable.
@@ -47,8 +47,8 @@ nonisolated struct GmailStoredCredentials: Sendable, Equatable, Codable {
 
     /// The same credential with a new record of what was granted.
     ///
-    /// Used after a permission upgrade that returned no new refresh token — Google omits one
-    /// when the client already holds a valid grant — so the scope record is brought up to date
+    /// Used after a permission upgrade that returned no new refresh token: Google omits one
+    /// when the client already holds a valid grant, so the scope record is brought up to date
     /// without throwing away the refresh token that still works.
     func replacingGrantedScopes(_ scopes: [String]) -> GmailStoredCredentials {
         GmailStoredCredentials(

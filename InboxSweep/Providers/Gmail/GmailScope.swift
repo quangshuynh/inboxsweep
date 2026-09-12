@@ -1,6 +1,6 @@
 import Foundation
 
-/// The Gmail OAuth scopes InboxSweep asks for — and the ones it must never ask for.
+/// The Gmail OAuth scopes InboxSweep asks for, and the ones it must never ask for.
 ///
 /// ### Two scopes, for two different capabilities
 ///
@@ -12,7 +12,7 @@ import Foundation
 /// the Gmail operation that does it. **Google publishes no narrower permission for this.**
 /// `gmail.labels` governs creating and deleting label definitions, not applying them to a
 /// message; `gmail.insert` and `gmail.compose` are about putting mail *into* a mailbox. The
-/// alternative to `gmail.modify` is not a smaller scope — it is not having an archive feature.
+/// alternative to `gmail.modify` is not a smaller scope: it is not having an archive feature.
 ///
 /// ### Being honest that `gmail.modify` is broad
 ///
@@ -31,7 +31,7 @@ import Foundation
 /// your Gmail" on a consent sheet is not informed consent.
 nonisolated enum GmailScope {
 
-    /// Read message metadata — headers, labels, and dates — but not bodies or attachments.
+    /// Read message metadata (headers, labels, and dates) but not bodies or attachments.
     static let metadata = "https://www.googleapis.com/auth/gmail.metadata"
 
     /// Change which labels a message carries. The narrowest permission that can archive.
@@ -40,7 +40,7 @@ nonisolated enum GmailScope {
     /// What a grant must cover for the app to read a mailbox at all.
     ///
     /// A stored grant missing this is unusable and is discarded. A stored grant missing only
-    /// ``requiredForArchiving`` is *not* — it still reads perfectly well, and treating it as
+    /// ``requiredForArchiving`` is *not*: it still reads perfectly well, and treating it as
     /// broken would sign out every existing user over a feature they have not asked for yet.
     static let requiredForReading: [String] = [metadata]
 
@@ -85,7 +85,7 @@ nonisolated enum GmailScope {
 
     /// What the read permission grants, in plain language.
     static let readingDescription = """
-        Read-only access to the labels, dates, and headers of your Gmail messages — \
+        Read-only access to the labels, dates, and headers of your Gmail messages, \
         including who each message is from and its subject line.
         """
 
@@ -99,7 +99,7 @@ nonisolated enum GmailScope {
         Permission to change which labels your messages carry, which is what lets InboxSweep \
         archive a message you pick. Google grants this as one permission, so it is broader \
         than archiving: it would also allow marking mail read or moving it to Trash. \
-        InboxSweep does neither — the only change it can make is taking one message you \
+        InboxSweep does neither: the only change it can make is taking one message you \
         explicitly confirm out of your Inbox, and putting it back if you undo.
         """
 

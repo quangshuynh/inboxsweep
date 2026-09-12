@@ -6,7 +6,7 @@ import Testing
 /// does, and what it is allowed to reach.
 ///
 /// The archive mechanics themselves are `MessageSetArchiveTests` and `PersistentUndoTests`. These
-/// cases are about the *history* those mechanics leave behind — and about the two claims the
+/// cases are about the *history* those mechanics leave behind, and about the two claims the
 /// screen makes that nothing else in the app checks: that it lists only InboxSweep's own changes,
 /// and that reading it sends nothing anywhere.
 @MainActor
@@ -28,7 +28,7 @@ struct ActivityHistoryTests {
     /// A connected session.
     ///
     /// `clock` is injectable because ordering is part of what these cases check, and a session
-    /// pinned to one instant writes two archives with identical timestamps — at which point the
+    /// pinned to one instant writes two archives with identical timestamps, at which point the
     /// history's deterministic tiebreak decides their order rather than the order they ran in.
     /// Any case that performs more than one mutation advances it between them.
     private func makeSession(
@@ -119,7 +119,7 @@ struct ActivityHistoryTests {
 
         #expect(history.count == 1)
         // "from one sender" because the loaded window can still describe all three and they
-        // agree — see `ActivityEntry.cameFromOneSender`. It is a statement about these three
+        // agree; see `ActivityEntry.cameFromOneSender`. It is a statement about these three
         // messages, not about the sender.
         #expect(entry.title == "Archived 3 messages from one sender")
         #expect(entry.confirmedCount == 3)
@@ -209,7 +209,7 @@ struct ActivityHistoryTests {
         #expect(before.isUndoable)
 
         clock.advance(by: 600)
-        // The Activity screen's button calls exactly this — there is no second undo entry point.
+        // The Activity screen's button calls exactly this: there is no second undo entry point.
         await session.undoLastArchive().value
 
         // The undo named the transaction's confirmed messages and nothing else.
@@ -366,7 +366,7 @@ struct ActivityHistoryTests {
     func externalChangesAreReconciledAndNeverFabricated() async throws {
         // The distinction the screen exists to keep: InboxSweep reconciles the mailbox it can
         // see, and writes down only what it did itself. A message somebody archived in Gmail is
-        // gone from the next window — and that is a fact about their mailbox, not a change this
+        // gone from the next window, and that is a fact about their mailbox, not a change this
         // app can claim.
         let messages = (1...4).map { message("m-\($0)", daysAgo: Double($0)) }
         let archiver = StubMessageArchiver()

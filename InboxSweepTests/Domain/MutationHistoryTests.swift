@@ -112,7 +112,7 @@ struct MutationHistoryTests {
         #expect(archive.succeededCount == 6, "The remaining undo offer should name only what is still archived")
         #expect(archive.activityStatus == .undoPartiallyCompleted)
         #expect(entry.title == "Archived 10 messages")
-        #expect(entry.statusSummary == "Partly undone — 4 of 10 put back, 6 still archived")
+        #expect(entry.statusSummary == "Partly undone: 4 of 10 put back, 6 still archived")
     }
 
     @Test("Narrowing an undo offer changes the offer and not the history")
@@ -165,7 +165,7 @@ struct MutationHistoryTests {
     @Test("A failed undo is its own record, and does not unsay the archive")
     func failedUndoIsRecordedSeparately() {
         // An undo Gmail refused entirely. The archive it was trying to reverse is untouched by
-        // it — which is the property that stops a failed undo from being reported as though the
+        // it, which is the property that stops a failed undo from being reported as though the
         // mail had never been archived.
         let archive = transaction(messageIDs: ["m-1", "m-2"], undoState: .undoable)
         let failedUndo = transaction(
@@ -186,7 +186,7 @@ struct MutationHistoryTests {
     @Test("A history row is descriptive with no message metadata at all")
     func rowsNeedNoMailboxMetadata() {
         // The privacy claim, as a test. An entry built with an empty cache still produces a
-        // headline, a status, and an explanation — which is why the record does not need to keep
+        // headline, a status, and an explanation, which is why the record does not need to keep
         // subjects or senders to stay useful.
         let entry = ActivityEntry(transaction: transaction(messageIDs: ["m-1", "m-2", "m-3"]))
 
@@ -217,7 +217,7 @@ struct MutationHistoryTests {
 
         // The one thing the cache adds to the headline, and the shape of the difference matters:
         // both rows say the same thing happened to the same number of messages, and the resolved
-        // one adds that they had one sender. That phrase is decoration derived from the cache —
+        // one adds that they had one sender. That phrase is decoration derived from the cache;
         // the transaction itself still holds no sender, which is why the unresolved row cannot
         // say it and is none the poorer for it.
         #expect(withCache.title == "Archived 3 messages from one sender")
@@ -246,7 +246,7 @@ struct MutationHistoryTests {
             transaction(messageIDs: ["m-9"], selectedCount: 4, confirmedCount: 4, undoState: .superseded),
             transaction(operation: .restoreToInbox, messageIDs: ["m-1"], undoState: .notUndoable),
         ]
-        // Phrases that would be *false* or self-congratulatory, not the word "delete" itself —
+        // Phrases that would be *false* or self-congratulatory, not the word "delete" itself:
         // the wording has to be free to say that archiving is not deleting, and does.
         let forbidden = [
             "was deleted", "were deleted", "permanently removed", "removed forever",

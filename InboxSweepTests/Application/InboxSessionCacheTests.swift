@@ -249,8 +249,8 @@ struct InboxSessionCacheTests {
 
     @Test("Stored summaries that disagree with their messages are rebuilt, not shown")
     func rebuildsDivergedSummaries() async throws {
-        // A file whose summaries describe only part of its messages — a half-written save, or
-        // one from a build that aggregated differently.
+        // A file whose summaries describe only part of its messages, from a half-written save
+        // or a build that aggregated differently.
         let messages = storedMessages()
         let cache = RecordingInboxCache(seeded: storedWindow(
             senders: SenderAggregator.aggregate(Array(messages.prefix(1))),

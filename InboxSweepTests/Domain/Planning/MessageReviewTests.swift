@@ -5,7 +5,7 @@ import Testing
 /// Looking at the individual messages behind a proposal, and at what a plan would do to each.
 ///
 /// The point of this screen is auditability: a count nobody can check is a claim, and a named
-/// list is evidence. So the cases that matter most here are the ones tying the two together —
+/// list is evidence. So the cases that matter most here are the ones tying the two together:
 /// the per-message verdicts must add up to exactly the totals shown beside them.
 @MainActor
 @Suite("Message review")
@@ -153,7 +153,7 @@ struct MessageReviewTests {
         let model = await model(with: mixedSender())
         let reviewed = model.reviewedMessages(forSenderKey: senderKey, under: .archiveMessagesOlderThan(days: 5))
 
-        // The starred message is 20 days old, so the cutoff *does* reach it — and protection
+        // The starred message is 20 days old, so the cutoff *does* reach it, and protection
         // is what spares it.
         let starred = try #require(reviewed.first { $0.id == MailMessageID("starred-1") })
         #expect(starred.membership == .retained(.starred))

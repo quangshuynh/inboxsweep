@@ -21,13 +21,13 @@ nonisolated struct SavedCleanupSelection: Hashable, Sendable, Identifiable {
 /// The choices a user made in the preview, kept so that closing the sheet does not discard
 /// twenty minutes of deciding.
 ///
-/// **What is stored is the choosing, not the conclusions.** Sender keys and chosen actions —
+/// **What is stored is the choosing, not the conclusions.** Sender keys and chosen actions,
 /// no proposals, no reasons, no protection verdicts, no counts of what would be affected. All
 /// of that is derived from the loaded window and is recomputed on every launch, so a saved plan
 /// cannot carry a stale verdict back onto the screen.
 ///
 /// **A saved plan is not a scheduled one.** There is nothing in the app that could carry one
-/// out, and restoring one re-opens a preview — it does not act, and there is no code path from
+/// out, and restoring one re-opens a preview: it does not act, and there is no code path from
 /// here to a provider. ``SafetyBoundaryTests`` asserts both.
 nonisolated struct SavedCleanupPlan: Hashable, Sendable {
 
@@ -52,8 +52,8 @@ nonisolated struct SavedCleanupPlan: Hashable, Sendable {
 
     /// How many messages were loaded when the choices were made.
     ///
-    /// A plan decided over 250 messages is not the same plan over 2,500 — the same action
-    /// reaches a different set of mail — so the window size is part of what makes a plan stale.
+    /// A plan decided over 250 messages is not the same plan over 2,500: the same action
+    /// reaches a different set of mail, so the window size is part of what makes a plan stale.
     let loadedMessageCount: Int
 
     let savedAt: Date
@@ -90,7 +90,7 @@ nonisolated struct SavedCleanupPlan: Hashable, Sendable {
 /// A reason a saved plan no longer describes what the user decided.
 ///
 /// Stated rather than silently corrected. A plan restored onto a window that has doubled in
-/// size, or beside a ruleset that has changed its mind, is *usable* — but the user should be the
+/// size, or beside a ruleset that has changed its mind, is *usable*, but the user should be the
 /// one to decide that, and they cannot if nothing tells them anything moved.
 nonisolated enum CleanupPlanStaleness: Hashable, Sendable, Identifiable {
 

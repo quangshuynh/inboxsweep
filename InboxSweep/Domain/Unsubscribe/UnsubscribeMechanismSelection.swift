@@ -5,12 +5,12 @@ import Foundation
 ///
 /// ### The rules
 ///
-/// 1. **Standards-based one-click HTTPS**, when — and only when — both headers agreed.
+/// 1. **Standards-based one-click HTTPS**, when (and only when) both headers agreed.
 /// 2. **Ordinary HTTPS web unsubscribe**, the first such URL in header order.
 /// 3. **Mail handoff**, the first `mailto` in header order.
 ///
 /// Ties inside each tier are broken by **header order**: the first value the sender listed
-/// wins. Not shortest, not "most official-looking", not by host — header order is the only
+/// wins. Not shortest, not "most official-looking", not by host: header order is the only
 /// ordering the sender actually expressed, and any other rule would be InboxSweep deciding
 /// which of somebody's own endpoints it prefers.
 ///
@@ -21,7 +21,7 @@ import Foundation
 /// the review sheet lists ``UnsubscribeSelection/alternatives`` alongside the choice, so a
 /// sender offering a one-click endpoint *and* a web page *and* a mail address shows all three
 /// and says which one the button will use. Requirement 19 of this interval is not "choose
-/// correctly" — it is "choose visibly".
+/// correctly", it is "choose visibly".
 nonisolated enum UnsubscribeMechanismSelection {
 
     /// Every mechanism the metadata supports, best first.
@@ -44,7 +44,7 @@ nonisolated enum UnsubscribeMechanismSelection {
 
     /// The mechanism to offer, with everything else it could have offered.
     ///
-    /// `nil` when the metadata names nothing actionable — which is a state, not a failure.
+    /// `nil` when the metadata names nothing actionable, which is a state, not a failure.
     static func select(from metadata: MessageUnsubscribeMetadata) -> UnsubscribeSelection? {
         let ordered = mechanisms(in: metadata)
         guard let chosen = ordered.first else { return nil }
@@ -79,7 +79,7 @@ nonisolated struct UnsubscribeSelection: Hashable, Sendable {
         case .oneClick:
             return """
                 This sender supports the one-click unsubscribe standard, so that is what InboxSweep \
-                offers — it is the only mechanism defined precisely enough for an app to use \
+                offers: it is the only mechanism defined precisely enough for an app to use \
                 without guessing. The others are listed below and you can use them instead.
                 """
         case .webPage:

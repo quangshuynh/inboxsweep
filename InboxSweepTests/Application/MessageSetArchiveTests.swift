@@ -2,14 +2,14 @@ import Foundation
 import Testing
 @testable import InboxSweep
 
-/// Archiving a set: what goes out, what comes back, and — mostly — what a run that half worked
+/// Archiving a set: what goes out, what comes back, and (mostly) what a run that half worked
 /// does to everything else.
 ///
 /// The partial-failure cases are the bulk of this suite on purpose. Sending twelve `POST`s
 /// correctly is the easy part. The hard part is that a set of twelve where four are refused has
 /// to leave eight messages archived, four messages in the Inbox, a sender count that says 4, a
 /// recomputed proposal, a cache file that matches, an undo offer naming eight identifiers and not
-/// twelve, and a screen that says "8 archived, 4 failed" rather than "failed" — and none of that
+/// twelve, and a screen that says "8 archived, 4 failed" rather than "failed", and none of that
 /// can be checked by inspection.
 @MainActor
 @Suite("Archiving a set of messages")
@@ -150,7 +150,7 @@ struct MessageSetArchiveTests {
 
         // Nothing is un-archived to tidy up the result. Those four messages really did leave the
         // Inbox, and putting them back because a fifth failed would be the app rewriting history
-        // it does not own — and would be four more writes nobody asked for.
+        // it does not own, and would be four more writes nobody asked for.
         #expect(session.mutationActivity?.confirmedCount == 4)
         #expect(archiver.undoRequests.isEmpty, "A failure triggered an automatic rollback")
         #expect(try #require(session.state.snapshot).loadedMessageCount == 2)
@@ -233,7 +233,7 @@ struct MessageSetArchiveTests {
         #expect(archiver.archiveRequests.count == 20)
         #expect(
             archiver.peakConcurrentRequests == 1,
-            "\(archiver.peakConcurrentRequests) requests were in flight at once — the run fanned out"
+            "\(archiver.peakConcurrentRequests) requests were in flight at once, so the run fanned out"
         )
     }
 
@@ -242,7 +242,7 @@ struct MessageSetArchiveTests {
         let messages = (1...4).map { message("m-\($0)", daysAgo: Double($0)) }
         let (session, _, archiver) = await makeSession(messages: messages)
 
-        // The UI selects into a Set, so this cannot arrive from the table — but the boundary is
+        // The UI selects into a Set, so this cannot arrive from the table, but the boundary is
         // where it has to be impossible, not where it happens to be unlikely.
         let frozen = try #require(MailArchiveSelection(
             messageIDs: [MailMessageID("m-1"), MailMessageID("m-1"), MailMessageID("m-2")],
@@ -289,7 +289,7 @@ struct MessageSetArchiveTests {
         let (session, _, archiver) = await makeSession(messages: messages, records: records)
         let frozen = try selection(session, messages, ["m-1", "m-2", "m-3"])
 
-        // Both presses land before the first finishes — the case a disabled button does not
+        // Both presses land before the first finishes: the case a disabled button does not
         // cover, because the disabling happens a render later.
         let first = session.archiveSelection(frozen)
         let second = session.archiveSelection(frozen)
@@ -414,7 +414,7 @@ struct MessageSetArchiveTests {
         #expect(try #require(session.state.snapshot).loadedMessageCount == 5)
 
         // Gmail's Inbox list no longer returns the three that were archived, and still returns
-        // the one it refused — which is exactly what local state already says.
+        // the one it refused, which is exactly what local state already says.
         let archived: Set<MailMessageID> = [MailMessageID("m-1"), MailMessageID("m-2"), MailMessageID("m-4")]
         await provider.setFetchBehavior(.pages([MailMessagePage(
             messages: messages.filter { !archived.contains($0.id) }

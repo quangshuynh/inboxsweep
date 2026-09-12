@@ -11,7 +11,7 @@ nonisolated protocol MailAccountAuthorizing: Sendable {
 
     /// Re-establishes a connection from previously stored credentials, if any.
     ///
-    /// Non-throwing, because every way this can end is a case of ``MailRestoreOutcome`` —
+    /// Non-throwing, because every way this can end is a case of ``MailRestoreOutcome``,
     /// including the failures. An implementation that threw would push callers back towards
     /// `try?`, which is precisely how a Keychain refusal came to be reported as "no account".
     func restoreConnection() async -> MailRestoreOutcome
@@ -22,13 +22,13 @@ nonisolated protocol MailAccountAuthorizing: Sendable {
     /// Whether the last successful sign-in was persisted for the next launch.
     ///
     /// Asked *after* connecting. A provider that cannot persist still returns a usable account
-    /// — the session works — so this is a warning the UI can show, never a failure.
+    /// (the session works) so this is a warning the UI can show, never a failure.
     func storedAuthorizationState() async -> StoredAuthorizationState
 
     /// Discards stored credentials and returns to a signed-out state.
     ///
     /// Non-throwing: signing out must always succeed from the user's point of view, even if
-    /// revoking remotely fails. Not *silent*, though — the returned
+    /// revoking remotely fails. Not *silent*, though: the returned
     /// ``MailDisconnectOutcome`` says whether the stored credential was really removed, because
     /// "we told you that you were signed out and left the refresh token where it was" is not a
     /// thing this app should be able to do without saying so.
@@ -38,8 +38,8 @@ nonisolated protocol MailAccountAuthorizing: Sendable {
 /// Reads bounded windows of message metadata.
 ///
 /// Still has no method that writes anything, and still will not gain one. Since this interval
-/// the app *can* change one thing about a mailbox — whether a single named message is in the
-/// inbox — and that lives behind ``MailMessageArchiving``, a separate protocol a provider
+/// the app *can* change one thing about a mailbox: whether a single named message is in the
+/// inbox, and that lives behind ``MailMessageArchiving``, a separate protocol a provider
 /// vends only if it can perform it. Keeping the two apart is what lets a reader be a reader:
 /// nothing that holds only this protocol has a path to a mutation, and `SafetyBoundaryTests`
 /// asserts that no method here is named after one.
@@ -78,7 +78,7 @@ nonisolated protocol MailProvider: MailAccountAuthorizing, MailMessageFetching {
     /// neither, and the two are switched on independently.
     ///
     /// Its absence does not disable *detection*. Reading a sender's unsubscribe metadata is
-    /// domain work over mail that has already been fetched, and it happens on every provider —
+    /// domain work over mail that has already been fetched, and it happens on every provider,
     /// including the synthetic mailbox. This is only about whether the app can send the one
     /// standards-based request.
     var unsubscriber: (any MailUnsubscribing)? { get }

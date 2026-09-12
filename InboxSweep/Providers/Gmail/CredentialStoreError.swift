@@ -34,7 +34,7 @@ nonisolated struct KeychainStatus: Hashable, Sendable, CustomStringConvertible {
         }
     }
 
-    /// `errSecMissingEntitlement (-34018)` — safe to show, carries no secret.
+    /// `errSecMissingEntitlement (-34018)`: safe to show, carries no secret.
     var description: String { "\(name) (\(rawValue))" }
 
     // MARK: - Classification
@@ -47,7 +47,7 @@ nonisolated struct KeychainStatus: Hashable, Sendable, CustomStringConvertible {
     /// The distinction that matters: a sandboxed macOS app signed without an
     /// `application-identifier` or `keychain-access-groups` entitlement gets
     /// `errSecMissingEntitlement` from every data-protection-keychain write. That is not a
-    /// failure of the save — it is the wrong keychain for this process — which is why
+    /// failure of the save (it is the wrong keychain for this process) which is why
     /// ``KeychainCredentialStore`` treats it as a reason to try the next one rather than as an
     /// error to report. See `Docs/SessionRestore.md`.
     var isKeychainUnavailable: Bool {

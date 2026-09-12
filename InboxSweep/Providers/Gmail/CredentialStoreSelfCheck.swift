@@ -9,8 +9,8 @@ import Foundation
 ///
 /// The first cannot be answered by the unit tests. They run inside the app process and prove
 /// the `SecItem*` calls work, but they run inside *one* process; only a real quit and a real
-/// relaunch proves persistence, and only running the same `.app` twice — versus rebuilding in
-/// between — tells a same-binary relaunch apart from a re-sign.
+/// relaunch proves persistence, and only running the same `.app` twice (versus rebuilding in
+/// between) tells a same-binary relaunch apart from a re-sign.
 ///
 /// The second cannot be answered by ``KeychainCredentialStore`` in normal use, because its
 /// fallback is deliberately silent. ``CredentialStoreDiagnostics`` pins each keychain so the
@@ -18,8 +18,8 @@ import Foundation
 ///
 /// ## Why this is compiled into every configuration
 ///
-/// It used to be `#if DEBUG`. That made the one build whose behaviour matters most — the
-/// signed Release app the user actually launches — the one build that could not be asked. A
+/// It used to be `#if DEBUG`. That made the one build whose behaviour matters most, the
+/// signed Release app the user actually launches, the one build that could not be asked. A
 /// Debug and a Release build of this app are signed with the same identity and carry the same
 /// entitlements, so the answers *ought* to match; "ought to" is the kind of claim this whole
 /// area of the app exists to stop making.

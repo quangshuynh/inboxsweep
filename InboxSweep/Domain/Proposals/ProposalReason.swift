@@ -60,7 +60,7 @@ nonisolated extension Array where Element == ProposalReason {
     /// Reasons in their fixed presentation order.
     ///
     /// Sorted by kind, with the original order preserved inside a kind, so a sender's
-    /// explanation reads identically on every launch — the same stability the sender list
+    /// explanation reads identically on every launch: the same stability the sender list
     /// itself is held to.
     var inPresentationOrder: [ProposalReason] {
         enumerated()

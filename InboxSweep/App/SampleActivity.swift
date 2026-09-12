@@ -5,15 +5,15 @@ import Foundation
 ///
 /// ### Why this exists
 ///
-/// The Activity screen has four states that read quite differently — a complete archive with its
-/// undo still open, a partial one, one that has since been partly undone, and a restore — and
+/// The Activity screen has four states that read quite differently: a complete archive with its
+/// undo still open, a partial one, one that has since been partly undone, and a restore, and
 /// none of them can occur on synthetic data. ``SampleMailProvider`` vends no mutation boundary, so
 /// a sample run has nothing that could produce a transaction. That is the right design, and it
 /// left the populated screen coverable only by hand and by a `#Preview`.
 ///
 /// So the transactions are made rather than performed. This is the *record* of work, seeded into
 /// an in-memory store; it is not a capability. The session it is handed to still has no archiver,
-/// still reports `archiveCapability == .unsupported`, and still offers no undo — which is itself
+/// still reports `archiveCapability == .unsupported`, and still offers no undo, which is itself
 /// worth seeing on screen, and is what a UI test asserts.
 ///
 /// Debug-only, behind a launch argument, and in-memory throughout: nothing here is written to
@@ -23,7 +23,7 @@ enum SampleActivity {
     /// Launch argument that seeds the sample session's history. Matches
     /// `UITestLaunchArgument.sampleActivity`.
     ///
-    /// Ignored unless the app is also running on synthetic data — there is no meaning to seeding
+    /// Ignored unless the app is also running on synthetic data: there is no meaning to seeding
     /// invented history beside a real mailbox, and no way to do so by accident.
     static let launchArgument = "--sample-activity"
 

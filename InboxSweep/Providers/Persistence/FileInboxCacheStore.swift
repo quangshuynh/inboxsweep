@@ -5,14 +5,14 @@ import Foundation
 ///
 /// An actor, so a save that overlaps a load or another save is serialized rather than racing
 /// on the same file. Every operation is best-effort: nothing here throws, because a cache that
-/// cannot be read is a refetch and a cache that cannot be written is a refetch next launch —
+/// cannot be read is a refetch and a cache that cannot be written is a refetch next launch,
 /// neither is a failure the user needs to hear about.
 ///
 /// ### What ends up on disk
 ///
 /// Message metadata: sender, subject, date, labels, and whether a `List-Unsubscribe` header
 /// was present. No message body, because ``MailMessage`` has nowhere to hold one. No token of
-/// any kind — the refresh token stays in the Keychain and access tokens are never persisted at
+/// any kind: the refresh token stays in the Keychain and access tokens are never persisted at
 /// all.
 ///
 /// The file lives in the sandboxed container's Application Support directory, is written with

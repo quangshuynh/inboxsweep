@@ -4,7 +4,7 @@ import Foundation
 ///
 /// This is the *set* form of ``MailArchiveRequest``, and it is deliberately shaped the same way:
 /// a list of provider message identifiers and the account they belong to, and nothing else.
-/// There is no label parameter, no sender key, no query, no action, and no plan — so the only
+/// There is no label parameter, no sender key, no query, no action, and no plan, so the only
 /// thing this type can express is "these exact messages", which is what makes a set archive
 /// checkable against what the user confirmed.
 ///
@@ -17,7 +17,7 @@ import Foundation
 /// here against the live window immediately before execution for exactly that reason.
 ///
 /// Constructing one is free and sends nothing. It is a description of an intent, not an
-/// instruction — the only thing that executes it is an explicit confirmation.
+/// instruction: the only thing that executes it is an explicit confirmation.
 nonisolated struct MailArchiveSelection: Hashable, Sendable {
 
     /// The messages to act on: deduplicated, in the order the user's screen listed them.
@@ -37,7 +37,7 @@ nonisolated struct MailArchiveSelection: Hashable, Sendable {
     /// Identifies this *logical* set mutation.
     ///
     /// Stable across a repeated submission of the same confirmation, and reused as the
-    /// identifier of the durable ``MailMutationTransaction`` the operation writes — so one
+    /// identifier of the durable ``MailMutationTransaction`` the operation writes, so one
     /// confirmation is one transaction however many times its button is pressed.
     let operationID: UUID
 
@@ -61,7 +61,7 @@ nonisolated struct MailArchiveSelection: Hashable, Sendable {
     /// The per-message request for one member of the set.
     ///
     /// Every message in a set goes through the same ``MailArchiveRequest`` a single archive
-    /// does — same type, same fields, same validation at the boundary. That is the whole of the
+    /// does, same type, same fields, same validation at the boundary. That is the whole of the
     /// generalization: a set is a sequence of the proven single-message call, not a second way
     /// to reach Gmail.
     ///
@@ -136,7 +136,7 @@ nonisolated struct MailMessageMutationResult: Hashable, Sendable, Identifiable {
 /// What a whole set mutation did, message by message.
 ///
 /// Returned rather than thrown, even when every message failed. A set operation does not have
-/// one outcome — it has as many outcomes as it had messages — and a thrown error would have to
+/// one outcome (it has as many outcomes as it had messages) and a thrown error would have to
 /// discard the confirmed ones to be thrown at all.
 nonisolated struct MailArchiveSetReceipt: Hashable, Sendable {
 
@@ -207,7 +207,7 @@ nonisolated struct MailArchiveSetReceipt: Hashable, Sendable {
     /// Every message did what was asked.
     var isCompleteSuccess: Bool { confirmedCount == selectedCount && selectedCount > 0 }
 
-    /// Some changed and some did not — the case this whole type exists for.
+    /// Some changed and some did not: the case this whole type exists for.
     var isPartialSuccess: Bool { confirmedCount > 0 && confirmedCount < selectedCount }
 
     /// Nothing changed.

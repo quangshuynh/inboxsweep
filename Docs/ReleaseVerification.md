@@ -1,7 +1,7 @@
 # Signed Release verification
 
 What was measured about how InboxSweep is signed, which Keychain that signing gets it, and
-whether a real Gmail sign-in survives quitting the app — on the strongest signed build this
+whether a real Gmail sign-in survives quitting the app, on the strongest signed build this
 machine can produce.
 
 This document records measurements. Where something was not measured it says so, and it does
@@ -31,12 +31,12 @@ Automatic signing, team `W785GN4X52`, against the one certificate installed on t
 | Bundle identifier | `quang.InboxSweep` |
 | App Sandbox | `ENABLE_APP_SANDBOX = YES` |
 | Hardened runtime | `ENABLE_HARDENED_RUNTIME = YES` (`flags=0x10000(runtime)` on the built app) |
-| Entitlements file | none — capabilities come from build settings |
+| Entitlements file | none: capabilities come from build settings |
 | Provisioning profile | **not embedded** |
 
 ### Developer ID was not available
 
-Not assumed — asked:
+Not assumed. Asked:
 
 ```bash
 security find-identity -v -p codesigning
@@ -81,7 +81,7 @@ embeds one. The profiles present in
 apps; none names `quang.InboxSweep` and none is for macOS.
 
 Obtaining one would mean registering a macOS App ID for `quang.InboxSweep` against the team and
-generating a Mac development profile — an action on the developer's Apple account, so it was
+generating a Mac development profile: an action on the developer's Apple account, so it was
 not taken automatically.
 
 ## 2. Entitlements on the built Release app
@@ -116,7 +116,7 @@ designated => identifier "quang.InboxSweep" and anchor apple generic
   and certificate 1[field.1.2.840.113635.100.6.2.1] exists
 ```
 
-No code directory hash appears in it, which is why a rebuild does not lose Keychain access —
+No code directory hash appears in it, which is why a rebuild does not lose Keychain access;
 see §5.
 
 ## 3. Which Keychain this build actually gets
@@ -126,8 +126,8 @@ and **the fallback is deliberately silent**. That silence is right in production
 for verification: a save that got what it asked for and a save that fell back look identical.
 
 `CredentialStoreDiagnostics` removes the ambiguity by pinning one keychain at a time and
-running the *real* `KeychainCredentialStore` through a full round trip — save, load, replace,
-reload, delete, confirm-deleted — so a keychain this process cannot use reports itself rather
+running the *real* `KeychainCredentialStore` through a full round trip: save, load, replace,
+reload, delete, confirm-deleted, so a keychain this process cannot use reports itself rather
 than handing the question to the next one.
 
 Against the signed Release app:
@@ -156,7 +156,7 @@ app detects that condition by its status code rather than by guessing, and repor
 `round-tripped` means all six steps passed, against `KeychainCredentialStore` itself rather
 than a mock: save succeeded, the saved value read back byte-identical, a replacement replaced
 rather than duplicated, the item was found in the keychain it was written to, deletion
-succeeded, and a read after deletion returned nothing. No fallback was involved — the probe was
+succeeded, and a read after deletion returned nothing. No fallback was involved: the probe was
 pinned, so a result from the other keychain was not reachable.
 
 ### Where the real credential lives
@@ -184,7 +184,7 @@ run 3  SELFCHECK restored keychain=login keychain
 ```
 
 **Restores**, on the signed Release binary. No prompt, no re-authorization, and the same
-keychain both times — a build that had silently changed backends would otherwise look identical
+keychain both times: a build that had silently changed backends would otherwise look identical
 to one that had not.
 
 ## 5. Rebuilt and re-signed, then launched
@@ -210,7 +210,7 @@ item becomes another app's as far as the Keychain is concerned. The app reports 
 
 ## 6. Live Gmail round trip
 
-A real Gmail account, read-only, on the signed Release app — the same `.app` throughout, cdhash
+A real Gmail account, read-only, on the signed Release app: the same `.app` throughout, cdhash
 `9e38d286adcdd925cdc3f12bb68102f44416ab71`. The sign-in itself was completed by the account
 holder in Google's own window; nothing here typed a password.
 
@@ -219,20 +219,20 @@ holder in Google's own window; nothing here typed a password.
 | Connect, complete Google OAuth, load live Gmail metadata | 250 messages, 82 senders |
 | Which backend stored the refresh credential | `BACKEND Credential storage: Login Keychain fallback` |
 | Quit normally, reopen the same `.app` | No Google sign-in or consent window |
-| Account identity restored | Yes — the cache file is named for the SHA-256 of the restored address, and the running app matched it |
-| Cached dashboard restored | Yes, and the cache file was **not** rewritten on relaunch — the window came from disk, costing no Gmail quota |
+| Account identity restored | Yes: the cache file is named for the SHA-256 of the restored address, and the running app matched it |
+| Cached dashboard restored | Yes, and the cache file was **not** rewritten on relaunch: the window came from disk, costing no Gmail quota |
 | Refresh after restore | **Reload** rewrote the cache, `saved_at` 1789092349 → 1789092609, 250 messages and 82 senders read fresh |
-| Proposals recomputed | Structurally — the cache record has no field for a proposal or a verdict, so every launch derives them from the stored metadata |
+| Proposals recomputed | Structurally: the cache record has no field for a proposal or a verdict, so every launch derives them from the stored metadata |
 | Mailbox mutation | None possible: the granted scope is `gmail.metadata`, and no write method exists at the provider boundary. `SafetyBoundaryTests` asserts both |
 
-The refresh is the load-bearing step. It proves the *stored* credential — not a live session — was
+The refresh is the load-bearing step. It proves the *stored* credential (not a live session) was
 exchanged for a new access token and used against Gmail, which is the single thing a
 credential store exists to make possible.
 
 ### A defect the live run exposed
 
 With a real credential in the Keychain, the UI test for the signed-out screen failed. It
-launched the app with no arguments and asserted that the signed-out screen appeared — which is
+launched the app with no arguments and asserted that the signed-out screen appeared, which is
 true only on a Mac that is *not* connected to Gmail. On a connected one the app restored, landed
 on the dashboard, and the test run went through the developer's real mailbox.
 
@@ -247,15 +247,15 @@ credential and cache are untouched by the run.
 
 It establishes that a credential written by this signed Release build, into the login keychain,
 survives a normal quit and is usable against Gmail on the next launch of the same binary. It
-says nothing about a distribution build, and nothing about the data protection keychain — see
+says nothing about a distribution build, and nothing about the data protection keychain; see
 the limitations below.
 
 ## Limitations of what was verified
 
 - **Development signing, not distribution signing.** Everything above is an Apple
   Development-signed build carrying `get-task-allow`. A Developer ID or App Store build is
-  signed by a different certificate, would not carry that entitlement, and — if it embedded a
-  provisioning profile — would use the **data protection keychain** instead of the login
+  signed by a different certificate, would not carry that entitlement, and (if it embedded a
+  provisioning profile) would use the **data protection keychain** instead of the login
   keychain. None of that has been built or tested here, because no such certificate is
   installed.
 - **The data protection keychain path is unexercised.** Its code path exists, is preferred, and
@@ -264,6 +264,136 @@ the limitations below.
 - **Re-signing with a different identity was not tested.** The behaviour described at the end of
   §5 follows from the designated requirement; it was not measured.
 - **One machine, one account, one macOS version.** macOS 26.6.2, Xcode 26.6.
+
+## The UI test harness, and what six full runs measured
+
+Interval 10 left the UI suite green but not reliably green: six of eleven consecutive full runs
+had one failure, spread across unrelated cases. Interval 11 reproduced it on the first run and
+found **five** separate causes. None was in the product. All five are recorded here because each
+one was measured, and because the shape of the mistake repeats.
+
+### 1. Hittable is not the same as clickable
+
+`clickWhenReady` waited for `isHittable`, which is geometric: it asks whether a click would land
+on the element, not whether the element would do anything with it. A disabled SwiftUI button
+exists and is hittable. `dashboard.previewCleanupButton` is disabled until a sender is selected,
+and the runner's own log shows the consequence:
+
+```
+t =  8.53s Click "The Daily Digest" StaticText
+t = 11.31s Checking `isHittable == 1` for "dashboard.previewCleanupButton"
+t = 11.52s Click "dashboard.previewCleanupButton" Button
+t = 12.21s Waiting 20.0s for "cleanupPlan.screen" Any to exist   <- never appears
+```
+
+The click was swallowed and the case failed twenty seconds later on an assertion about a sheet
+that was never going to open. The wait is now `isHittable && isEnabled`, which is a **stronger**
+assertion, and every click in the file goes through it.
+
+### 2. The window placement was not idempotent, and nobody checked it
+
+Interval 9 issued one `toggleFullScreen` on the first `onAppear` and assumed it worked.
+Terminating an app that owns a full-screen Space destroys that Space, and a request issued during
+that teardown is dropped with no error. Measured: a case found the sender table at t=6.7s, waited
+twenty seconds for a sender's name, then polled `isHittable` for twenty more and failed naming
+the sender row. The sender row was never the problem.
+
+`UITestWindow` now re-asserts the request until the window's own `styleMask` says it is full
+screen, holds that state for the rest of the launch, and publishes how far it got as a hidden
+accessibility element that every case waits on before touching anything. A harness failure now
+reads as one.
+
+### 3. A saved full-screen frame poisoned every later launch
+
+The worst of the five, and the one that looked least like a test problem. SwiftUI autosaves the
+window frame into the app's own `NSUserDefaults`, and a window that was full screen when the
+process ended saves a full-screen frame. The Space it belonged to is gone by the next launch, and
+macOS then brings the app up with **no window at all**.
+
+Every case in the suite failed this way for an afternoon. The app process was alive, its
+accessibility tree held a menu bar and nothing else, and `System Events` agreed there were zero
+windows. It reproduced with the whole harness disabled, which is what ruled the harness out, and
+`defaults delete quang.InboxSweep` fixed it instantly. `UITestWindow` now clears the autosave
+name, so a launch under the test argument neither reads a saved frame nor writes one. An ordinary
+launch is untouched.
+
+### 4. The placement was re-configuring the app's sheets
+
+A sheet is an `NSWindow` that `canBecomeMain`, so it matched the placement filter. Harmless while
+the placement ran once at launch; not harmless once it became a loop holding the state for the
+life of the process. Every half second it was calling `setContentSize`, `center()`, and
+`toggleFullScreen` on whatever sheet was up, and `raise()` was ordering sheets front independently
+of their parent, which separates a sheet from its window and makes it go away.
+
+Measured: three cases failed on a footer button, and the accessibility tree in the failure showed
+the app back on the dashboard with no sheet at all.
+
+### 5. Activating an already-frontmost app switches Spaces
+
+`XCUIApplication.activate()` before each click was added to stop XCUITest's built-in interruption
+handlers running, which cost **seventy-five seconds** on one measured click while it asked four
+other applications' windows whether they were a Bluetooth setup assistant. It fixed that and
+created a smaller problem on every other click: activating an app that owns a full-screen Space
+makes macOS switch Spaces, and during the switch its accessibility tree is briefly unavailable.
+Three cases failed reading "appeared but never became clickable: it is no longer in the app's
+accessibility tree". It is now conditional on the app having actually lost the foreground.
+
+### What none of this is
+
+No sleep, no retry of a failed assertion, no retried click, no raised timeout, no skip, no
+disabled test, no swallowed assertion, and no test-order dependency. Two of the five changes make
+the suite assert *more* than it did. The one timeout that changed is
+`windowReadyTimeout`, which is new, and it is sized against the app's own bounded retry budget
+rather than against a hope.
+
+### What ten consecutive complete runs measured
+
+Ten complete runs of the whole test plan, back to back, on the machine this was developed on.
+Each run is the unit target and the UI target together.
+
+| | Runs | Cases |
+| --- | --- | --- |
+| Unit | 10 of 10 clean | **0 failures** in roughly 7,430 cases |
+| UI | **6 of 10** clean | 9 failures in 200 cases, 4.5% |
+
+The longest clean streak was four consecutive runs. Failures cluster rather than spread: two runs
+account for seven of the nine, and six runs have none at all. No case failed more than twice, and
+the six cases that failed at least once are spread across unrelated journeys.
+
+**Every one of the nine is the same shape**, and it is the shape of a machine rather than of a
+defect: an element the runner found a moment earlier becomes unreachable, or a click is accepted
+and does nothing, and the assertion that notices it is the next one. The messages are "appeared
+but never became clickable: it is no longer in the app's accessibility tree", "Unable to find hit
+point for ScrollView", and a screen that never opened after a press that was reported as
+delivered.
+
+That is what happens when another application takes the screen while the suite is driving the
+app, and this machine has several that do: the earlier runner log naming Teams, a browser, Finder
+and a chat client as interrupting elements is in section 5 above. The app-side placement recovers
+within half a second of noticing, which is why most runs are clean, and it cannot recover from an
+interruption that lands between a check and the click it guards.
+
+**This is reported rather than worked around.** None of the nine was made to pass by a retry, a
+sleep, a skip, or a weakened assertion. Interval 10's rate was one failure in six of eleven runs
+with no diagnosis; this is one failure in four of ten runs, every failure diagnosed to a family,
+and the unit suite moved from "did not fail today" to zero failures in ten measured runs.
+
+What would settle it is a machine with nothing else running, which is what the next interval's CI
+work is for. Whether the full-screen workaround is needed at all on a clean runner is an open
+question and an explicitly reserved part of that interval.
+
+### Two product defects the harness work found
+
+Both were found by running the app by hand, because the suite could not run at the time, and both
+would have been caught by a case asserting that `dashboard.coverageHeadline` is still present
+after a rule pass:
+
+- the rule-run banner broke the dashboard outright. Wrapping `Text` laid out against whatever
+  width two buttons leave over reports an enormous intrinsic height, and the header, the filter
+  bar, and the load bar were pushed off the top of the window.
+- an accessibility identifier on a screen's **root container** let SwiftUI merge the container
+  into one element, which swallowed two screens' footers while leaving their scrolling content
+  addressable. The identifier belongs on the title, which is what the older screens already did.
 
 ## Remaining build output
 
@@ -281,7 +411,7 @@ an App Intent the app has no use for, so it is left alone and recorded here inst
 
 The `Info.plist in Copy Bundle Resources` warning reported at the end of Interval 4 is **gone**.
 Its cause was an empty `InboxSweep/Info.plist` that was simultaneously the target's
-`INFOPLIST_FILE` and — because `InboxSweep/` is a file-system-synchronized group — an
+`INFOPLIST_FILE` and (because `InboxSweep/` is a file-system-synchronized group) an
 automatically added bundle resource. Both the file and the `INFOPLIST_FILE` setting were removed
 before this interval; `GENERATE_INFOPLIST_FILE = YES` supplies the Info.plist. A clean Release
 build produces no `warning:` line other than the AppIntents note above.
@@ -306,8 +436,26 @@ ls "$APP/Contents/embedded.provisionprofile"       # absent on this configuratio
 "$APP/Contents/MacOS/InboxSweep" --keychain-selfcheck-reset
 ```
 
-Every one of these modes is inert without its launch argument, reaches no UI, and prints no
-token, refresh token, authorization code, or client secret. The probes write synthetic markers
+### Repository text checks
+
+Two one-liners over the files Git actually tracks, so build output, `DerivedData`, and anything
+untracked are outside them by construction.
+
+```bash
+# No em dash anywhere in tracked text. Expected output: 0
+git ls-files -z | xargs -0 grep -o '\u2014' 2>/dev/null | wc -l
+
+# Nothing token-shaped or account-shaped in tracked files. Expected: no output.
+git ls-files -z | xargs -0 grep -nIE 'ya29\.|1//0|refresh_token|client_secret' 2>/dev/null
+```
+
+The first is the check Interval 11 introduced, and it is stated as a command rather than
+automated because there is no CI in this repository yet. The exclusions are exactly what
+`git ls-files` excludes: untracked files, ignored files, and build products. Binary files are
+skipped by `grep` itself, which is why the second one passes `-I`.
+
+Every one of the launch modes above is inert without its launch argument, reaches no UI, and
+prints no token, refresh token, authorization code, or client secret. The probes write synthetic markers
 under diagnostic-only Keychain services and delete them;
 `CredentialStoreDiagnosticsTests` asserts both the cleanup and the absence of secrets in the
 output.

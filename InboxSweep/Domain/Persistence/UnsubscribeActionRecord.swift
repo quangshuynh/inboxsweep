@@ -6,19 +6,19 @@ import Foundation
 ///
 /// Requirement 16 of this interval says not to force unsubscribe into an archive-shaped record
 /// if that makes the semantics dishonest, and it would. A transaction names messages, counts
-/// how many of them a provider confirmed, and carries an undo state — three fields that are
+/// how many of them a provider confirmed, and carries an undo state, three fields that are
 /// either meaningless or actively misleading here. An unsubscribe names no messages. It
 /// confirms nothing about a mailbox. And it has **no undo**: there is no standards-based
 /// inverse of a one-click unsubscribe, and a resubscribe button would be a fabrication.
 ///
 /// So the archive history keeps the shape it has, entry for entry, and this is a second kind of
-/// entry in the same file. Existing records are not rewritten, migrated, or reinterpreted —
+/// entry in the same file. Existing records are not rewritten, migrated, or reinterpreted,
 /// which is what keeps the v2 and v3 guarantees the transaction store documents intact.
 ///
 /// ### What ends up on disk
 ///
 /// An identifier, an account address, which mechanism was used, the destination **host**, an
-/// outcome, a timestamp, and — when there was one — the message whose headers it came from.
+/// outcome, a timestamp, and (when there was one) the message whose headers it came from.
 ///
 /// The host is the one field worth arguing about, because it is third-party metadata derived
 /// from mail. It is kept because without it this file cannot answer the question it exists to
@@ -26,7 +26,7 @@ import Foundation
 /// without saying to whom. Note what is *not* kept: no full URL with its per-recipient token, no
 /// mailto address, no subject, no sender display name, no list identifier. The sender shown on
 /// the Activity row is resolved dynamically from the mailbox cache through
-/// ``sourceMessageID``, exactly as archive history resolves its messages — so the address is
+/// ``sourceMessageID``, exactly as archive history resolves its messages, so the address is
 /// not copied into a second file for the sake of a nicer row.
 nonisolated struct UnsubscribeActionRecord: Identifiable, Hashable, Sendable {
 
@@ -46,7 +46,7 @@ nonisolated struct UnsubscribeActionRecord: Identifiable, Hashable, Sendable {
 
     /// The host or mail domain contacted or opened.
     ///
-    /// Host only — never the path, never the query. An unsubscribe URL's path is frequently a
+    /// Host only, never the path, never the query. An unsubscribe URL's path is frequently a
     /// per-recipient token, and there is no reason for one to be on disk after the request that
     /// used it has been sent.
     let destinationHost: String
@@ -128,7 +128,7 @@ nonisolated struct UnsubscribeActionRecord: Identifiable, Hashable, Sendable {
 
     /// Unsubscribes are never undoable, and this is here to say so in code.
     ///
-    /// There is no standards-based inverse — no "re-subscribe" request RFC 8058 defines, no
+    /// There is no standards-based inverse, no "re-subscribe" request RFC 8058 defines, no
     /// header that names one, nothing a sender is obliged to honour. A button offering to
     /// reverse this would be offering something the app cannot do, and the honest thing is the
     /// constant below.

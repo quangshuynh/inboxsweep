@@ -2,7 +2,7 @@ import Foundation
 
 /// The small amount of English the proposal layer needs to write countable phrases.
 ///
-/// Reasons are built in the domain, not the UI, because they are the *output* of the rules —
+/// Reasons are built in the domain, not the UI, because they are the *output* of the rules:
 /// a reason the UI had to assemble would be a rule living in a view. That means the domain
 /// has to pluralize, and this is the whole of what it needs to do so.
 ///
@@ -68,7 +68,7 @@ nonisolated enum ProposalPhrasing {
         return perHour == 1 ? "About 1 message per hour" : "About \(perHour) messages per hour"
     }
 
-    /// "over about 4 months" — how much history the loaded window covers.
+    /// "over about 4 months": how much history the loaded window covers.
     ///
     /// Returns `nil` for spans under a day, where "over about 0 months" would say nothing.
     static func windowSpan(_ span: TimeInterval) -> String? {

@@ -22,7 +22,7 @@ enum UITestLaunchArgument {
     /// Every case here passes it, and every case that clicks anything **depends** on it. Without
     /// it a case is measuring the developer's desktop: the window comes up wherever it was last
     /// left, other applications' windows lie over it, and every control in the app reports
-    /// `isHittable == false` — a click then fails with an error naming InboxSweep's scroll view
+    /// `isHittable == false`: a click then fails with an error naming InboxSweep's scroll view
     /// rather than the windows that are actually in the way. Full screen is what fixes that: it
     /// gives the window a Space of its own, where there is no other application's window to be
     /// behind.
@@ -33,7 +33,7 @@ enum UITestLaunchArgument {
     ///
     /// Only meaningful alongside ``sampleData``. It seeds *records*, not a capability: the sample
     /// session still has no mutation boundary, so the rows it produces are readable and none of
-    /// them is undoable — which is the state the case asserts.
+    /// them is undoable, which is the state the case asserts.
     static let sampleActivity = "--sample-activity"
 
     /// Gives the synthetic mailbox an in-process one-click unsubscribe boundary and an opener
@@ -43,8 +43,39 @@ enum UITestLaunchArgument {
     /// journeys runnable: the endpoint is `SampleUnsubscriber`, which has no transport at all,
     /// so a case can drive a confirmation all the way to an Activity row without a socket being
     /// opened or a browser being launched. Without it, the sample session has no unsubscribe
-    /// boundary and its confirmation is absent rather than disabled — which is its own thing
+    /// boundary and its confirmation is absent rather than disabled, which is its own thing
     /// worth asserting.
     static let sampleUnsubscribe = "--sample-unsubscribe"
 
+    /// Gives the synthetic mailbox an in-process archive boundary. Matches
+    /// `SampleArchiving.launchArgument`.
+    ///
+    /// Only meaningful alongside ``sampleData``, and off by default for the same reason
+    /// ``sampleUnsubscribe`` is: an ordinary sample run has no mutation boundary at all, so the
+    /// Archive control is *absent* rather than disabled and a synthetic session cannot reach a
+    /// write even by accident. What it vends is `SampleArchiver`, which changes an in-memory
+    /// label set and has no transport to reach Gmail with.
+    static let sampleArchiving = "--sample-archiving"
+
+    /// Seeds one enabled sender rule for the synthetic mailbox. Matches
+    /// `SampleRules.rulesLaunchArgument`.
+    ///
+    /// Only meaningful alongside ``sampleData``. It seeds an *authorization*, not a capability:
+    /// on its own the sample session has no archive boundary, so the rule is listed, inspectable,
+    /// and inert, which is its own thing worth asserting. Paired with ``sampleArchiving`` it is
+    /// what makes a complete rule pass runnable with no socket opened and no real mail touched.
+    static let sampleRules = "--sample-rules"
+
+    /// The accessibility identifier the app publishes its deterministic-window phase under.
+    ///
+    /// Matches `UITestWindow.stateIdentifier`, and the labels it can carry match
+    /// `UITestWindow.Phase`. Waiting on this is what lets a launch failure say *the window never
+    /// became deterministic* rather than blaming the first control a case reaches for.
+    static let windowStateIdentifier = "uiTest.windowState"
+
+    /// The one phase a case may proceed from: full screen, key, and frontmost.
+    static let windowIsReady = "ready"
+
+    /// The phase meaning the app gave up trying to reach that state.
+    static let windowIsUnavailable = "unavailable"
 }

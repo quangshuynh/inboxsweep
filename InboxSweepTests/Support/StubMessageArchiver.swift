@@ -31,7 +31,7 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
     private var upgradeResult: Result<MailMutationCapability, MailMutationError>
 
     /// The labels a receipt reports, keyed by message ID, so the session's reconciliation has
-    /// something realistic to reconcile against — and so an archive followed by an undo reports
+    /// something realistic to reconcile against, and so an archive followed by an undo reports
     /// the right thing both times.
     private var labelsByMessage: [MailMessageID: Set<MailLabel>]
 
@@ -84,7 +84,7 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
     /// than assumed from whatever `authorizeArchiving()` happened to return.
     var capabilityCallCount: Int { lock.withLock { recordedCapabilityCallCount } }
 
-    /// Every request this archiver was asked to perform, in order — the basis for asserting
+    /// Every request this archiver was asked to perform, in order: the basis for asserting
     /// that a double submission produced one call rather than two.
     var allRequests: [MailArchiveRequest] {
         lock.withLock { recordedArchiveRequests + recordedUndoRequests }
@@ -180,7 +180,7 @@ nonisolated final class StubMessageArchiver: MailMessageArchiving, @unchecked Se
         }
         defer { lock.withLock { inFlight -= 1 } }
 
-        // The real adapter checks this before anything else, so the stub does too — otherwise a
+        // The real adapter checks this before anything else, so the stub does too: otherwise a
         // session test could pass while relying on a boundary that never validated anything.
         guard request.accountAddress == lock.withLock({ authenticatedAddress }) else {
             throw MailMutationError.accountChanged

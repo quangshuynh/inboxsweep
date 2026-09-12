@@ -94,7 +94,7 @@ struct PersistentUndoTests {
 
         let transaction = try #require(await records.transactions(for: .testAccount).first)
         // Four identifiers for four archived messages. The two that failed are counted, not
-        // named — there is nothing to undo about a message that never changed.
+        // named: there is nothing to undo about a message that never changed.
         #expect(Set(transaction.succeededMessageIDs.map(\.rawValue)) == ["m-1", "m-3", "m-4", "m-6"])
         #expect(transaction.selectedMessageCount == 6)
         #expect(transaction.failedMessageCount == 2)
@@ -170,7 +170,7 @@ struct PersistentUndoTests {
         await second.undoLastArchive().value
 
         // Three requests, naming the three messages the transaction confirmed, and no others.
-        // Nothing is inferred into the set — not the rest of the sender, not the rest of a thread.
+        // Nothing is inferred into the set, not the rest of the sender, not the rest of a thread.
         #expect(Set(archiver.undoRequests.map(\.messageID.rawValue)) == ["m-2", "m-5", "m-9"])
         #expect(archiver.archiveRequests.isEmpty)
         #expect(second.mutationActivity?.didSucceed == true)
@@ -228,7 +228,7 @@ struct PersistentUndoTests {
         #expect(session.undoableArchive != nil)
         let archiveRequestCount = archiver.archiveRequests.count
 
-        // The adapter is now authenticated as somebody else — a re-authorization that landed in
+        // The adapter is now authenticated as somebody else: a re-authorization that landed in
         // a second Google account is all it takes.
         await provider.setConnection(.connected(MailAccount(
             emailAddress: EmailAddressParser.parse("somebody.else@example.com"),
@@ -250,7 +250,7 @@ struct PersistentUndoTests {
         let first = await makeSession(messages: messages, archiver: StubMessageArchiver(), records: records)
         await first.archiveSelection(try selection(first, messages, ["m-1", "m-2"])).value
 
-        // Next launch, the grant no longer covers archiving — withdrawn from the Google Account.
+        // Next launch, the grant no longer covers archiving: withdrawn from the Google Account.
         let downgraded = StubMessageArchiver(capability: .requiresAdditionalPermission)
         let second = await makeSession(
             messages: messages.filter { !["m-1", "m-2"].contains($0.id.rawValue) },
@@ -314,7 +314,7 @@ struct PersistentUndoTests {
         archiver.setBehavior(.succeeds, forMessage: MailMessageID("m-3"))
         await session.undoLastArchive().value
 
-        // One further request, for the one message still archived — not another three.
+        // One further request, for the one message still archived, not another three.
         #expect(archiver.undoRequests.count == 4, "A repeated undo re-asked about messages already restored")
         #expect(archiver.undoRequests.suffix(1).map(\.messageID) == [MailMessageID("m-3")])
         #expect(session.undoableArchive == nil)
@@ -385,7 +385,7 @@ struct PersistentUndoTests {
         archiver.setArchiveBehavior(.fails(.rateLimited))
         await session.archiveSelection(try selection(session, messages, ["m-3", "m-4"])).value
 
-        // Nothing new is archived, so nothing new is undoable — and the earlier archive is still
+        // Nothing new is archived, so nothing new is undoable, and the earlier archive is still
         // a true statement about two messages that are still out of the Inbox.
         #expect(session.undoableArchive?.id == firstID, "A failed archive withdrew an unrelated undo offer")
         #expect(await records.transactions(for: .testAccount).count(where: \.isUndoable) == 1)

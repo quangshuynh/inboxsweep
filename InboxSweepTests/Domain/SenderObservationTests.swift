@@ -4,8 +4,8 @@ import Testing
 
 /// The factual observations a summary carries beyond its counts.
 ///
-/// Every case here is checking that the app *reports* something the mailbox already said —
-/// a label Gmail applied, a header that was present, a gap between two dates — and that it
+/// Every case here is checking that the app *reports* something the mailbox already said,
+/// a label Gmail applied, a header that was present, a gap between two dates, and that it
 /// stops there.
 @Suite("Sender observations")
 struct SenderObservationTests {

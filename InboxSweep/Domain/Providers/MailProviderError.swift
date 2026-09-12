@@ -11,7 +11,7 @@ nonisolated enum MailProviderError: Error, Equatable, Sendable {
     /// The app has no OAuth client configuration, so sign-in cannot be attempted.
     case notConfigured(reason: String)
 
-    /// Sign-in did not complete — the user cancelled it, or the provider rejected it.
+    /// Sign-in did not complete: the user cancelled it, or the provider rejected it.
     case authenticationFailed(reason: String)
 
     /// Stored credentials are no longer valid and the user must sign in again.

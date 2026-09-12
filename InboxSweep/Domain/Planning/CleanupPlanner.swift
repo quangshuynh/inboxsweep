@@ -19,7 +19,7 @@ nonisolated struct CleanupPlanRequest: Hashable, Sendable, Identifiable {
 /// Works out what a set of planned actions would reach, using nothing but loaded metadata.
 ///
 /// Pure and synchronous. It takes messages the app has already fetched, counts them, and
-/// returns sentences. It holds no provider, performs no I/O, and — by construction — cannot
+/// returns sentences. It holds no provider, performs no I/O, and (by construction) cannot
 /// change a mailbox: the only thing it returns is a ``CleanupPlan``, which is data.
 ///
 /// The counting rule that matters is the order of the two filters. An action's *scope* is
@@ -115,7 +115,7 @@ nonisolated enum CleanupPlanner {
     /// The public form of the classification the counts are built from. Pure, synchronous, and
     /// as inert as the rest of the planner: it reads metadata already in memory and returns
     /// enum cases. Nothing here can reach a provider, and there is no identifier list handed
-    /// out that something could act on — the caller already has the messages.
+    /// out that something could act on: the caller already has the messages.
     static func membership(
         for messages: [MailMessage],
         action: PlannedCleanupAction,

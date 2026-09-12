@@ -10,7 +10,7 @@ import Foundation
 /// ### What ends up on disk
 ///
 /// Sender grouping keys and chosen action identifiers. **No mail.** No subjects, no dates, no
-/// counts of what would be affected, no proposal, no reason, no protection verdict — all of
+/// counts of what would be affected, no proposal, no reason, no protection verdict, all of
 /// that is derived from the loaded window and recomputed on every launch. A plan file cannot
 /// contain message metadata, because ``SavedCleanupPlan`` has nowhere to put any.
 ///
@@ -128,7 +128,7 @@ actor FileCleanupPlanStore: CleanupPlanStoring {
 ///
 /// Every key is written out explicitly and actions are stored by their stable identifier rather
 /// than by anything `Codable` would synthesize for an enum with associated values, so renaming
-/// a Swift case cannot silently invalidate somebody's saved choices — or, worse, decode into a
+/// a Swift case cannot silently invalidate somebody's saved choices, or, worse, decode into a
 /// different action than the one they picked.
 nonisolated enum CleanupPlanDTO {
 

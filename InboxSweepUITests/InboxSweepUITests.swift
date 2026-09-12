@@ -2,15 +2,15 @@ import XCTest
 
 /// End-to-end checks that the window actually appears and renders each key state.
 ///
-/// The dashboard case runs against the app's synthetic mailbox, so the whole path — launch,
-/// connect, fetch, aggregate, render — is exercised without a Google account.
+/// The dashboard case runs against the app's synthetic mailbox, so the whole path (launch,
+/// connect, fetch, aggregate, render) is exercised without a Google account.
 ///
 /// ### Every case launches through ``launchSampleApp()``, and that is what makes them pass
 ///
 /// For two intervals, every case here that *clicked* anything failed with `Unable to find hit
-/// point for ScrollView`, and every case that only *asserted* passed. The previous interval read
-/// that as two separate problems — an occluded sender table, and a SwiftUI toolbar button
-/// XCUITest could not press. It was one problem, and neither half was about InboxSweep.
+/// point for ScrollView`, and every case that only *asserted* passed. Interval 9 read that as two
+/// separate problems: an occluded sender table, and a SwiftUI toolbar button XCUITest could not
+/// press. It was one problem, and neither half was about InboxSweep.
 ///
 /// Measured rather than assumed: with the developer's other windows on screen, `isHittable` is
 /// `false` for the sender name, for the *Preview cleanup* button, for the filter picker, and for
@@ -19,10 +19,30 @@ import XCTest
 /// that would have put the app in front. The toolbar was never the problem; it was one more
 /// control on a window no click could reach.
 ///
-/// ``UITestWindow`` now puts the window under test **full screen**, which gives it a Space of its
-/// own where no other application's window exists to occlude it. Both long-red cases pass, and so
-/// does the journey this interval adds. No sleep, retry, skip, or raised timeout is involved, and
-/// a control that is genuinely unreachable still fails.
+/// ``UITestWindow`` puts the window under test **full screen**, which gives it a Space of its own
+/// where no other application's window exists to occlude it.
+///
+/// ### What Interval 11 found still wrong, and fixed
+///
+/// Interval 10 left this suite green but not *reliably* green: six of eleven consecutive full
+/// runs had one failure, spread across unrelated cases. Interval 11 reproduced it on the first
+/// run and found two causes, both in this harness and neither in the product.
+///
+/// **The window placement was not idempotent, and nobody checked it.** Interval 9 issued one
+/// `toggleFullScreen` on the first `onAppear` and assumed it worked. Terminating an app that owns
+/// a full-screen Space destroys that Space, and a request issued while macOS is tearing the old
+/// one down is dropped with no error. The window then stays on the shared desktop for the whole
+/// case, which is the Interval 9 symptom exactly. ``UITestWindow`` now re-asserts the request,
+/// bounded, until the window's own `styleMask` says it is full screen, and publishes how far it
+/// got; ``waitForDeterministicWindow(_:)`` waits for that before a case touches anything.
+///
+/// **Hittable is not the same as clickable.** A disabled SwiftUI button exists and is hittable,
+/// so `clickWhenReady` was waiting for a state that a swallowed click satisfies. See
+/// ``clickWhenReady(_:in:_:file:line:)`` for the runner log of a failure caused by exactly that.
+/// It now waits for `isHittable && isEnabled`, and every click in this file goes through it.
+///
+/// No sleep, retry, skip, or weakened assertion is involved in any of that. Both changes make the
+/// suite assert *more* than it did, and a control that is genuinely unreachable still fails.
 final class InboxSweepUITests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -32,8 +52,8 @@ final class InboxSweepUITests: XCTestCase {
     /// How long a case waits for the sample dashboard to appear after launching the app.
     ///
     /// Raised from 15 seconds in Interval 10, for a reason about this suite rather than about
-    /// the app. The unsubscribe journeys doubled the number of launches — eight cases became
-    /// sixteen — and a run of the whole test plan now launches, connects, and tears down the app
+    /// the app. The unsubscribe journeys doubled the number of launches, eight cases became
+    /// sixteen, and a run of the whole test plan now launches, connects, and tears down the app
     /// sixteen times in a row on the same machine that is also running the unit target. Three
     /// cases timed out at 15 seconds in that configuration, including two that predate this
     /// interval and touch nothing it changed, while the same cases passed when the UI target ran
@@ -49,24 +69,109 @@ final class InboxSweepUITests: XCTestCase {
     ///
     /// Raised from 5 seconds alongside ``dashboardLoadTimeout``, for the same reason and with
     /// the same caveat. A sheet presenting after a click is fast when the machine is idle and is
-    /// not always fast when sixteen app launches and a full unit target have just run on it —
-    /// the case that caught this was `testActivityIsReachableFromTheContentAndCannotChangeAnything`,
+    /// not always fast when sixteen app launches and a full unit target have just run on it.
+    /// The case that caught this was `testActivityIsReachableFromTheContentAndCannotChangeAnything`,
     /// which this interval does not touch, timing out waiting for Activity to present.
     ///
     /// Again: no assertion was weakened, and nothing was retried, slept on, or skipped. A
     /// control that never appears still fails the case.
     private static let elementTimeout: TimeInterval = 20
 
+    /// How long a launch is given to reach its deterministic window.
+    ///
+    /// Sized against the app's own bound rather than against a hope: `UITestWindow` re-issues the
+    /// full-screen request at most five times, two seconds apart, and then reports
+    /// `unavailable` rather than continuing to try. Twenty-five seconds therefore covers the
+    /// app's entire retry budget with room for the launch itself, and a window that is going to
+    /// arrive has arrived long before it. Nothing here retries a test or relaxes an assertion:
+    /// this bound is reached only when the app has already said it failed.
+    private static let windowReadyTimeout: TimeInterval = 25
+
     // MARK: - Launching
 
     /// The app on synthetic data, in a window whose geometry the test controls.
+    ///
+    /// It does not return until the app reports its window is full screen, key, and frontmost.
+    /// See ``waitForDeterministicWindow(_:)`` for why that wait is here rather than left to the
+    /// first control each case happens to reach for.
     @MainActor
     private func launchSampleApp(extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [UITestLaunchArgument.sampleData, UITestLaunchArgument.deterministicWindow]
         app.launchArguments += extraArguments
         app.launch()
+        waitForDeterministicWindow(app)
         return app
+    }
+
+    /// Waits for the app to say its window reached the state every click in this file depends on.
+    ///
+    /// ### Why this is the first thing every case does
+    ///
+    /// Because without it the suite blames the app for the desktop. Measured on this machine,
+    /// with the Interval 9 harness: `testConfirmedOneClickUnsubscribeIsRecordedCautiously`,
+    /// launched straight after a case that had itself timed out, found the sender table at
+    /// t=6.7s, waited twenty seconds for a sender's name to appear in it, then polled
+    /// `isHittable` for twenty more and failed. Nothing was wrong with the sender row. The window
+    /// had never reached its own Space, because terminating the previous app destroys the Space
+    /// it owned and a `toggleFullScreen` issued during that teardown is dropped, so the developer's
+    /// other windows were over it for the whole case.
+    ///
+    /// `UITestWindow` now recovers from that by asking again, and publishes how far it got. This
+    /// waits for the answer. Two things follow, and both are the point:
+    ///
+    /// - a case that *would* have failed on a dropped transition now passes, because the app
+    ///   re-issues the request instead of assuming the first one landed;
+    /// - a case that fails anyway fails **here**, saying the window never became deterministic,
+    ///   rather than twenty seconds later naming a control that was never the problem.
+    ///
+    /// This is a bounded wait on a real observable state, not a sleep, a retry, or a raised
+    /// assertion timeout. The state it waits for is the window's own `styleMask`, key status, and
+    /// its application's active status, reported by the app under test.
+    @MainActor
+    private func waitForDeterministicWindow(_ app: XCUIApplication, timeout: TimeInterval? = nil) {
+        front(app)
+        let probe = app.descendants(matching: .any)[UITestLaunchArgument.windowStateIdentifier]
+        let ready = expectation(
+            for: NSPredicate(format: "label == %@", UITestLaunchArgument.windowIsReady),
+            evaluatedWith: probe
+        )
+        guard XCTWaiter.wait(for: [ready], timeout: timeout ?? Self.windowReadyTimeout) == .completed else {
+            XCTFail(
+                "The window never became deterministic. \(windowStateReport(app)) "
+                + "'\(UITestLaunchArgument.windowIsUnavailable)' means macOS refused the "
+                + "full-screen transition every time it was asked, and anything else means it "
+                + "never finished. Nothing about the product under test has been exercised."
+            )
+            return
+        }
+    }
+
+    /// What the runner can see of the app, for a failure message.
+    ///
+    /// ### Why this separates "no window" from "not ready"
+    ///
+    /// Because they have completely different causes and only one of them is about this app.
+    /// Measured while writing this: a state in which XCUITest reported the application element as
+    /// `Disabled` with **no children at all** for every case in the suite, and reproduced it with
+    /// the deterministic-window argument removed entirely, which is proof the harness was not
+    /// involved. An app whose windows the runner cannot see is a machine to fix, not a test to
+    /// rewrite, and the message says so rather than leaving somebody to infer it.
+    ///
+    /// Read defensively in every direction: an element that is not in the tree raises when asked
+    /// anything, and raising inside a failure message replaces a diagnosis with a snapshot error.
+    @MainActor
+    private func windowStateReport(_ app: XCUIApplication) -> String {
+        let probe = app.descendants(matching: .any)[UITestLaunchArgument.windowStateIdentifier]
+        if probe.exists { return "The app last reported '\(probe.label)'." }
+        guard app.windows.firstMatch.exists else {
+            return "The runner can see no window of this app at all, which usually means the "
+                + "machine's UI-testing permissions need attention rather than that the app is "
+                + "broken: check that Xcode has Accessibility access. It is reproducible without "
+                + "\(UITestLaunchArgument.deterministicWindow), so it is not the window placement."
+        }
+        return "The app has a window and published no state, so it may have launched without "
+            + "\(UITestLaunchArgument.deterministicWindow)."
     }
 
     /// Opens Activity through the in-content link, which is the route Interval 9 made reliable.
@@ -74,42 +179,155 @@ final class InboxSweepUITests: XCTestCase {
     private func openActivity(in app: XCUIApplication) {
         let link = app.descendants(matching: .any)["dashboard.activityLink"]
         XCTAssertTrue(link.waitForExistence(timeout: Self.elementTimeout), "The dashboard should offer a way into Activity")
-        link.click()
+        clickWhenReady(link, in: app, "The dashboard's Activity link")
         XCTAssertTrue(app.descendants(matching: .any)["activity.screen"].waitForExistence(timeout: Self.elementTimeout))
     }
 
-    /// Clicks an element once it is not merely present but actually clickable.
+    /// Clicks an element once it is not merely present but actually able to act on the click.
+    ///
+    /// ### Three states, not one, and the third is what this interval added
     ///
     /// `waitForExistence` answers the wrong question. An element can exist in the tree while a
     /// sheet is still animating in, and a click that lands on it then is accepted and does
-    /// nothing — which shows up later as the *next* assertion failing, blaming a screen that
-    /// never opened rather than the click that never landed. That is the shape of the residual
-    /// flakiness in this suite, and waiting for `isHittable` is the fix for it rather than a
-    /// longer timeout on the assertion that notices it.
+    /// nothing. Interval 10 fixed that half by waiting for `isHittable`.
     ///
-    /// Still a real assertion: an element that never becomes hittable fails the case here, with
-    /// a message naming it.
+    /// `isHittable` is also not the whole question, and the other half is what was still failing.
+    /// Hittability is geometric: it asks whether a click would land on this element, not whether
+    /// the element would do anything with it. **A disabled SwiftUI button exists and is
+    /// hittable.** `dashboard.previewCleanupButton` is disabled until a sender is selected, and
+    /// measured on this machine that is exactly how one of the intermittent failures happens:
+    ///
+    /// ```
+    /// t =  8.53s Click "The Daily Digest" StaticText
+    /// t = 11.31s Checking `Expect predicate `isHittable == 1` … "dashboard.previewCleanupButton"`
+    /// t = 11.52s Click "dashboard.previewCleanupButton" Button
+    /// t = 12.21s Waiting 20.0s for "cleanupPlan.screen" Any to exist   ← never appears
+    /// ```
+    ///
+    /// The preview button was hittable and disabled, because the selection from the click three
+    /// seconds earlier had not reached it. The click was swallowed, and the case failed twenty
+    /// seconds later on an assertion about a sheet, naming a screen that was never going to open.
+    ///
+    /// So the wait is now for `isHittable && isEnabled`, which is the real precondition for a
+    /// click to mean anything. This is a **stronger** assertion than before, not a looser one:
+    /// nothing is retried, nothing is slept on, no timeout grew, and an element that never
+    /// becomes clickable still fails the case here, naming itself.
     @MainActor
     @discardableResult
     private func clickWhenReady(
         _ element: XCUIElement,
+        in app: XCUIApplication,
         _ description: String,
         file: StaticString = #filePath,
         line: UInt = #line
     ) -> Bool {
+        front(app)
         guard element.waitForExistence(timeout: Self.elementTimeout) else {
-            XCTFail("\(description) never appeared", file: file, line: line)
+            // The tree is included because "the button never appeared" is rarely about the
+            // button. Measured: three cases failed on a footer button while the failure's own
+            // tree showed the app back on the dashboard with no sheet at all, which is what
+            // pointed at the placement loop re-configuring sheet windows. Truncated, because a
+            // full macOS accessibility tree is thousands of lines and the first few hundred say
+            // which screen is actually on.
+            XCTFail(
+                "\(description) never appeared. What the app is showing: "
+                + String(app.debugDescription.prefix(2500)),
+                file: file,
+                line: line
+            )
             return false
         }
 
-        let hittable = expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: element)
-        guard XCTWaiter.wait(for: [hittable], timeout: Self.elementTimeout) == .completed else {
-            XCTFail("\(description) appeared but never became clickable", file: file, line: line)
+        // `exists` is part of the predicate, not merely a precondition. An element can leave the
+        // tree between the wait above and this one, and a predicate that then asked only about
+        // hittability would raise rather than fail.
+        let clickable = expectation(
+            for: NSPredicate(format: "exists == true AND isHittable == true AND isEnabled == true"),
+            evaluatedWith: element
+        )
+        guard XCTWaiter.wait(for: [clickable], timeout: Self.elementTimeout) == .completed else {
+            XCTFail("\(description) appeared but never became clickable: \(state(of: element))", file: file, line: line)
             return false
         }
 
+        // Re-checked immediately before the click, because the app can lose the foreground
+        // between the wait above and here.
+        //
+        // A stronger version of this was tried and measured **worse**: re-running the full
+        // window-state wait before every click, so a drifted window had five seconds to come
+        // back. Over two complete runs it produced a failure in each, against three clean runs in
+        // four for this version. The extra round trip per click appears to cost more than the
+        // drift it was catching, so what stays is the cheap half.
+        front(app)
         element.click()
         return true
+    }
+
+    /// Puts the app under test in front, immediately before something is done to it.
+    ///
+    /// ### Why a click needs this even with a full-screen Space
+    ///
+    /// Because XCUITest checks for *interrupting elements* before it synthesizes a click, and if
+    /// it finds any it runs a fixed sequence of built-in interruption handlers that cannot be
+    /// switched off. Measured, on the run that prompted this:
+    ///
+    /// ```
+    /// t = 14.06s Found 4 interrupting elements:
+    ///     Dialog  from 'com.microsoft.teams2'
+    ///     Window  from 'com.anthropic.claudefordesktop'
+    ///     Window  from 'com.brave.Browser'
+    ///     Window  from 'com.apple.finder'
+    /// …
+    /// t = 89.41s Open quang.InboxSweep → Activate
+    /// t = 90.04s Synthesize event
+    /// ```
+    ///
+    /// Seventy-five seconds between the click being asked for and the click happening, spent
+    /// asking four other applications' windows whether they were a Bluetooth setup assistant. The
+    /// case then failed twenty seconds later on an assertion about a screen, and the screen was
+    /// never the problem. That is the shape of most of this suite's residual flakiness, and it is
+    /// why the timeouts kept being raised: they were absorbing an interruption pass rather than
+    /// waiting for the app.
+    ///
+    /// The Interval 9 note says `XCUIApplication.activate()` was tried and did not help. It was
+    /// tried as a *replacement* for the full-screen Space, and as one it does nothing. Alongside
+    /// it, it does the one thing the Space cannot do for itself: when macOS has switched away to
+    /// some other application's desktop, activating brings its Space back, so the runner's check
+    /// finds nothing to be interrupted by and the click goes out at once.
+    ///
+    /// Cheap, idempotent, and not a retry: it does not re-attempt a failed interaction, does not
+    /// loop, and does not wait. It makes the state the click is synthesized in deterministic.
+    @MainActor
+    private func front(_ app: XCUIApplication) {
+        // **Only when it is not already there.** Activating an app that owns a full-screen Space
+        // makes macOS switch Spaces, and during that switch its accessibility tree is briefly
+        // unavailable: an element resolved a moment earlier reports itself as gone. Measured,
+        // that is what the last three failures in this suite were, all of them reading "appeared
+        // but never became clickable: it is no longer in the app's accessibility tree", on three
+        // unrelated controls.
+        //
+        // Calling this unconditionally was the first version, and it fixed the problem it was
+        // written for (see the interruption-monitor note above) by creating a smaller one on
+        // every other click. The guard keeps the recovery and drops the churn: on a run where the
+        // app never loses the foreground, this now does nothing at all.
+        guard app.state != .runningForeground else { return }
+        app.activate()
+    }
+
+    /// Describes why an element could not be clicked, without asking it anything that would raise.
+    ///
+    /// Reading `isHittable` or `isEnabled` on an element that has left the accessibility tree
+    /// raises, and raising *inside the failure message* replaces a diagnosis with a snapshot
+    /// error. It happened: a case that should have said the unsubscribe review button never
+    /// became clickable reported `Failed to get matching snapshot` instead, because by the time
+    /// the message was assembled the sheet had gone.
+    @MainActor
+    private func state(of element: XCUIElement) -> String {
+        guard element.exists else {
+            return "it is no longer in the app's accessibility tree, which usually means the "
+                + "screen it was on closed or the app lost the foreground"
+        }
+        return "hittable: \(element.isHittable), enabled: \(element.isEnabled)"
     }
 
     /// Opens one sender's message review, which is where every clickable entry point lives.
@@ -123,14 +341,15 @@ final class InboxSweepUITests: XCTestCase {
         let table = app.descendants(matching: .any)["dashboard.senderTable"]
         XCTAssertTrue(table.waitForExistence(timeout: Self.dashboardLoadTimeout))
 
-        clickWhenReady(senderRow(named: sender, in: app), "The sender row for \(sender)")
+        clickWhenReady(senderRow(named: sender, in: app), in: app, "The sender row for \(sender)")
 
-        clickWhenReady(app.buttons["dashboard.previewCleanupButton"], "The Preview cleanup button")
+        clickWhenReady(app.buttons["dashboard.previewCleanupButton"], in: app, "The Preview cleanup button")
         XCTAssertTrue(app.descendants(matching: .any)["cleanupPlan.screen"].waitForExistence(timeout: Self.elementTimeout))
 
         // Queried across all element types: a link-styled button reports itself as a link.
         clickWhenReady(
             app.descendants(matching: .any)["cleanupPlan.reviewButton"].firstMatch,
+            in: app,
             "The preview's message-review link"
         )
 
@@ -149,7 +368,7 @@ final class InboxSweepUITests: XCTestCase {
             app.buttons["messageReview.unsubscribeButton"].waitForExistence(timeout: Self.elementTimeout),
             "A sender whose headers mention unsubscribing should offer to show the options"
         )
-        clickWhenReady(app.buttons["messageReview.unsubscribeButton"], "The Unsubscribe… button")
+        clickWhenReady(app.buttons["messageReview.unsubscribeButton"], in: app, "The Unsubscribe… button")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["unsubscribeOptions.screen"].waitForExistence(timeout: Self.elementTimeout),
@@ -160,9 +379,9 @@ final class InboxSweepUITests: XCTestCase {
     /// Closes the unsubscribe options and the message review behind it.
     @MainActor
     private func closeUnsubscribeOptions(in app: XCUIApplication) {
-        app.descendants(matching: .any)["unsubscribeOptions.doneButton"].firstMatch.click()
+        clickWhenReady(app.descendants(matching: .any)["unsubscribeOptions.doneButton"].firstMatch, in: app, "The unsubscribe options Done button")
         XCTAssertTrue(app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: Self.elementTimeout))
-        app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
+        clickWhenReady(app.descendants(matching: .any)["messageReview.doneButton"].firstMatch, in: app, "The message review Done button")
     }
 
     /// The clickable element for a sender in the dashboard table.
@@ -191,6 +410,7 @@ final class InboxSweepUITests: XCTestCase {
             UITestLaunchArgument.deterministicWindow,
         ]
         app.launch()
+        waitForDeterministicWindow(app)
 
         XCTAssertTrue(
             app.staticTexts["signedOut.title"].waitForExistence(timeout: Self.elementTimeout),
@@ -247,7 +467,7 @@ final class InboxSweepUITests: XCTestCase {
 
         let sender = senderRow(named: "Storefront Deals", in: app)
         XCTAssertTrue(sender.waitForExistence(timeout: Self.elementTimeout))
-        sender.click()
+        clickWhenReady(sender, in: app, "The sender row for Storefront Deals")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["senderDetail.proposal"].waitForExistence(timeout: Self.elementTimeout),
@@ -255,7 +475,7 @@ final class InboxSweepUITests: XCTestCase {
         )
         XCTAssertTrue(previewButton.isEnabled, "A selected sender can be previewed")
 
-        previewButton.click()
+        clickWhenReady(previewButton, in: app, "The Preview cleanup button")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["cleanupPlan.screen"].waitForExistence(timeout: Self.elementTimeout),
@@ -274,13 +494,13 @@ final class InboxSweepUITests: XCTestCase {
         // There is no confirm, delete, or clean-now control to find, only a way out.
         XCTAssertFalse(app.buttons["Delete"].exists)
         XCTAssertFalse(app.buttons["Trash now"].exists)
-        app.buttons["cleanupPlan.doneButton"].click()
+        clickWhenReady(app.buttons["cleanupPlan.doneButton"], in: app, "The preview's Done button")
     }
 
     /// The Interval 4 path: the dashboard states how much mail it has analysed, and offers the
     /// controls that change it.
     ///
-    /// Driven through the real UI because coverage is the claim most easily overstated — a
+    /// Driven through the real UI because coverage is the claim most easily overstated: a
     /// dashboard that quietly implied it had read the whole mailbox would mislead the user at
     /// exactly the moment they are weighing a suggestion.
     @MainActor
@@ -310,8 +530,8 @@ final class InboxSweepUITests: XCTestCase {
     ///
     /// The toolbar button is still there and still the primary way in. This drives the link in
     /// the dashboard footer instead, for a reason that is about the product rather than about the
-    /// runner: a toolbar is a place a control can be hard to get at — collapsed into an overflow
-    /// menu on a narrow window, and unreachable to anything driving the app from outside — and
+    /// runner: a toolbar is a place a control can be hard to get at, collapsed into an overflow
+    /// menu on a narrow window and unreachable to anything driving the app from outside, and
     /// "what has this app changed?" deserves an answer that does not depend on one. The journey
     /// behind both is identical, so testing the reachable one covers the behaviour rather than
     /// proving XCUITest can press a macOS toolbar button.
@@ -333,7 +553,7 @@ final class InboxSweepUITests: XCTestCase {
             activityLink.waitForExistence(timeout: Self.elementTimeout),
             "The dashboard content should offer a way into Activity"
         )
-        activityLink.click()
+        clickWhenReady(activityLink, in: app, "The dashboard's Activity link")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["activity.screen"].waitForExistence(timeout: Self.elementTimeout),
@@ -361,7 +581,7 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Delete"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
 
-        app.descendants(matching: .any)["activity.doneButton"].firstMatch.click()
+        clickWhenReady(app.descendants(matching: .any)["activity.doneButton"].firstMatch, in: app, "Activity's Done button")
         XCTAssertTrue(table.waitForExistence(timeout: Self.elementTimeout), "Closing Activity should return to the dashboard")
     }
 
@@ -370,7 +590,7 @@ final class InboxSweepUITests: XCTestCase {
     /// ### Why the history is seeded rather than performed
     ///
     /// It cannot be performed here. The synthetic mailbox vends no mutation boundary, so a sample
-    /// run has nothing that could produce a transaction — which is the right design and is what
+    /// run has nothing that could produce a transaction, which is the right design and is what
     /// every other case in this file relies on. ``SampleActivity`` therefore seeds the *records*
     /// into an in-memory store. That adds no capability: the session still cannot write, and the
     /// newest seeded archive is marked undoable in the file and is still not offered, because the
@@ -384,13 +604,14 @@ final class InboxSweepUITests: XCTestCase {
             UITestLaunchArgument.deterministicWindow,
         ]
         app.launch()
+        waitForDeterministicWindow(app)
 
         let table = app.descendants(matching: .any)["dashboard.senderTable"]
         XCTAssertTrue(table.waitForExistence(timeout: Self.dashboardLoadTimeout), "The dashboard should load from sample data")
 
         let activityLink = app.descendants(matching: .any)["dashboard.activityLink"]
         XCTAssertTrue(activityLink.waitForExistence(timeout: Self.elementTimeout))
-        activityLink.click()
+        clickWhenReady(activityLink, in: app, "The dashboard's Activity link")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["activity.screen"].waitForExistence(timeout: Self.elementTimeout),
@@ -409,7 +630,7 @@ final class InboxSweepUITests: XCTestCase {
         // when it cannot, which is the graceful degradation the privacy model depends on.
         let rows = app.descendants(matching: .any).matching(identifier: "activity.row")
         XCTAssertGreaterThan(rows.count, 1, "The seeded history should have several entries")
-        rows.element(boundBy: 0).click()
+        clickWhenReady(rows.element(boundBy: 0), in: app, "The newest Activity row")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["activity.detail.tallies"].waitForExistence(timeout: Self.elementTimeout),
@@ -428,14 +649,14 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Delete"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
 
-        app.descendants(matching: .any)["activity.doneButton"].firstMatch.click()
+        clickWhenReady(app.descendants(matching: .any)["activity.doneButton"].firstMatch, in: app, "Activity's Done button")
     }
 
     /// The sender-level entry point: it exists, it opens a review, and it archives nothing.
     ///
     /// The wording is asserted as well as the navigation. **Review messages to archive…** is the
-    /// promise the interval makes — that pressing it moves you into a review rather than carrying
-    /// something out — and a later rename to *Archive sender* would be a different product.
+    /// promise the interval makes: that pressing it moves you into a review rather than carrying
+    /// something out, and a later rename to *Archive sender* would be a different product.
     @MainActor
     func testSenderCleanupOpensAReviewRatherThanArchiving() {
         let app = launchSampleApp()
@@ -445,11 +666,11 @@ final class InboxSweepUITests: XCTestCase {
 
         let sender = senderRow(named: "Storefront Deals", in: app)
         XCTAssertTrue(sender.waitForExistence(timeout: Self.elementTimeout))
-        sender.click()
+        clickWhenReady(sender, in: app, "The sender row for Storefront Deals")
 
         let previewButton = app.buttons["dashboard.previewCleanupButton"]
         XCTAssertTrue(previewButton.waitForExistence(timeout: Self.elementTimeout))
-        previewButton.click()
+        clickWhenReady(previewButton, in: app, "The Preview cleanup button")
         XCTAssertTrue(app.descendants(matching: .any)["cleanupPlan.screen"].waitForExistence(timeout: Self.elementTimeout))
 
         // Queried across all element types: a link-styled button reports itself as a link.
@@ -458,7 +679,7 @@ final class InboxSweepUITests: XCTestCase {
             cleanupReview.waitForExistence(timeout: Self.elementTimeout),
             "A sender's preview row should offer a way to review the messages it names"
         )
-        cleanupReview.click()
+        clickWhenReady(cleanupReview, in: app, "The preview's sender-cleanup review link")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: Self.elementTimeout),
@@ -471,7 +692,7 @@ final class InboxSweepUITests: XCTestCase {
 
         // The whole point of the interval: the convenience got the user to a review, and stopped.
         // On the synthetic mailbox there is no archiver at all, so the Archive control is absent
-        // rather than disabled — which is the app's guarantee that a sample run cannot reach a
+        // rather than disabled, which is the app's guarantee that a sample run cannot reach a
         // write even by accident.
         XCTAssertFalse(app.descendants(matching: .any)["archiveSheet.screen"].exists)
         XCTAssertFalse(app.buttons["messageReview.archiveButton"].exists)
@@ -480,7 +701,7 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Apply recommendation"].exists)
         XCTAssertFalse(app.buttons["Archive all from sender"].exists)
 
-        app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
+        clickWhenReady(app.descendants(matching: .any)["messageReview.doneButton"].firstMatch, in: app, "The message review Done button")
     }
 
     /// Opening the messages behind a sender's proposal, which is what makes a count checkable.
@@ -493,21 +714,21 @@ final class InboxSweepUITests: XCTestCase {
 
         let sender = senderRow(named: "Storefront Deals", in: app)
         XCTAssertTrue(sender.waitForExistence(timeout: Self.elementTimeout))
-        sender.click()
+        clickWhenReady(sender, in: app, "The sender row for Storefront Deals")
 
         // Reached from the preview rather than from the inspector: the inspector's own entry
         // point sits below a long reasoning list and is not reliably on screen at the window
         // size the runner picks. Both open the same review.
         let previewButton = app.buttons["dashboard.previewCleanupButton"]
         XCTAssertTrue(previewButton.waitForExistence(timeout: Self.elementTimeout))
-        previewButton.click()
+        clickWhenReady(previewButton, in: app, "The Preview cleanup button")
 
         XCTAssertTrue(app.descendants(matching: .any)["cleanupPlan.screen"].waitForExistence(timeout: Self.elementTimeout))
 
         // Queried across all element types: a link-styled button reports itself as a link.
         let reviewButton = app.descendants(matching: .any)["cleanupPlan.reviewButton"]
         XCTAssertTrue(reviewButton.waitForExistence(timeout: Self.elementTimeout), "The preview should offer a message review")
-        reviewButton.click()
+        clickWhenReady(reviewButton, in: app, "The preview's message-review link")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: Self.elementTimeout),
@@ -535,7 +756,7 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Delete"].exists)
 
         // Interval 10 added an unsubscribe entry point to this screen, so the blanket assertion
-        // that used to live here — no button called "Unsubscribe" — became the wrong claim. The
+        // that used to live here (no button called "Unsubscribe") became the wrong claim. The
         // right one is narrower and stronger: the control that *opens a reading* may be here,
         // and nothing that acts is. No confirmation sheet, and no verb that would perform one.
         XCTAssertFalse(app.descendants(matching: .any)["unsubscribeSheet.screen"].exists)
@@ -544,7 +765,7 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Block sender"].exists)
         XCTAssertFalse(app.buttons["Unsubscribe from sender"].exists)
 
-        app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
+        clickWhenReady(app.descendants(matching: .any)["messageReview.doneButton"].firstMatch, in: app, "The message review Done button")
     }
 
     // MARK: - Unsubscribe
@@ -568,7 +789,7 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["messageReview.unsubscribeDistinctionNote"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["unsubscribeOptions.screen"].exists)
 
-        app.descendants(matching: .any)["messageReview.doneButton"].firstMatch.click()
+        clickWhenReady(app.descendants(matching: .any)["messageReview.doneButton"].firstMatch, in: app, "The message review Done button")
     }
 
     /// The one-click journey as far as the confirmation, and no further.
@@ -586,6 +807,7 @@ final class InboxSweepUITests: XCTestCase {
 
         clickWhenReady(
             app.descendants(matching: .any)["unsubscribeOptions.reviewButton"],
+            in: app,
             "The Review unsubscribe… button"
         )
 
@@ -598,7 +820,7 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.evidence"].exists)
 
         // The first press opens a second, dedicated confirmation rather than acting.
-        clickWhenReady(app.buttons["unsubscribeSheet.actionButton"], "The unsubscribe action button")
+        clickWhenReady(app.buttons["unsubscribeSheet.actionButton"], in: app, "The unsubscribe action button")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["unsubscribeSheet.confirmPrompt"].waitForExistence(timeout: Self.elementTimeout),
@@ -619,19 +841,20 @@ final class InboxSweepUITests: XCTestCase {
         openUnsubscribeOptions(for: "The Daily Digest", in: app)
         clickWhenReady(
             app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch,
+            in: app,
             "The Review unsubscribe… button"
         )
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: Self.elementTimeout))
 
-        clickWhenReady(app.buttons["unsubscribeSheet.actionButton"], "The unsubscribe action button")
+        clickWhenReady(app.buttons["unsubscribeSheet.actionButton"], in: app, "The unsubscribe action button")
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.confirmPrompt"].waitForExistence(timeout: Self.elementTimeout))
 
         // "Not now" backs out of the confirmation without acting.
-        app.buttons["unsubscribeSheet.cancelButton"].click()
+        clickWhenReady(app.buttons["unsubscribeSheet.cancelButton"], in: app, "The confirmation's Not now button")
         XCTAssertFalse(app.descendants(matching: .any)["unsubscribeSheet.outcome"].exists)
 
         // And "Cancel" closes the sheet.
-        app.buttons["unsubscribeSheet.cancelButton"].click()
+        clickWhenReady(app.buttons["unsubscribeSheet.cancelButton"], in: app, "The unsubscribe review's Cancel button")
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeOptions.screen"].waitForExistence(timeout: Self.elementTimeout))
         closeUnsubscribeOptions(in: app)
 
@@ -651,12 +874,13 @@ final class InboxSweepUITests: XCTestCase {
         openUnsubscribeOptions(for: "The Daily Digest", in: app)
         clickWhenReady(
             app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch,
+            in: app,
             "The Review unsubscribe… button"
         )
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: Self.elementTimeout))
 
-        clickWhenReady(app.buttons["unsubscribeSheet.actionButton"], "The unsubscribe action button")
-        clickWhenReady(app.buttons["unsubscribeSheet.confirmButton"], "The unsubscribe confirmation button")
+        clickWhenReady(app.buttons["unsubscribeSheet.actionButton"], in: app, "The unsubscribe action button")
+        clickWhenReady(app.buttons["unsubscribeSheet.confirmButton"], in: app, "The unsubscribe confirmation button")
 
         XCTAssertTrue(
             app.descendants(matching: .any)["unsubscribeSheet.outcome"].waitForExistence(timeout: Self.elementTimeout),
@@ -675,13 +899,13 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["You are unsubscribed"].exists)
         XCTAssertFalse(app.buttons["Undo"].exists)
 
-        app.buttons["unsubscribeSheet.doneButton"].click()
+        clickWhenReady(app.buttons["unsubscribeSheet.doneButton"], in: app, "The unsubscribe result's Done button")
         closeUnsubscribeOptions(in: app)
 
         openActivity(in: app)
         let row = app.descendants(matching: .any)["activity.unsubscribeRow"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: Self.elementTimeout), "The unsubscribe should appear in Activity")
-        row.click()
+        clickWhenReady(row, in: app, "The unsubscribe row in Activity")
 
         XCTAssertTrue(app.descendants(matching: .any)["activity.unsubscribeDetail"].waitForExistence(timeout: Self.elementTimeout))
         XCTAssertTrue(app.descendants(matching: .any)["activity.unsubscribeDetail.host"].exists)
@@ -701,6 +925,7 @@ final class InboxSweepUITests: XCTestCase {
         openUnsubscribeOptions(for: "Storefront Deals", in: app)
         clickWhenReady(
             app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch,
+            in: app,
             "The Review unsubscribe… button"
         )
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: Self.elementTimeout))
@@ -709,15 +934,18 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Your browser opens the page"].exists)
         XCTAssertTrue(app.buttons["unsubscribeSheet.actionButton"].exists)
 
-        // The alternatives sit at the bottom of a scrolling sheet, below the evidence, so the
-        // case scrolls to them rather than asserting they happen to be on screen at whatever
-        // height the runner picked.
-        app.scrollViews.firstMatch.swipeUp()
+        // The alternatives sit at the bottom of a scrolling sheet, below the evidence. This used
+        // to swipe up first, and the swipe was both unnecessary and a source of failures: the
+        // sheet's content is a plain `VStack` inside a `ScrollView`, not a lazy one, so every row
+        // is in the accessibility tree whether or not it is scrolled into view, and the swipe
+        // went to `app.scrollViews.firstMatch`, which with two sheets on screen is not
+        // necessarily this sheet's. Asserting existence is what this case actually claims, and it
+        // claims it without depending on where the runner left the scroll position.
         XCTAssertTrue(
             app.descendants(matching: .any)["unsubscribeSheet.alternatives"].waitForExistence(timeout: Self.elementTimeout),
             "A sender offering more than one mechanism must show the others rather than choosing silently"
         )
-        app.buttons["unsubscribeSheet.cancelButton"].click()
+        clickWhenReady(app.buttons["unsubscribeSheet.cancelButton"], in: app, "The unsubscribe review's Cancel button")
         closeUnsubscribeOptions(in: app)
     }
 
@@ -729,6 +957,7 @@ final class InboxSweepUITests: XCTestCase {
         openUnsubscribeOptions(for: "Frontend Weekly", in: app)
         clickWhenReady(
             app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch,
+            in: app,
             "The Review unsubscribe… button"
         )
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: Self.elementTimeout))
@@ -736,7 +965,7 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Email unsubscribe"].exists)
         XCTAssertTrue(app.staticTexts["Your mail app opens a message"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.whatHappens"].exists)
-        app.buttons["unsubscribeSheet.cancelButton"].click()
+        clickWhenReady(app.buttons["unsubscribeSheet.cancelButton"], in: app, "The unsubscribe review's Cancel button")
         closeUnsubscribeOptions(in: app)
     }
 
@@ -771,9 +1000,10 @@ final class InboxSweepUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeOptions.availability"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeOptions.evidence"].exists)
 
-        // The review can be opened — it performs nothing — but the request cannot be sent.
+        // The review can be opened (it performs nothing) but the request cannot be sent.
         clickWhenReady(
             app.descendants(matching: .any)["unsubscribeOptions.reviewButton"].firstMatch,
+            in: app,
             "The Review unsubscribe… button"
         )
         XCTAssertTrue(app.descendants(matching: .any)["unsubscribeSheet.screen"].waitForExistence(timeout: Self.elementTimeout))
@@ -781,7 +1011,216 @@ final class InboxSweepUITests: XCTestCase {
             app.buttons["unsubscribeSheet.actionButton"].isEnabled,
             "A session with no unsubscribe boundary must not be able to send a one-click request"
         )
-        app.buttons["unsubscribeSheet.cancelButton"].click()
+        clickWhenReady(app.buttons["unsubscribeSheet.cancelButton"], in: app, "The unsubscribe review's Cancel button")
         closeUnsubscribeOptions(in: app)
+    }
+
+    // MARK: - Rules
+
+    /// The affordance exists, it opens a review, and the review creates nothing.
+    ///
+    /// The central claim of the interval, driven through the real UI: InboxSweep may suggest that
+    /// a rule could be useful, and only the user may create one. A button that quietly created
+    /// something would be the whole feature going wrong, and it would go wrong silently.
+    @MainActor
+    func testCreatingARuleNeedsAReviewAndAConfirmation() {
+        let app = launchSampleApp()
+
+        openMessageReview(for: "Storefront Deals", in: app)
+
+        clickWhenReady(app.buttons["messageReview.createRuleButton"], in: app, "The Create archive rule… button")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["ruleReview.screen"].waitForExistence(timeout: Self.elementTimeout),
+            "The rule affordance must open a review"
+        )
+
+        // The six things this screen exists to say, before anything can happen.
+        XCTAssertTrue(app.descendants(matching: .any)["ruleReview.senderKey"].exists, "The review must print the exact address it matches")
+        XCTAssertTrue(app.descendants(matching: .any)["ruleReview.matchingNote"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["ruleReview.action"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["ruleReview.executionNote"].exists, "The review must say when the rule can run")
+        XCTAssertTrue(app.descendants(matching: .any)["ruleReview.existingMailNote"].exists, "The review must say existing mail is untouched")
+        XCTAssertTrue(app.descendants(matching: .any)["ruleReview.protectionNote"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["ruleReview.revocationNote"].exists, "The review must say how to end the rule")
+
+        // Nothing an unsubscribe would need is on this screen, and nothing that could send one.
+        XCTAssertFalse(app.descendants(matching: .any)["unsubscribeSheet.screen"].exists)
+        XCTAssertFalse(app.buttons["Unsubscribe"].exists)
+        XCTAssertFalse(app.buttons["Send the request"].exists)
+        XCTAssertFalse(app.buttons["Delete"].exists)
+        XCTAssertFalse(app.buttons["Trash"].exists)
+
+        // The first press opens a second, dedicated confirmation rather than creating anything.
+        clickWhenReady(app.buttons["ruleReview.actionButton"], in: app, "The Create rule… button")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["ruleReview.confirmPrompt"].waitForExistence(timeout: Self.elementTimeout),
+            "Creating must be gated behind a dedicated confirmation"
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["ruleReview.created"].exists, "Nothing may have been created yet")
+
+        // Backing out of the confirmation, and then out of the sheet, leaves nothing behind.
+        clickWhenReady(app.buttons["ruleReview.cancelButton"], in: app, "The Not now button")
+
+        // Waited for, not assumed, and it is a real assertion rather than a pause: backing out of
+        // the confirmation must actually close it. It also removes a race the second press
+        // otherwise has, because these two presses are the *same* control with two labels. SwiftUI
+        // rebuilds it when `isConfirming` flips, so a second click resolved before the rebuild
+        // finishes lands on an element that no longer exists, which is exactly how this case
+        // failed: "The review's Cancel button appeared but never became clickable".
+        let confirmPrompt = app.descendants(matching: .any)["ruleReview.confirmPrompt"]
+        let backedOut = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: confirmPrompt)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [backedOut], timeout: Self.elementTimeout),
+            .completed,
+            "Not now must close the confirmation"
+        )
+
+        clickWhenReady(app.buttons["ruleReview.cancelButton"], in: app, "The review's Cancel button")
+        XCTAssertTrue(app.descendants(matching: .any)["messageReview.screen"].waitForExistence(timeout: Self.elementTimeout))
+
+        // And the affordance is still the one that offers to create, not one that reports a rule.
+        XCTAssertTrue(app.buttons["messageReview.createRuleButton"].exists)
+        XCTAssertFalse(app.buttons["messageReview.existingRuleButton"].exists)
+
+        clickWhenReady(app.descendants(matching: .any)["messageReview.doneButton"].firstMatch, in: app, "The message review Done button")
+
+        // Nothing reached the rules list either.
+        clickWhenReady(app.descendants(matching: .any)["dashboard.rulesLink"], in: app, "The dashboard's Rules link")
+        XCTAssertTrue(app.descendants(matching: .any)["rules.screen"].waitForExistence(timeout: Self.elementTimeout))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["rules.empty"].waitForExistence(timeout: Self.elementTimeout),
+            "Opening and cancelling a rule review must leave no rule"
+        )
+    }
+
+    /// Confirming creates exactly one rule, and it is listed, inspectable, and reversible.
+    @MainActor
+    func testConfirmedRuleIsCreatedAndManageable() {
+        let app = launchSampleApp(extraArguments: [UITestLaunchArgument.sampleArchiving])
+
+        openMessageReview(for: "Storefront Deals", in: app)
+        clickWhenReady(app.buttons["messageReview.createRuleButton"], in: app, "The Create archive rule… button")
+        XCTAssertTrue(app.descendants(matching: .any)["ruleReview.screen"].waitForExistence(timeout: Self.elementTimeout))
+
+        clickWhenReady(app.buttons["ruleReview.actionButton"], in: app, "The Create rule… button")
+        clickWhenReady(app.buttons["ruleReview.confirmButton"], in: app, "The Create rule confirmation")
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["ruleReview.created"].waitForExistence(timeout: Self.elementTimeout),
+            "The review should report the rule it created"
+        )
+        clickWhenReady(app.buttons["ruleReview.doneButton"], in: app, "The rule review's Done button")
+
+        // The affordance now points at the rule rather than offering a second one.
+        XCTAssertTrue(
+            app.buttons["messageReview.existingRuleButton"].waitForExistence(timeout: Self.elementTimeout),
+            "A sender that already has a rule must not be offered another"
+        )
+        XCTAssertFalse(app.buttons["messageReview.createRuleButton"].exists)
+
+        clickWhenReady(app.descendants(matching: .any)["messageReview.doneButton"].firstMatch, in: app, "The message review Done button")
+
+        clickWhenReady(app.descendants(matching: .any)["dashboard.rulesLink"], in: app, "The dashboard's Rules link")
+        XCTAssertTrue(app.descendants(matching: .any)["rules.screen"].waitForExistence(timeout: Self.elementTimeout))
+        XCTAssertTrue(app.descendants(matching: .any)["rules.list"].waitForExistence(timeout: Self.elementTimeout))
+        XCTAssertFalse(app.descendants(matching: .any)["rules.empty"].exists)
+
+        // The row says what it matches, what it does, and when it can run.
+        XCTAssertTrue(app.descendants(matching: .any)["rules.row.senderKey"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["rules.row.action"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["rules.row.executionNote"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["rules.boundaryNote"].exists)
+
+        // Turning it off takes one press and no confirmation, because it is the safe direction.
+        let toggle = app.descendants(matching: .any)["rules.row.enabledToggle"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: Self.elementTimeout))
+        clickWhenReady(toggle, in: app, "The rule's enabled toggle")
+
+        // Deleting takes a confirmation, because it throws away a decision.
+        clickWhenReady(
+            app.descendants(matching: .any)["rules.row.deleteButton"].firstMatch,
+            in: app,
+            "The rule's Delete button"
+        )
+        clickWhenReady(app.buttons["rules.confirmDeleteButton"], in: app, "The delete confirmation")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["rules.empty"].waitForExistence(timeout: Self.elementTimeout),
+            "Deleting the only rule should leave the empty state"
+        )
+    }
+
+    /// A rule that runs: what it archived, what it refused, and the undo it does not claim.
+    ///
+    /// Driven with both sample boundaries, so the whole pass happens in-process: a seeded rule, an
+    /// archiver with no transport, and a synthetic mailbox. Nothing leaves the machine.
+    @MainActor
+    func testARuleReportsWhatItDidAndOffersNoUndo() {
+        let app = launchSampleApp(extraArguments: [
+            UITestLaunchArgument.sampleArchiving,
+            UITestLaunchArgument.sampleRules,
+        ])
+
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: Self.dashboardLoadTimeout))
+
+        // The pass ran during the load, and said so where the user is looking.
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.ruleRun"].waitForExistence(timeout: Self.elementTimeout),
+            "A rule that changed the mailbox must say so on the dashboard"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard.ruleRun.archived"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.ruleRun.noUndo"].exists,
+            "A rule-driven archive must say there is no undo rather than quietly not offering one"
+        )
+        XCTAssertFalse(app.buttons["Undo"].exists)
+
+        // Activity attributes it to the rule and still offers nothing to press.
+        openActivity(in: app)
+        let row = app.descendants(matching: .any)["activity.row"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: Self.elementTimeout), "The rule's archive should appear in Activity")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["activity.row.ruleAttribution"].firstMatch.exists,
+            "An Activity row must name the rule that produced it"
+        )
+        clickWhenReady(row, in: app, "The newest Activity row")
+
+        XCTAssertTrue(app.descendants(matching: .any)["activity.detail.tallies"].waitForExistence(timeout: Self.elementTimeout))
+        XCTAssertTrue(app.descendants(matching: .any)["activity.detail.ruleAttribution"].exists)
+        XCTAssertFalse(app.buttons["activity.undoButton"].exists, "A rule-driven archive is never undoable")
+
+        clickWhenReady(app.descendants(matching: .any)["activity.doneButton"].firstMatch, in: app, "Activity's Done button")
+    }
+
+    /// A seeded rule with no boundary behind it is listed, honest, and inert.
+    ///
+    /// The state a real user reaches with a read-only grant: the authorization is remembered,
+    /// because forgetting a decision over today's permissions would be worse, and the app says
+    /// plainly that it is not running rather than implying it is.
+    @MainActor
+    func testARuleWithoutAnArchiveBoundaryIsListedAndInert() {
+        let app = launchSampleApp(extraArguments: [UITestLaunchArgument.sampleRules])
+
+        let table = app.descendants(matching: .any)["dashboard.senderTable"]
+        XCTAssertTrue(table.waitForExistence(timeout: Self.dashboardLoadTimeout))
+
+        // Nothing ran, so nothing is reported.
+        XCTAssertFalse(app.descendants(matching: .any)["dashboard.ruleRun"].exists)
+
+        // The sender the rule names is still on the dashboard, untouched.
+        XCTAssertTrue(
+            app.descendants(matching: .any)["The Daily Digest"].waitForExistence(timeout: Self.elementTimeout),
+            "A rule with no way to run must leave the mailbox exactly as it was"
+        )
+
+        clickWhenReady(app.descendants(matching: .any)["dashboard.rulesLink"], in: app, "The dashboard's Rules link")
+        XCTAssertTrue(app.descendants(matching: .any)["rules.screen"].waitForExistence(timeout: Self.elementTimeout))
+        XCTAssertTrue(app.descendants(matching: .any)["rules.list"].waitForExistence(timeout: Self.elementTimeout))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["rules.row.executionNote"].firstMatch.exists,
+            "A rule that cannot run must say so on its own row"
+        )
+
+        clickWhenReady(app.descendants(matching: .any)["rules.doneButton"].firstMatch, in: app, "The Rules Done button")
     }
 }

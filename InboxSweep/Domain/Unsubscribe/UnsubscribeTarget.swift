@@ -5,7 +5,7 @@ import Foundation
 /// ### Why a header value is not a URL
 ///
 /// `List-Unsubscribe` is written by the sender. It arrives as text, it is frequently
-/// malformed, and — unlike every other header InboxSweep reads — acting on it means leaving
+/// malformed, and (unlike every other header InboxSweep reads) acting on it means leaving
 /// Gmail and contacting a third party. So the text is never carried around as text. It is
 /// parsed once, at the provider boundary, into one of the two things the app is willing to do
 /// something with, or into ``unsupported`` with a reason.
@@ -16,7 +16,7 @@ import Foundation
 /// arbitrary text as executable" looks like in code rather than in a comment.
 nonisolated enum UnsubscribeTarget: Hashable, Sendable, Codable {
 
-    /// An `https` URL. Whether it is *one-click* capable is a separate question — see
+    /// An `https` URL. Whether it is *one-click* capable is a separate question; see
     /// ``MessageUnsubscribeMetadata/declaresOneClickPost``.
     case web(HTTPSUnsubscribeURL)
 
@@ -53,7 +53,7 @@ nonisolated enum UnsubscribeTarget: Hashable, Sendable, Codable {
 /// An `https` URL from an unsubscribe header, and the only type in the app that can hold one.
 ///
 /// The initializer is the whole point. It accepts an absolute URL whose scheme is exactly
-/// `https` and which has a host, and it refuses everything else — `http`, `javascript`,
+/// `https` and which has a host, and it refuses everything else: `http`, `javascript`,
 /// `file`, `data`, `mailto`, a custom scheme, a relative reference, a URL with no host. A value
 /// of this type is therefore a *proof* that a validated HTTPS destination was parsed, and the
 /// one-click client's signature asks for that proof rather than for a `URL` it would have to
@@ -88,7 +88,7 @@ nonisolated struct HTTPSUnsubscribeURL: Hashable, Sendable, Codable {
 
     /// The registrable-looking tail of the host, for a second, shorter line.
     ///
-    /// Presentation only, and deliberately naive — it does not consult a public-suffix list, so
+    /// Presentation only, and deliberately naive: it does not consult a public-suffix list, so
     /// it is never used to decide anything. ``host`` is what the user is shown as the
     /// destination; this is only ever an aid to reading it.
     var displayDomain: String {
@@ -147,7 +147,7 @@ nonisolated struct MailtoUnsubscribeAddress: Hashable, Sendable, Codable {
     /// The narrowest check worth making: one `@`, something either side, no whitespace.
     ///
     /// Not an RFC 5322 validator. It is here to reject the values that are obviously not
-    /// addresses — an empty `mailto:`, a URL that swallowed the rest of the header — because
+    /// addresses (an empty `mailto:`, a URL that swallowed the rest of the header) because
     /// this string ends up in a `mailto:` URL handed to the user's mail client.
     private static func looksLikeAnAddress(_ candidate: String) -> Bool {
         guard !candidate.contains(where: \.isWhitespace) else { return false }
@@ -186,7 +186,7 @@ nonisolated struct UnsupportedUnsubscribeValue: Hashable, Sendable, Codable {
 
     nonisolated enum Reason: String, Hashable, Sendable, Codable, CaseIterable {
 
-        /// `http://…` — a URL that is not encrypted.
+        /// `http://…`: a URL that is not encrypted.
         ///
         /// Refused rather than upgraded. Rewriting somebody's `http` link to `https` would be
         /// the app inventing a destination the sender did not name.

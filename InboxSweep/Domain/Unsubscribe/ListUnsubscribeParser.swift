@@ -48,15 +48,15 @@ nonisolated enum ListUnsubscribeParser {
     ///
     /// A header with more entries than this is not one a mailing list wrote, and the parse is
     /// bounded rather than trusting a header's length. The extras are dropped and the result is
-    /// still usable — the first values are the ones selection would have chosen anyway.
+    /// still usable: the first values are the ones selection would have chosen anyway.
     static let maximumValues = 10
 
     // MARK: - List-Unsubscribe
 
     /// Parses one `List-Unsubscribe` header value into targets, in header order.
     ///
-    /// Duplicates — the same destination listed twice, which happens when a sender's mail
-    /// system appends its own copy — are collapsed, keeping the first occurrence, so a header
+    /// Duplicates (the same destination listed twice, which happens when a sender's mail
+    /// system appends its own copy) are collapsed, keeping the first occurrence, so a header
     /// cannot make the review sheet list one destination twice.
     static func targets(in header: String) -> [UnsubscribeTarget] {
         var seen = Set<UnsubscribeTarget>()
@@ -105,8 +105,8 @@ nonisolated enum ListUnsubscribeParser {
             return .unsupported(UnsupportedUnsubscribeValue(reason: .notBracketed, scheme: scheme(of: trimmed)))
         }
 
-        // Whitespace inside the brackets is common and harmless — folded headers arrive with
-        // newlines in them — so it is removed rather than treated as a malformation.
+        // Whitespace inside the brackets is common and harmless: folded headers arrive with
+        // newlines in them, so it is removed rather than treated as a malformation.
         let inner = trimmed
             .dropFirst()
             .dropLast()
@@ -184,7 +184,7 @@ nonisolated enum ListUnsubscribeParser {
     /// Parses both headers together into the value a message carries.
     ///
     /// `listUnsubscribe` being `nil` means the message had no such header at all, which is a
-    /// different state from a header that parsed to nothing — see
+    /// different state from a header that parsed to nothing; see
     /// ``MessageUnsubscribeMetadata``.
     static func metadata(
         listUnsubscribe: String?,

@@ -20,7 +20,7 @@ struct SenderDashboardView: View {
     /// **One** `@State` and **one** `.sheet` modifier, rather than one of each per destination.
     /// Stacking `.sheet` modifiers on a single view is not something SwiftUI honours: two
     /// happened to work, and adding a third for Activity made the new one silently never
-    /// present — the button was there, the click landed, and nothing opened. An enum makes the
+    /// present: the button was there, the click landed, and nothing opened. An enum makes the
     /// exclusivity explicit, which is what it was all along: this screen shows at most one sheet.
     @State private var sheet: Sheet?
 
@@ -32,6 +32,13 @@ struct SenderDashboardView: View {
 
         /// What InboxSweep has changed in this mailbox.
         case activity
+
+        /// What InboxSweep has standing permission to do to it.
+        ///
+        /// A sibling of ``activity`` rather than a section of it: one says what the app did and
+        /// cannot be acted on, the other says what it will do and is the only place that can be
+        /// changed.
+        case rules
 
         /// One sender's loaded messages.
         case messageReview(SenderSummary)
@@ -55,6 +62,7 @@ struct SenderDashboardView: View {
             switch self {
             case .cleanupPlan: "cleanupPlan"
             case .activity: "activity"
+            case .rules: "rules"
             case .messageReview(let summary): "messageReview-\(summary.id)"
             case .senderCleanupReview(let summary, let candidates):
                 "senderCleanupReview-\(summary.id)-\(candidates.action.id)"
@@ -71,6 +79,7 @@ struct SenderDashboardView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 10)
             }
+            ruleRunBanner
             Divider()
             filterBar
             Divider()
@@ -91,8 +100,8 @@ struct SenderDashboardView: View {
                         onReviewMessages: { sheet = .messageReview(sender) },
                         // Offered whether or not this session can write. The button's job is to
                         // move the user into a review state, which it does either way, and the
-                        // review screen is the honest place to say whether archiving is available
-                        // — it offers **Enable archiving…** on a read-only grant and nothing at
+                        // review screen is the honest place to say whether archiving is
+                        // available: it offers **Enable archiving…** on a read-only grant and
                         // all on the synthetic mailbox. Gating it here and not on the dry-run row
                         // would also have made two identically-worded controls behave differently.
                         onReviewCleanup: { openCleanupReview(for: sender, under: suggestedAction(for: sender.id)) },
@@ -134,6 +143,9 @@ struct SenderDashboardView: View {
 
             case .activity:
                 ActivityView(session: session)
+
+            case .rules:
+                SenderRulesView(session: session)
 
             case .messageReview(let sender):
                 SenderMessageReviewView(
@@ -178,7 +190,7 @@ struct SenderDashboardView: View {
 
     /// The action a sender-level entry point previews when nothing else has chosen one.
     ///
-    /// The same seed the preview itself uses — the sender's own proposal — so pressing **Review
+    /// The same seed the preview itself uses (the sender's own proposal) so pressing **Review
     /// messages to archive…** in the inspector and pressing it on that sender's preview row start
     /// from the same action rather than from two different defaults.
     private func suggestedAction(for key: SenderSummary.ID) -> PlannedCleanupAction {
@@ -285,7 +297,9 @@ struct SenderDashboardView: View {
                             ProposalStrengthLabel(strength: proposal.strength, isCompact: true)
                         }
                     } else {
-                        Text("—").foregroundStyle(.tertiary)
+                        // "None", not a dash glyph: a screen reader reads a word and cannot
+                        // read a horizontal line, and this column is about an absence.
+                        Text("None").foregroundStyle(.tertiary)
                     }
                 }
                 .width(min: 160, ideal: 200)
@@ -346,7 +360,7 @@ struct SenderDashboardView: View {
 
             // `fixedSize` and the layout priority are what keep this control *present*. A footer
             // is a row of text competing for one line, and without them the link is the thing
-            // that gets compressed when the coverage sentence or the privacy note is long —
+            // that gets compressed when the coverage sentence or the privacy note is long,
             // squeezed to nothing on a narrow window, and intermittently unfindable in a UI test
             // while the coverage line is still saying "loading". A route into Activity that
             // disappears when a sentence beside it grows is not a route.
@@ -354,11 +368,15 @@ struct SenderDashboardView: View {
                 .fixedSize()
                 .layoutPriority(1)
 
+            rulesLink
+                .fixedSize()
+                .layoutPriority(1)
+
             Text(PrivacyNotice.summary)
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
                 .lineLimit(2)
-                .help("InboxSweep suggests and previews. The only change it can make is archiving one message you open and confirm, from a sender's message review — nothing on this screen changes your mail.")
+                .help("InboxSweep suggests and previews. The only change it can make is archiving one message you open and confirm, from a sender's message review. Nothing on this screen changes your mail.")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -368,7 +386,7 @@ struct SenderDashboardView: View {
     ///
     /// ### Why a second route exists
     ///
-    /// Because a toolbar is a place a control can be *hard to reach* — for a UI test driving the
+    /// Because a toolbar is a place a control can be *hard to reach*, for a UI test driving the
     /// window from outside, and for anybody whose window is narrow enough that macOS collapses the
     /// toolbar into an overflow menu. "What has this app changed?" is a question worth being able
     /// to answer from the content itself, which is where the user is already looking.
@@ -390,6 +408,115 @@ struct SenderDashboardView: View {
         .accessibilityIdentifier("dashboard.activityLink")
     }
 
+    /// What the last rule pass did, reported where the user is looking.
+    ///
+    /// ### Why this is on the dashboard rather than only in Activity
+    ///
+    /// Because a rule is the one thing in this app that changes a mailbox while nobody is asking
+    /// it to, and the user has to find out *at the time* rather than by opening a drawer. It is
+    /// the same reasoning that put the undo offer on the review screen.
+    ///
+    /// It says three separate things and never merges them: what was archived, what was
+    /// deliberately left behind, and what failed. The middle one matters most: mail a rule
+    /// declined to archive is mail still sitting in somebody's Inbox from a sender they believe is
+    /// handled, and it is by construction the mail most likely to need them.
+    ///
+    /// Dismissing it withdraws nothing. The changes are in Activity either way.
+    @ViewBuilder
+    private var ruleRunBanner: some View {
+        if let run = session.ruleRun, run.isWorthShowing {
+            VStack(alignment: .leading, spacing: 6) {
+                if let archived = run.archivedSummary {
+                    Label(archived, systemImage: "wand.and.stars.inverse")
+                        .font(.callout.weight(.medium))
+                        .accessibilityIdentifier("dashboard.ruleRun.archived")
+                }
+                if let protectedNote = run.protectedSummary {
+                    bannerLine(protectedNote, identifier: "dashboard.ruleRun.protected")
+                }
+                if let deferred = run.deferredSummary {
+                    bannerLine(deferred, identifier: "dashboard.ruleRun.deferred")
+                }
+                if let failure = run.failureSummary {
+                    bannerLine(failure, identifier: "dashboard.ruleRun.failure")
+                }
+                if run.archivedCount > 0 {
+                    bannerLine(SenderRuleRun.noUndoNote, identifier: "dashboard.ruleRun.noUndo")
+                }
+
+                HStack(spacing: 12) {
+                    Button("Rules") { sheet = .rules }
+                        .buttonStyle(.link)
+                        .accessibilityIdentifier("dashboard.ruleRun.rulesButton")
+
+                    Button("Dismiss") { session.dismissRuleRun() }
+                        .buttonStyle(.link)
+                        .help("Hides this summary. It changes nothing, and the details stay in Activity.")
+                        .accessibilityIdentifier("dashboard.ruleRun.dismissButton")
+
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+            // `.contain` rather than the default. An identifier on a stack of `Text`s invites
+            // SwiftUI to merge the whole banner into one element, and a test asking whether the
+            // no-undo sentence is present would then be asking about something that had been
+            // folded away. This banner is a container of separately meaningful lines.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("dashboard.ruleRun")
+        }
+    }
+
+    /// One wrapping sentence in the banner, bounded.
+    ///
+    /// ### Why the line limit, and why this is a `VStack` at all
+    ///
+    /// The first version put the sentences and the two buttons in one `HStack`. Measured by hand
+    /// on the sample mailbox, that broke the dashboard outright: the header, the filter bar, and
+    /// the load bar were pushed off the top of the window and the sender table was left clipped
+    /// mid-row. Wrapping `Text`s laid out against whatever width two buttons leave over report an
+    /// enormous intrinsic height, and the surrounding `VStack` honours it.
+    ///
+    /// Stacking vertically removes the competition entirely, and the line limit bounds what a
+    /// long sentence can cost even so. A truncated line is not a loss here: every one of these is
+    /// also in Activity, in full.
+    ///
+    /// It was found by hand because the UI suite could not run on this machine; a case asserting
+    /// that `dashboard.coverageHeadline` is still present after a rule pass would have caught it.
+    private func bannerLine(_ text: String, identifier: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier(identifier)
+    }
+
+    /// The in-content way into Rules, beside Activity and for the same reason.
+    ///
+    /// "What has this app changed?" and "what may it change without me?" are the two questions a
+    /// person is entitled to be able to answer from the screen in front of them, and neither
+    /// should depend on a toolbar that a narrow window collapses into an overflow menu.
+    ///
+    /// Opening it reaches no mailbox. See ``SenderRulesView``.
+    private var rulesLink: some View {
+        Button {
+            sheet = .rules
+        } label: {
+            Label(
+                session.senderRules.isEmpty ? "Rules" : "^[\(session.senderRules.count) rule](inflect: true)",
+                systemImage: "wand.and.stars.inverse"
+            )
+            .font(.callout)
+        }
+        .buttonStyle(.link)
+        .help("Shows what InboxSweep may do to this mailbox without asking. Nothing is sent to Gmail by opening it.")
+        .accessibilityIdentifier("dashboard.rulesLink")
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .principal) {
@@ -408,7 +535,7 @@ struct SenderDashboardView: View {
         ToolbarItemGroup(placement: .primaryAction) {
             // Beside Reload rather than buried in the footer: "what has this app changed?" is a
             // question somebody asks about the mailbox in front of them, and it should be
-            // answerable without hunting. It opens a reader — see ``ActivityView``.
+            // answerable without hunting. It opens a reader; see ``ActivityView``.
             Button {
                 sheet = .activity
             } label: {

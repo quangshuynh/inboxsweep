@@ -8,7 +8,7 @@ nonisolated struct MailPageToken: Hashable, Sendable {
 
 /// Which part of the mailbox to read.
 ///
-/// Every case maps to a label the provider already applies — there is no search query here and
+/// Every case maps to a label the provider already applies: there is no search query here and
 /// there could not be one, because `gmail.metadata` forbids `q=`. Widening the scope to gain
 /// search would mean asking for access to message bodies, which is the one thing this app is
 /// built not to do.
@@ -54,7 +54,7 @@ nonisolated enum MailboxScope: String, Hashable, Sendable, CaseIterable, Identif
         }
     }
 
-    /// The noun a sentence about this scope uses — "your inbox", "your Promotions category".
+    /// The noun a sentence about this scope uses: "your inbox", "your Promotions category".
     var possessivePhrase: String {
         switch self {
         case .inbox: "your inbox"
@@ -76,12 +76,12 @@ nonisolated enum MailboxScope: String, Hashable, Sendable, CaseIterable, Identif
     ///
     /// Exists because archiving changes the answer. A window is whatever the provider would
     /// list for this scope, and after a message loses its `INBOX` label an inbox-scoped list
-    /// would not return it — so the loaded window must stop counting it, or a refresh would
+    /// would not return it, so the loaded window must stop counting it, or a refresh would
     /// disagree with what is on screen.
     ///
     /// Only the inbox scope can lose a message this way. Gmail's category labels survive an
     /// archive untouched and *All mail* lists archived mail by definition, so a message
-    /// archived while one of those is loaded stays in the window — which is exactly what a
+    /// archived while one of those is loaded stays in the window, which is exactly what a
     /// refresh would return.
     func retains(_ message: MailMessage) -> Bool {
         switch self {
@@ -94,7 +94,7 @@ nonisolated enum MailboxScope: String, Hashable, Sendable, CaseIterable, Identif
     var coverageCaveat: String {
         switch self {
         case .inbox:
-            "Mail outside the inbox — already archived, sent, or filed under other labels — is not read."
+            "Mail outside the inbox (already archived, sent, or filed under other labels) is not read."
         case .allMail:
             "This reaches archived mail as well as the inbox."
         case .promotions, .updates, .social, .forums:

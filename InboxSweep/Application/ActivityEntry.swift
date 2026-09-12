@@ -4,7 +4,7 @@ import Foundation
 ///
 /// A view over ``MailMutationTransaction`` rather than a second stored model. Nothing here is
 /// persisted, nothing here is a new fact, and every sentence is derived from counts the
-/// transaction already holds — which is what stops the screen and the file from drifting apart.
+/// transaction already holds, which is what stops the screen and the file from drifting apart.
 ///
 /// ### What it is allowed to say
 ///
@@ -36,11 +36,13 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     init(
         transaction: MailMutationTransaction,
         resolvedMessages: [MailMessage] = [],
-        isUndoable: Bool = false
+        isUndoable: Bool = false,
+        rule: SenderRule? = nil
     ) {
         self.transaction = transaction
         self.resolvedMessages = resolvedMessages
         self.isUndoable = isUndoable
+        self.rule = rule
     }
 
     // MARK: - Facts
@@ -48,6 +50,19 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     var occurredAt: Date { transaction.occurredAt }
     var operation: MailMutationOperation { transaction.operation }
     var status: MailMutationTransaction.ActivityStatus { transaction.activityStatus }
+
+    /// What caused this operation.
+    var origin: MailMutationOrigin { transaction.origin }
+
+    /// Whether InboxSweep did this without anybody present.
+    var wasAutomatic: Bool { transaction.origin.wasAutomatic }
+
+    /// The rule this account still has for the rule that performed this, when it still has one.
+    ///
+    /// Passed in rather than looked up, so a row cannot reach the store. `nil` covers both "this
+    /// was not a rule" and "the rule has since been deleted", and the wording below distinguishes
+    /// them by asking ``origin`` rather than this.
+    let rule: SenderRule?
 
     /// How many messages the user confirmed.
     var selectedCount: Int { transaction.selectedMessageCount }
@@ -71,15 +86,15 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     ///
     /// ### Why this is derived and not stored
     ///
-    /// A sender-reviewed archive is still an archive of *messages*. The sender was UI context —
-    /// which screen the user was on — and the transaction deliberately has no field for it, in
+    /// A sender-reviewed archive is still an archive of *messages*. The sender was UI context,
+    /// which screen the user was on, and the transaction deliberately has no field for it, in
     /// keeping with a record that names messages and describes none of them. Persisting an address
     /// so a row could read a little better would be putting mailbox content in a second file for a
     /// sentence, which is exactly the trade ``MailMutationTransaction`` refuses.
     ///
     /// So the question is asked of the *cache*, where that metadata already lives, and the answer
     /// is allowed to be no. It is only yes when the window can describe **every** message the
-    /// transaction names and they agree — a partial answer would let the wording generalise from
+    /// transaction names and they agree: a partial answer would let the wording generalise from
     /// the six messages it could see to the fifteen it is counting.
     ///
     /// Partly-undone transactions are excluded for the same reason: their identifier list is
@@ -110,11 +125,11 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
                     : "No messages were archived"
             }
             if isPartial {
-                return "Archived \(confirmedCount) of \(selectedCount) messages\(senderSuffix)"
+                return "Archived \(confirmedCount) of \(selectedCount) messages\(senderSuffix)\(ruleSuffix)"
             }
             return confirmedCount == 1
-                ? "Archived 1 message\(senderSuffix)"
-                : "Archived \(confirmedCount) messages\(senderSuffix)"
+                ? "Archived 1 message\(senderSuffix)\(ruleSuffix)"
+                : "Archived \(confirmedCount) messages\(senderSuffix)\(ruleSuffix)"
 
         case .restoreToInbox:
             if confirmedCount == 0 {
@@ -134,13 +149,36 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
     /// " from one sender", when the cache can say that much, and nothing otherwise.
     ///
     /// **"One sender", never the sender's name, and never "the sender".** The count is what was
-    /// archived and the sender is context for it — writing "Archived everything from Example
+    /// archived and the sender is context for it: writing "Archived everything from Example
     /// Sender" would claim an operation this app cannot perform, and naming the address here
     /// would put mail content in a headline for no gain over the message list below it.
     ///
     /// Nothing in this phrase says the sender was archived, that all of its mail was archived, or
     /// that anything it sends later is affected. It says these messages had one sender.
     private var senderSuffix: String { cameFromOneSender ? " from one sender" : "" }
+
+    /// " by rule", when a local rule did this and not a person.
+    ///
+    /// In the headline rather than in a detail line, because it is the difference between news a
+    /// user already knows and news they do not. "Archived 3 messages" beside a timestamp they were
+    /// not at the keyboard for is a row that invites them to think they did it.
+    ///
+    /// It says *by rule*, never *by Gmail*. InboxSweep sent those requests; a row implying Gmail
+    /// did it on its own would be the app disowning a change it made.
+    private var ruleSuffix: String { wasAutomatic ? " by rule" : "" }
+
+    /// Which local rule did this, when the account still has it.
+    ///
+    /// `nil` for everything a person confirmed. For a rule-driven row whose rule has since been
+    /// deleted it still says so, because the archive happened and deleting the authorization
+    /// afterwards does not make it anonymous.
+    var ruleAttribution: String? {
+        guard wasAutomatic else { return nil }
+        guard let rule else {
+            return "Your rule for this sender did this. The rule has since been deleted; the messages stayed archived."
+        }
+        return "Your rule for \(rule.senderDisplayValue) did this\(rule.isEnabled ? "" : ", and it is now turned off")."
+    }
 
     /// The state line under the headline, or `nil` when there is nothing to add.
     ///
@@ -149,14 +187,16 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
         switch status {
         case .undoAvailable:
             return "Undo available"
+        case .undoSuperseded where wasAutomatic:
+            return "No undo for a rule"
         case .undoSuperseded:
             return "Undo superseded by a later archive"
         case .undoCompleted:
-            return confirmedCount == 1 ? "Undone — put back in your Inbox" : "Undone — all put back in your Inbox"
+            return confirmedCount == 1 ? "Undone, put back in your Inbox" : "Undone, all put back in your Inbox"
         case .undoPartiallyCompleted:
             return isUndoable
-                ? "Partly undone — \(restoredCount) of \(confirmedCount) put back, \(transaction.succeededCount) still archived"
-                : "Partly undone — \(restoredCount) of \(confirmedCount) put back"
+                ? "Partly undone: \(restoredCount) of \(confirmedCount) put back, \(transaction.succeededCount) still archived"
+                : "Partly undone: \(restoredCount) of \(confirmedCount) put back"
         case .restore:
             return nil
         case .nothingChanged:
@@ -193,7 +233,7 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
         case .archive:
             let base = """
                 InboxSweep removed \(confirmedCount == 1 ? "this message" : "these \(confirmedCount) messages") \
-                from your Inbox — one request to Gmail per message, each confirmed separately. \
+                from your Inbox, one request to Gmail per message, each confirmed separately. \
                 Archiving does not delete: they stayed in your Gmail account, in All Mail, and in search.
                 """
             switch status {
@@ -203,6 +243,11 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
                 return base + " They were put back afterwards."
             case .undoPartiallyCompleted:
                 return base + " \(restoredCount) of them were put back afterwards; the rest were not."
+            case .undoSuperseded where wasAutomatic:
+                // Not "superseded": nothing replaced it, because a rule-driven archive is never
+                // offered as an undo in the first place. Saying so plainly is the point, since the
+                // alternative is a row that reads as though an offer existed and was lost.
+                return base + " " + SenderRuleRun.noUndoNote
             case .undoSuperseded:
                 return base + " A later archive replaced this one as the undo InboxSweep offers, so there is no standing offer to reverse it."
             case .restore, .nothingChanged:
@@ -218,7 +263,7 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
         case .restoreToInbox:
             return """
                 InboxSweep put \(confirmedCount == 1 ? "this message" : "these \(confirmedCount) messages") back in \
-                your Inbox — the undo of an earlier archive, sent to Gmail as a real request rather \
+                your Inbox: the undo of an earlier archive, sent to Gmail as a real request rather \
                 than corrected only on this Mac.
                 """
         }
@@ -237,7 +282,7 @@ nonisolated struct ActivityEntry: Identifiable, Hashable, Sendable {
             return """
                 InboxSweep doesn't have the details of \(named == 1 ? "this message" : "these \(named) messages") \
                 any more. It records what it changed, not the mail itself, and the loaded window no \
-                longer covers them — reloading a wider window may bring them back.
+                longer covers them: reloading a wider window may bring them back.
                 """
         }
         return """

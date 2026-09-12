@@ -13,7 +13,7 @@ nonisolated protocol CleanupPlanStoring: Sendable {
 
     /// Returns the stored plan for `account`, or `nil` when there is none to use.
     ///
-    /// Returns `nil` — never throws — for a missing, unreadable, corrupt, out-of-date, or
+    /// Returns `nil` (never throws) for a missing, unreadable, corrupt, out-of-date, or
     /// wrong-account file.
     func load(for account: MailAccount) async -> SavedCleanupPlan?
 
@@ -27,7 +27,7 @@ nonisolated protocol CleanupPlanStoring: Sendable {
 /// A store that keeps nothing.
 ///
 /// The default, so persistence is something a caller opts into rather than something that
-/// happens by surprise — and so the synthetic mailbox, whose senders do not exist, cannot leave
+/// happens by surprise, and so the synthetic mailbox, whose senders do not exist, cannot leave
 /// a plan behind that a real account might later be offered.
 nonisolated struct EphemeralCleanupPlanStore: CleanupPlanStoring {
     init() {}

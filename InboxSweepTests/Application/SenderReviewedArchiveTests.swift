@@ -13,7 +13,7 @@ import Testing
 ///
 /// So the cases here are mostly about the distance between a sender and a mutation. Deriving
 /// candidates writes nothing. Preselecting writes nothing. Changing the selection writes nothing.
-/// Freezing writes nothing. What the user confirms is exactly what goes to the boundary — no
+/// Freezing writes nothing. What the user confirms is exactly what goes to the boundary, no
 /// wider, no narrower, and never the sender itself.
 @MainActor
 @Suite("Sender-reviewed archiving")
@@ -290,7 +290,7 @@ struct SenderReviewedArchiveTests {
         )
         #expect(!candidates.messageIDs.contains(starred.id), "The app picked a protected message")
 
-        // The user ticks it themselves. That is allowed — it is their mail — and the frozen set
+        // The user ticks it themselves. That is allowed (it is their mail) and the frozen set
         // carries the fact so the confirmation can say so.
         let frozen = try #require(session.makeArchiveSelection(
             forSenderKey: senderKey,
@@ -392,7 +392,7 @@ struct SenderReviewedArchiveTests {
         #expect(session.canArchive(frozen))
 
         // The same set, frozen while a different part of the mailbox was on screen. Every
-        // identifier in it is loaded, this sender's, and in the Inbox — and it is a set somebody
+        // identifier in it is loaded, this sender's, and in the Inbox, and it is a set somebody
         // assembled from a list of Promotions, which is not the list in front of them now.
         //
         // Built directly rather than by re-scoping the session, so what is under test is the
@@ -416,7 +416,7 @@ struct SenderReviewedArchiveTests {
     func aMessageArchivedElsewhereInvalidatesTheSet() async throws {
         // Read under *All mail*, which is the scope where a message that has left the Inbox stays
         // in the window rather than dropping out of it. Under Inbox the same situation is caught a
-        // step earlier — the message is simply not there any more — and the membership check would
+        // step earlier (the message is simply not there any more) and the membership check would
         // never be reached.
         let messages = (1...5).map { message("m-\($0)", daysAgo: 100 + Double($0)) }
         let (session, archiver) = await makeSession(messages: messages, scope: .allMail)

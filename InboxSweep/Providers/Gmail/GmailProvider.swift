@@ -107,7 +107,7 @@ actor GmailProvider: MailProvider, MailMessageArchiving {
 
         // Only the *read* scopes decide whether a stored grant is usable. A grant written
         // before the archive permission existed reads a mailbox perfectly well, and discarding
-        // it would sign out every existing user over a feature they have not asked to use — so
+        // it would sign out every existing user over a feature they have not asked to use, so
         // the missing archive scope is handled later, as a capability, not here as a fault.
         guard stored.coversReadScopes else {
             if let failure = clearStoredCredentials() {
@@ -273,7 +273,7 @@ actor GmailProvider: MailProvider, MailMessageArchiving {
             accessToken = grant.accessToken
             let reauthorizedAccount = try await loadAccount()
 
-            // Signing in again is an opportunity to land in a *different* mailbox — a second
+            // Signing in again is an opportunity to land in a *different* mailbox: a second
             // Google account in the same browser session is all it takes. The window on screen
             // belongs to the first one, so the upgrade is refused rather than quietly switching
             // which mailbox the app is about to write to.
@@ -325,7 +325,7 @@ actor GmailProvider: MailProvider, MailMessageArchiving {
 
         // The last moment cancellation is meaningful. Once the request is in flight Gmail may
         // already have applied it, and abandoning the task then would leave the app unsure
-        // whether the mailbox changed — so cancellation is offered before the send and not
+        // whether the mailbox changed, so cancellation is offered before the send and not
         // after, and the reconciliation below runs to completion either way.
         try Task.checkCancellation()
 
@@ -477,7 +477,7 @@ actor GmailProvider: MailProvider, MailMessageArchiving {
     /// really went with it.
     ///
     /// The in-memory half always succeeds. The Keychain half can refuse, and the result is a
-    /// refresh token that outlives the sign-out it was supposed to end — so the failure is
+    /// refresh token that outlives the sign-out it was supposed to end, so the failure is
     /// returned rather than discarded. Callers that have somewhere to put it (``disconnect()``)
     /// say so; callers reacting to a revoked grant already have a more specific thing to
     /// report, and the stale item they leave behind is one the provider has already rejected.

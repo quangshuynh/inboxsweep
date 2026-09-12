@@ -15,7 +15,7 @@ nonisolated protocol GmailAuthorizedRequest: Sendable {
 /// The one kind of request the app can send that changes something.
 ///
 /// Like ``GmailAPIRequest``, the `method` is a constant and the initializer is private to this
-/// file. Unlike it, there is a body — and the body is not a parameter either. The only two
+/// file. Unlike it, there is a body, and the body is not a parameter either. The only two
 /// values it can hold are the two constants in ``GmailMutationRequest/InboxLabelChange``, so a
 /// request that trashed a message, marked it read, or applied somebody's own label is not
 /// something this type can be asked to build.
@@ -60,7 +60,7 @@ nonisolated struct GmailMutationRequest: GmailAuthorizedRequest, Equatable {
 /// ### Why `messages.modify` and not something else
 ///
 /// "Archive" is not a Gmail operation. In Gmail, a message is in the inbox exactly when it
-/// carries the `INBOX` label, so archiving one *is* removing that label — and
+/// carries the `INBOX` label, so archiving one *is* removing that label, and
 /// `users.messages.modify` is the narrowest published operation that does it. It acts on one
 /// message, it is idempotent, and it is reversible by the same call with the label added back,
 /// which is what makes the undo in this interval a real remote change rather than a local
@@ -71,13 +71,13 @@ nonisolated struct GmailMutationRequest: GmailAuthorizedRequest, Equatable {
 /// Gmail also offers `users.threads.modify`, which would archive every message in the
 /// conversation. The user picked one message in the review list; archiving the four others in
 /// its thread would be doing more than they asked. So the app uses the message endpoint, and a
-/// message whose siblings remain in the inbox leaves the conversation in the inbox — which is
+/// message whose siblings remain in the inbox leaves the conversation in the inbox, which is
 /// Gmail's own behaviour for archiving a single message, and is what the confirmation says.
 ///
 /// ### Why this is the only file that knows Gmail's label name
 ///
 /// `"INBOX"` is Gmail vocabulary. The domain speaks in ``MailLabel/inbox``, the boundary speaks
-/// in ``MailArchiveRequest``, and the translation happens here and in the normalizer — so
+/// in ``MailArchiveRequest``, and the translation happens here and in the normalizer, so
 /// nothing above the adapter depends on Gmail's label strings.
 nonisolated enum GmailMutationEndpoint {
 
@@ -123,7 +123,7 @@ nonisolated enum GmailMutationEndpoint {
     /// Every mutating request the app can build, for the safety-boundary tests to enumerate.
     ///
     /// If this array ever has a third kind of entry in it, that is the change worth arguing
-    /// about — and it will be argued about in a test rather than discovered in a mailbox.
+    /// about, and it will be argued about in a test rather than discovered in a mailbox.
     static func allRequestBuilders() -> [GmailMutationRequest] {
         [
             removeFromInbox(messageID: MailMessageID("message-id")),
