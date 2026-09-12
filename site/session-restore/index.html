@@ -1,0 +1,1506 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A privacy-conscious Gmail cleanup assistant for macOS. It recommends; you authorize.">
+      
+      
+      
+        <link rel="canonical" href="https://quangshuynh.github.io/inboxsweep/session-restore/">
+      
+      
+        <link rel="prev" href="../development/">
+      
+      
+        <link rel="next" href="../release-verification/">
+      
+      
+      <link rel="icon" href="../images/inboxsweep-logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title>Session restore - InboxSweep</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.6f8fc17f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#session-restore" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="InboxSweep" class="md-header__button md-logo" aria-label="InboxSweep" data-md-component="logo">
+      
+  <img src="../images/inboxsweep-logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            InboxSweep
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Session restore
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/quangshuynh/inboxsweep" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    quangshuynh/inboxsweep
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="InboxSweep" class="md-nav__button md-logo" aria-label="InboxSweep" data-md-component="logo">
+      
+  <img src="../images/inboxsweep-logo.png" alt="logo">
+
+    </a>
+    InboxSweep
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/quangshuynh/inboxsweep" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    quangshuynh/inboxsweep
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Install and run
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gmail-integration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connecting Gmail
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Using InboxSweep
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Using InboxSweep
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cleanup-proposals/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Cleanup proposals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archive-and-undo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Archiving and undo
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../unsubscribe/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Unsubscribing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rules/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Sender rules
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../activity/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Activity
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Under the hood
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Under the hood
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../privacy-and-security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Privacy and security
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Development
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Testing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Working on InboxSweep
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Session restore
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Session restore
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-defect-this-document-exists-because-of" class="md-nav__link">
+    <span class="md-ellipsis">
+      The defect this document exists because of
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The defect this document exists because of">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-was-actually-happening" class="md-nav__link">
+    <span class="md-ellipsis">
+      What was actually happening
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-the-existing-tests-were-green" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why the existing tests were green
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      How it works now
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How it works now">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      What is stored
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-a-failure-looks-like-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      What a failure looks like now
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#measured-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      Measured behaviour
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Measured behaviour">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-same-binary-quit-and-reopened" class="md-nav__link">
+    <span class="md-ellipsis">
+      A. Same binary, quit and reopened
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-rebuilt-and-re-signed-then-launched" class="md-nav__link">
+    <span class="md-ellipsis">
+      B. Rebuilt and re-signed, then launched
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-the-same-two-on-a-signed-release-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      C. The same two, on a signed Release build
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-has-not-been-verified" class="md-nav__link">
+    <span class="md-ellipsis">
+      What has not been verified
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-cache-restoration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Local cache restoration
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release-verification/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Signed Release verification
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Reference
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../limitations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Limitations
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roadmap/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Roadmap
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-defect-this-document-exists-because-of" class="md-nav__link">
+    <span class="md-ellipsis">
+      The defect this document exists because of
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The defect this document exists because of">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-was-actually-happening" class="md-nav__link">
+    <span class="md-ellipsis">
+      What was actually happening
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-the-existing-tests-were-green" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why the existing tests were green
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      How it works now
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How it works now">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      What is stored
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-a-failure-looks-like-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      What a failure looks like now
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#measured-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      Measured behaviour
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Measured behaviour">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-same-binary-quit-and-reopened" class="md-nav__link">
+    <span class="md-ellipsis">
+      A. Same binary, quit and reopened
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-rebuilt-and-re-signed-then-launched" class="md-nav__link">
+    <span class="md-ellipsis">
+      B. Rebuilt and re-signed, then launched
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-the-same-two-on-a-signed-release-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      C. The same two, on a signed Release build
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-has-not-been-verified" class="md-nav__link">
+    <span class="md-ellipsis">
+      What has not been verified
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-cache-restoration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Local cache restoration
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="session-restore">Session restore<a class="headerlink" href="#session-restore" title="Permanent link">&para;</a></h1>
+<p>How InboxSweep remembers a sign-in between launches, what it stores where, and, because the
+two are easy to confuse: what was actually measured versus what is merely expected.</p>
+<hr />
+<h2 id="the-defect-this-document-exists-because-of">The defect this document exists because of<a class="headerlink" href="#the-defect-this-document-exists-because-of" title="Permanent link">&para;</a></h2>
+<p>Through Interval 3, InboxSweep appeared to sign itself out on every relaunch. The working
+hypothesis was that re-signing the app during development changed Keychain access.</p>
+<p><strong>That hypothesis was wrong.</strong> The refresh token was never stored at all, on any launch.</p>
+<h3 id="what-was-actually-happening">What was actually happening<a class="headerlink" href="#what-was-actually-happening" title="Permanent link">&para;</a></h3>
+<p><code>KeychainCredentialStore</code> passed <code>kSecUseDataProtectionKeychain: true</code>. The data protection
+keychain scopes every item to a <em>keychain access group</em>, which an app derives from its
+<code>keychain-access-groups</code> entitlement or, failing that, its <code>com.apple.application-identifier</code>
+entitlement.</p>
+<p>InboxSweep has neither. A macOS app whose only capabilities are App Sandbox and outgoing
+network is signed without a provisioning profile, and the entitlements on the built app are
+exactly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>com.apple.security.app-sandbox
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>com.apple.security.get-task-allow
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>com.apple.security.network.client
+</code></pre></div>
+<p>No access group, so no data-protection write can succeed. Measured from inside the app process:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th><code>kSecUseDataProtectionKeychain</code></th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SecItemAdd</code></td>
+<td><code>true</code></td>
+<td><code>errSecMissingEntitlement</code> (<strong>-34018</strong>)</td>
+</tr>
+<tr>
+<td><code>SecItemCopyMatching</code></td>
+<td><code>true</code></td>
+<td><code>errSecItemNotFound</code> (<strong>-25300</strong>)</td>
+</tr>
+<tr>
+<td><code>SecItemAdd</code></td>
+<td>absent</td>
+<td><code>errSecSuccess</code> (0)</td>
+</tr>
+<tr>
+<td><code>SecItemCopyMatching</code></td>
+<td>absent</td>
+<td><code>errSecSuccess</code> (0)</td>
+</tr>
+</tbody>
+</table>
+<p>Two pieces of error handling then hid it completely:</p>
+<ul>
+<li><code>GmailProvider.connect()</code> wrote the credential with <code>try? credentialStore.save(...)</code>. The
+  <code>-34018</code> was discarded. Sign-in looked perfect.</li>
+<li><code>GmailProvider.restoreConnection()</code> read it with <code>(try? credentialStore.load()) ?? nil</code> and
+  treated <code>nil</code> as "no account": the same answer a genuine first launch produces.</li>
+</ul>
+<p>So the app signed out on <em>every</em> relaunch, rebuilt or not. The correlation with rebuilding was
+coincidental: a developer only relaunches after rebuilding.</p>
+<h3 id="why-the-existing-tests-were-green">Why the existing tests were green<a class="headerlink" href="#why-the-existing-tests-were-green" title="Permanent link">&para;</a></h3>
+<p>Every credential test ran against <code>InMemoryCredentialStore</code>. No <code>SecItem*</code> call was ever made by
+a test, so no test could observe a Keychain that refused every write.</p>
+<hr />
+<h2 id="how-it-works-now">How it works now<a class="headerlink" href="#how-it-works-now" title="Permanent link">&para;</a></h2>
+<p><code>KeychainCredentialStore</code> consults both of macOS's keychains, in preference order, and uses the
+first one <em>this process can actually use</em>:</p>
+<ol>
+<li><strong>Data protection keychain</strong>: preferred. App-scoped by the system rather than by an ACL.
+   Available to a build signed with a provisioning profile that grants an application-identifier
+   or keychain-access-groups entitlement.</li>
+<li><strong>Login (file) keychain</strong>: the fallback. Reachable by any signed app for its own items,
+   protected by the login keychain and an ACL naming this app.</li>
+</ol>
+<p>A save writes to exactly one of them and deletes any copy left in the other, so a build that
+gains the data protection keychain does not leave a stale refresh token behind.</p>
+<p>The distinction that matters is between a keychain this process <strong>cannot use</strong> and one that
+<strong>refuses</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>errSecItemNotFound</code></td>
+<td>Nothing stored here</td>
+<td>Try the next keychain; ultimately <code>nil</code></td>
+</tr>
+<tr>
+<td><code>errSecMissingEntitlement</code>, <code>errSecNotAvailable</code></td>
+<td>Wrong keychain for this process</td>
+<td>Skip it</td>
+</tr>
+<tr>
+<td><code>errSecAuthFailed</code>, <code>errSecInteractionNotAllowed</code>, <code>errSecInteractionRequired</code>, <code>errSecUserCanceled</code></td>
+<td>Refused</td>
+<td><code>CredentialStoreError.accessDenied</code></td>
+</tr>
+<tr>
+<td><code>errSecDecode</code>, <code>errSecInvalidData</code>, or undecodable JSON</td>
+<td>Stored bytes unusable</td>
+<td>Discarded, reported as <code>.malformedStoredData</code></td>
+</tr>
+<tr>
+<td>anything else</td>
+<td>Not recognised</td>
+<td><code>.unhandled(status)</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-is-stored">What is stored<a class="headerlink" href="#what-is-stored" title="Permanent link">&para;</a></h3>
+<p>Only <code>GmailStoredCredentials</code>: the refresh token, the granted scopes, and the account address.
+Access tokens are never persisted: they last about an hour and are cheap to re-obtain, so
+storing them would add exposure for no benefit.</p>
+<p>Accessibility on the data protection keychain is <code>kSecAttrAccessibleAfterFirstUnlock</code>: the token
+is needed at launch without the user present, and never needed while the device is locked. That
+attribute is not meaningful on the file keychain and is not set there.</p>
+<h3 id="what-a-failure-looks-like-now">What a failure looks like now<a class="headerlink" href="#what-a-failure-looks-like-now" title="Permanent link">&para;</a></h3>
+<p><code>MailRestoreOutcome</code> has three cases rather than two, so the app can tell a first launch from a
+failed restore:</p>
+<ul>
+<li><code>.noStoredCredentials</code>, nothing stored. Signed-out screen, silently. The ordinary case.</li>
+<li><code>.restored(account)</code>: a working connection.</li>
+<li><code>.unusable(failure)</code>: something was stored and could not be used. The signed-out screen, plus
+  a <code>SessionNotice</code> saying which of <em>revoked</em>, <em>scopes changed</em>, <em>unreadable</em>, or <em>malformed</em>
+  applies. A provider outage instead gets an error screen with <strong>Try again</strong>, because retrying is
+  the right move and re-authorizing is not.</li>
+</ul>
+<p><code>StoredAuthorizationState</code> covers the other half: a sign-in that succeeded but could not be
+<strong>saved</strong> now shows a notice immediately, while the user is still there to read it, instead of
+being discovered as an unexplained signed-out screen next launch.</p>
+<p><code>MailDisconnectOutcome</code> covers the third: signing <em>out</em>. <code>disconnect()</code> used to return nothing,
+with a <code>try?</code> around both the revoke and the delete. The serious half of that was the delete:
+a Keychain that refuses to remove this app's item leaves the refresh token exactly where it
+was, and the window says "signed out" either way. Three outcomes now:</p>
+<ul>
+<li><code>.complete</code>: the credential is gone and the grant was revoked, or there was none to revoke.
+  No notice.</li>
+<li><code>.grantNotRevoked</code>: gone from this Mac; Google was not reached. A notice says the permission
+  is still listed on the account.</li>
+<li><code>.storedCredentialRetained(reason:)</code>: <strong>the credential is still on this Mac.</strong> A notice names
+  the Keychain Access item to delete and the Google page to withdraw the access on.</li>
+</ul>
+<p>Signing out still always succeeds from the user's side: the session ends and the window clears
+in every case. What changed is that two of the three say what did not happen.</p>
+<p>No error message, notice, or log line contains a refresh token, an access token, or any part of
+one. <code>KeychainCredentialStoreTests</code> and <code>CredentialStoreDiagnosticsTests</code> assert this.</p>
+<hr />
+<h2 id="measured-behaviour">Measured behaviour<a class="headerlink" href="#measured-behaviour" title="Permanent link">&para;</a></h2>
+<p>Two different things, tested separately, because they are not the same test.</p>
+<p>Reproduce either with the self-check, which writes a synthetic marker under its own Keychain
+service, reports what it found, and exits:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>InboxSweep.app/Contents/MacOS/InboxSweep<span class="w"> </span>--keychain-selfcheck
+</code></pre></div>
+<p><code>--keychain-selfcheck-reset</code> removes the marker. Two more modes answer the question a
+successful save cannot, <em>which</em> keychain it went to, given that the fallback is silent:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>InboxSweep.app/Contents/MacOS/InboxSweep<span class="w"> </span>--keychain-probe<span class="w">     </span><span class="c1"># per keychain, no fallback</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>InboxSweep.app/Contents/MacOS/InboxSweep<span class="w"> </span>--keychain-backend<span class="w">   </span><span class="c1"># where the real credential is</span>
+</code></pre></div>
+<p>All four are compiled into Release as well as Debug, because the signed Release app is the
+build whose Keychain behaviour most needs measuring; each is inert without its launch argument,
+none is reachable from any UI, and none can print a token. See
+<a href="../release-verification/">Signed Release verification</a>.</p>
+<h3 id="a-same-binary-quit-and-reopened">A. Same binary, quit and reopened<a class="headerlink" href="#a-same-binary-quit-and-reopened" title="Permanent link">&para;</a></h3>
+<p>Build once, run the same <code>.app</code> repeatedly with no rebuild in between.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>cdhash ecb2e9973d0fc75027b95e3543535b4589f96b98
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>run 1  SELFCHECK stored   keychain=login keychain
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>run 2  SELFCHECK restored keychain=login keychain
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>run 3  SELFCHECK restored keychain=login keychain
+</code></pre></div>
+<p><strong>Restores.</strong> No prompt, no re-authorization.</p>
+<h3 id="b-rebuilt-and-re-signed-then-launched">B. Rebuilt and re-signed, then launched<a class="headerlink" href="#b-rebuilt-and-re-signed-then-launched" title="Permanent link">&para;</a></h3>
+<p>Change a source file, rebuild, re-sign, run the <em>new</em> binary.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>cdhash df7b2f8e58e542d9e5b33c4efe99d421ea55f65c   (different binary)
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>run 4  SELFCHECK restored keychain=login keychain   (marker written by cdhash ecb2e997…)
+</code></pre></div>
+<p><strong>Also restores.</strong> Development re-signing does not break Keychain access, which is what
+disproves the original hypothesis.</p>
+<p>The mechanism is visible in the app's designated requirement:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>identifier "quang.InboxSweep" and anchor apple generic
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  and certificate leaf[subject.CN] = "Apple Development: … (T5G5R8V962)"
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  and certificate 1[field.1.2.840.113635.100.6.2.1] exists
+</code></pre></div>
+<p>It pins the <strong>bundle identifier and the signing certificate</strong>, not the code directory hash. A
+rebuild changes the cdhash and leaves the requirement intact, so the ACL still matches.</p>
+<p>What <em>would</em> break it: signing with a different certificate or team, or changing
+<code>PRODUCT_BUNDLE_IDENTIFIER</code>. Both produce a different designated requirement, and the stored
+item becomes another app's as far as the Keychain is concerned. That is correct behaviour, and
+the app reports it as <code>.credentialStoreUnreadable</code> rather than as a silent sign-out.</p>
+<h3 id="c-the-same-two-on-a-signed-release-build">C. The same two, on a signed Release build<a class="headerlink" href="#c-the-same-two-on-a-signed-release-build" title="Permanent link">&para;</a></h3>
+<p>Both of the above were measured on a <strong>Debug</strong> build. Interval 5 repeated them on a signed,
+sandboxed, hardened-runtime <strong>Release</strong> build, added a per-keychain probe so the backend is
+measured rather than inferred, and recorded the signing state that produces it. Results, the
+exact commands, and the <code>errSecMissingEntitlement (-34018)</code> that keeps the data protection
+keychain out of reach on this machine are in
+<a href="../release-verification/">Signed Release verification</a>.</p>
+<h3 id="what-has-not-been-verified">What has <em>not</em> been verified<a class="headerlink" href="#what-has-not-been-verified" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Distribution builds.</strong> Everything above was measured on locally signed builds with an Apple
+  Development certificate. A Developer ID or App Store build is signed by a different
+  certificate, and one carrying a provisioning profile would use the <strong>data protection
+  keychain</strong> instead. No such certificate is installed on this machine, so that has not been
+  built or tested. The fallback exists precisely so that the code path is the same either way,
+  but "production Keychain persistence is proven" is not a claim this document makes.</li>
+<li><strong>The data protection keychain itself.</strong> Preferred, reached, and refused with a measured
+  status code, never exercised end to end on this app.</li>
+<li><strong>Keychain prompts under a changed signing identity.</strong> Not exercised; re-signing with a
+  <em>different</em> certificate was not tested.</li>
+</ul>
+<hr />
+<h2 id="local-cache-restoration">Local cache restoration<a class="headerlink" href="#local-cache-restoration" title="Permanent link">&para;</a></h2>
+<p>The credential store answers <em>who</em>; <code>FileInboxCacheStore</code> answers <em>what was loaded</em>.</p>
+<ul>
+<li>One JSON file per account, named by a SHA-256 digest of the address, inside the sandboxed
+  container's Application Support directory. Owner-only permissions, excluded from backups.</li>
+<li>At most one account's window is kept. Saving a second account's window deletes the first.</li>
+<li>A cached window is only ever shown <strong>after</strong> a credential restore succeeds, and only for the
+  account that restore produced. A restore that fails shows no cache at all: personal mail is
+  never displayed without the authenticated account it belongs to.</li>
+<li>The file records the account address it was written for, and a window whose address does not
+  match the restored account is discarded rather than shown.</li>
+<li>Proposals are never cached. They are recomputed from the stored metadata on every launch, so a
+  rules change takes effect immediately instead of leaving last week's verdicts on screen.</li>
+<li>A restored window is labelled as one in the header, with how old it is. <strong>Reload</strong> replaces it
+  with a fresh read.</li>
+<li>Disconnecting deletes the file and the Keychain item.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      InboxSweep is released under the MIT Licence.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/quangshuynh/inboxsweep" target="_blank" rel="noopener" title="InboxSweep on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.sections", "navigation.top", "navigation.tracking", "navigation.indexes", "content.code.copy", "toc.follow", "search.suggest", "search.highlight"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+    
+  </body>
+</html>
