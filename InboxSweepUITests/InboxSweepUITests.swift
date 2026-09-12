@@ -97,11 +97,40 @@ final class InboxSweepUITests: XCTestCase {
     @MainActor
     private func launchSampleApp(extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += [UITestLaunchArgument.sampleData, UITestLaunchArgument.deterministicWindow]
+        app.launchArguments += [UITestLaunchArgument.sampleData] + Self.windowArguments
         app.launchArguments += extraArguments
         app.launch()
         waitForDeterministicWindow(app)
         return app
+    }
+
+    /// Whether this run asks the app to put its window on a Space of its own.
+    ///
+    /// On by default, which is what a developer's Mac needs: without it the suite measures the
+    /// desktop rather than the app, and the failures it produces name InboxSweep's own controls
+    /// for windows that belong to other applications.
+    ///
+    /// The environment variable turns it off, and exists so the question *is the workaround
+    /// needed here* can be answered by measurement rather than by argument. It is read from the
+    /// environment rather than baked into a scheme so that one machine can run the suite both
+    /// ways without the code changing between them.
+    ///
+    /// It is a switch on what the harness asks for, never on what a case asserts. Every
+    /// expectation in this file is identical in both modes.
+    ///
+    /// Set it through xcodebuild's `TEST_RUNNER_` prefix, which is how an environment variable
+    /// reaches a UI test runner at all: the runner is launched by the test manager rather than
+    /// by the shell, so a plain export never arrives.
+    ///
+    /// ```bash
+    /// TEST_RUNNER_INBOXSWEEP_UI_TEST_PLAIN_WINDOW=1 xcodebuild ... test
+    /// ```
+    private static var usesDeterministicWindow: Bool {
+        ProcessInfo.processInfo.environment["INBOXSWEEP_UI_TEST_PLAIN_WINDOW"] != "1"
+    }
+
+    private static var windowArguments: [String] {
+        usesDeterministicWindow ? [UITestLaunchArgument.deterministicWindow] : []
     }
 
     /// Waits for the app to say its window reached the state every click in this file depends on.
@@ -131,6 +160,10 @@ final class InboxSweepUITests: XCTestCase {
     @MainActor
     private func waitForDeterministicWindow(_ app: XCUIApplication, timeout: TimeInterval? = nil) {
         front(app)
+        // With the deterministic window turned off there is no phase to wait for, because the
+        // app publishes none. `front(app)` above is what the plain mode gets instead, and it is
+        // the whole of the difference: the same activation any XCTest run performs.
+        guard Self.usesDeterministicWindow else { return }
         let probe = app.descendants(matching: .any)[UITestLaunchArgument.windowStateIdentifier]
         let ready = expectation(
             for: NSPredicate(format: "label == %@", UITestLaunchArgument.windowIsReady),
@@ -405,10 +438,7 @@ final class InboxSweepUITests: XCTestCase {
         // Mac with a saved Gmail sign-in restores it and lands on the dashboard, and the run
         // goes through somebody's real mailbox. The argument swaps the credential store for an
         // empty one and changes nothing else about the screen under test.
-        app.launchArguments += [
-            UITestLaunchArgument.ignoreStoredCredentials,
-            UITestLaunchArgument.deterministicWindow,
-        ]
+        app.launchArguments += [UITestLaunchArgument.ignoreStoredCredentials] + Self.windowArguments
         app.launch()
         waitForDeterministicWindow(app)
 
@@ -601,8 +631,7 @@ final class InboxSweepUITests: XCTestCase {
         app.launchArguments += [
             UITestLaunchArgument.sampleData,
             UITestLaunchArgument.sampleActivity,
-            UITestLaunchArgument.deterministicWindow,
-        ]
+        ] + Self.windowArguments
         app.launch()
         waitForDeterministicWindow(app)
 

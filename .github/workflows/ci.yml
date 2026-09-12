@@ -88,9 +88,13 @@ jobs:
       # is made against a measurement rather than a guess about hosted file systems.
       - name: Measure whether this file system keeps the backup-exclusion flag
         run: |
+          CONTAINER="$HOME/Library/Containers/quang.InboxSweep/Data/tmp"
+          mkdir -p "$CONTAINER"
           cat > /tmp/backup-flag.swift <<'SWIFT'
           import Foundation
-          for base in [FileManager.default.temporaryDirectory, URL.temporaryDirectory] {
+          let container = FileManager.default.homeDirectoryForCurrentUser
+              .appending(path: "Library/Containers/quang.InboxSweep/Data/tmp")
+          for base in [FileManager.default.temporaryDirectory, FileManager.default.homeDirectoryForCurrentUser, container] {
               var url = base.appending(path: "flag-\(UUID().uuidString)")
               try? Data("x".utf8).write(to: url, options: [.atomic])
               var values = URLResourceValues()
@@ -133,6 +137,12 @@ jobs:
       # app is already built. The job still fails if either does.
       - name: UI tests
         if: success() || failure()
+        env:
+          # EXPERIMENT, this run only. Turns the deterministic-window harness off, so the suite
+          # runs the way it would on a machine with nothing protecting it. A previous run has
+          # already measured 20 of 20 with the harness on; this measures whether the harness is
+          # needed here at all. Nothing about what a case asserts changes between the two.
+          TEST_RUNNER_INBOXSWEEP_UI_TEST_PLAIN_WINDOW: "1"
         run: |
           set -o pipefail
           xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
