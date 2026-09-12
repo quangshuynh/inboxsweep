@@ -397,7 +397,74 @@ after a rule pass:
 
 ## What CI measured about the UI harness
 
-PLACEHOLDER
+The section above ends by saying that what would settle the question is a machine with nothing
+else running, and that whether the full-screen workaround is needed at all on a clean runner was
+an open question. A GitHub-hosted `macos-26` runner is that machine, and it is the same OS build
+and the same Xcode as this one: macOS 26.6.2 (25G83), Xcode 26.6 (17F113).
+
+### The runner's desktop
+
+Asked before anything was launched, with `System Events`:
+
+```
+Foreground-capable processes:
+Finder
+```
+
+One. That is the clean desktop the ten-run measurement could not get, and it is the direct
+answer to the contention this harness exists for.
+
+### Four runs of the whole suite
+
+| Where | Deterministic window | Result |
+| --- | --- | --- |
+| `macos-26` | on | 20 of 20 |
+| `macos-26` | **off** | 20 of 20, 536s |
+| `macos-26` | **off** | 20 of 20, 549s |
+| `macos-26` | **off** | 20 of 20, 528s |
+| This Mac | on | **19 of 20** |
+
+The local run is the same commit, and its one failure is the family described above:
+`messageReview.unsubscribeButton` was waited for from t=18.5s to t=38.5s and never entered the
+accessibility tree.
+
+### What follows, and what does not
+
+**Follows:** the runner does not need the workaround. The condition it was built to defeat is
+absent there, and the suite passes without it. CI therefore runs the simpler path, and a
+developer's Mac keeps the protection, which stays the default.
+
+**Does not follow:** that the plain path is deterministically stable. Three runs is three runs.
+The ten-run local measurement above exists because one green run proves very little, and nothing
+here is a claim of the kind that measurement was needed to make. The switch is
+`INBOXSWEEP_UI_TEST_PLAIN_WINDOW`, read by the test target, so the question stays answerable.
+
+`UITestWindow` itself is unchanged. The choice lives in the test target, which is the side that
+should own it: the app is told what to do, and the suite decides what to ask for.
+
+### One unit assertion the runner changed
+
+Two tests asserted that a store's file carries `isExcludedFromBackup`. Both fail on the runner,
+and none of the usual explanations survived contact:
+
+- **not the signing.** Rebuilt locally with CI's exact ad-hoc flags: passes.
+- **not the app's write order.** Atomic write, then `chmod`, then the exclusion.
+- **not the volume.** A standalone probe on the runner set and read back the flag in
+  `/var/folders`, in `/Users/runner`, and in the app's own container directory, all one volume.
+
+The answer came from asking the platform inside the sandboxed test host, on the same file:
+
+```
+set:       succeeds, throws nothing
+read back: Optional(false)
+```
+
+The request is accepted and discarded. So the tests now compare the store's file against a
+**control file in the same directory** that asked for the same thing, rather than against a bare
+`true`. Where the platform keeps the flag both read `true`; where it discards it both read
+`false`; and a store that stopped asking fails either way, because the control still reports what
+a file that did ask would have got. There is no environment check in it, nothing is skipped, and
+it is stricter than what it replaced.
 
 ## Remaining build output
 

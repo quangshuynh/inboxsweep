@@ -81,8 +81,16 @@ applications. The [deterministic window harness](development.md#the-deterministi
 exists because of it, and puts the app on a full-screen Space of its own so there is nothing left
 to be behind.
 
-A hosted runner is the clean-desktop experiment that machine could not provide. What it found is
-recorded in [Signed Release verification](release-verification.md#what-ci-measured-about-the-ui-harness).
+A hosted runner is the clean-desktop experiment that machine could not provide, and it reported
+exactly one foreground-capable process: Finder. The suite passed 20 of 20 there with the harness
+on, and 20 of 20 three times with it **off**, against 19 of 20 for the same commit on the machine
+it was written on.
+
+So the runner does not need the workaround, and CI runs without it while a developer's Mac keeps
+it, which stays the default. Three runs is not a claim that the plain path is deterministically
+stable, and it is not written down as one. The full measurement, including the one unit assertion
+the runner changed, is in
+[Signed Release verification](release-verification.md#what-ci-measured-about-the-ui-harness).
 
 ## Checking that a sign-in survives a relaunch
 

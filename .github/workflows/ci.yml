@@ -140,14 +140,15 @@ jobs:
         if: success() || failure()
         env:
           # The runner does not need the deterministic-window harness, and this is the measurement
-          # rather than an assumption: with it off, the full suite passed 20 of 20 twice, in 536s
-          # and 549s, on a runner whose only foreground-capable process is Finder. With it on it
-          # also passed 20 of 20. On the machine this was written on, the same commit with the
-          # harness on scored 19 of 20.
+          # rather than an assumption: with it off, the full suite passed 20 of 20 three times, in
+          # 536s, 549s, and 528s, on a runner whose only foreground-capable process is Finder.
+          # With it on it also passed 20 of 20. On the machine this was written on, the same
+          # commit with the harness on scored 19 of 20, and the failure was the shape the
+          # Interval 11 note describes.
           #
           # So CI takes the simpler path and a desk keeps its protection, which is the default.
-          # Two runs is not a stability claim; it is two runs, and the switch is here so anyone
-          # can take the measurement again.
+          # Three runs is not a claim of deterministic stability; it is three runs, and the switch
+          # is here so anyone can take the measurement again.
           TEST_RUNNER_INBOXSWEEP_UI_TEST_PLAIN_WINDOW: "1"
         run: |
           set -o pipefail
