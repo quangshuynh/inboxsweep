@@ -148,7 +148,7 @@ InboxSweep.app/Contents/MacOS/InboxSweep --keychain-backend   # where the real c
 All four are compiled into Release as well as Debug, because the signed Release app is the
 build whose Keychain behaviour most needs measuring; each is inert without its launch argument,
 none is reachable from any UI, and none can print a token. See
-[Docs/ReleaseVerification.md](ReleaseVerification.md).
+[Signed Release verification](release-verification.md).
 
 ### A. Same binary, quit and reopened
 
@@ -198,7 +198,7 @@ sandboxed, hardened-runtime **Release** build, added a per-keychain probe so the
 measured rather than inferred, and recorded the signing state that produces it. Results, the
 exact commands, and the `errSecMissingEntitlement (-34018)` that keeps the data protection
 keychain out of reach on this machine are in
-[Docs/ReleaseVerification.md](ReleaseVerification.md).
+[Signed Release verification](release-verification.md).
 
 ### What has *not* been verified
 

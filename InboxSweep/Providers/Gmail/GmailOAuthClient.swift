@@ -197,7 +197,7 @@ nonisolated struct GmailOAuthClient: Sendable {
         case "access_denied":
             "You declined the permission request, so InboxSweep wasn't connected."
         case "invalid_client", "unauthorized_client":
-            "Google rejected this app's OAuth client. Check the client ID in Docs/OAuthSetup.md."
+            "Google rejected this app's OAuth client. Check the client ID against the Connecting Gmail page in the documentation."
         case "invalid_scope":
             "Google rejected the permissions InboxSweep asked for."
         default:

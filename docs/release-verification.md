@@ -395,6 +395,77 @@ after a rule pass:
   into one element, which swallowed two screens' footers while leaving their scrolling content
   addressable. The identifier belongs on the title, which is what the older screens already did.
 
+## What CI measured about the UI harness
+
+The section above ends by saying that what would settle the question is a machine with nothing
+else running, and that whether the full-screen workaround is needed at all on a clean runner was
+an open question. A GitHub-hosted `macos-26` runner is that machine, and it is the same OS build
+and the same Xcode as this one: macOS 26.6.2 (25G83), Xcode 26.6 (17F113).
+
+### The runner's desktop
+
+Asked before anything was launched, with `System Events`:
+
+```
+Foreground-capable processes:
+Finder
+```
+
+One. That is the clean desktop the ten-run measurement could not get, and it is the direct
+answer to the contention this harness exists for.
+
+### Four runs of the whole suite
+
+| Where | Deterministic window | Result |
+| --- | --- | --- |
+| `macos-26` | on | 20 of 20 |
+| `macos-26` | **off** | 20 of 20, 536s |
+| `macos-26` | **off** | 20 of 20, 549s |
+| `macos-26` | **off** | 20 of 20, 528s |
+| This Mac | on | **19 of 20** |
+
+The local run is the same commit, and its one failure is the family described above:
+`messageReview.unsubscribeButton` was waited for from t=18.5s to t=38.5s and never entered the
+accessibility tree.
+
+### What follows, and what does not
+
+**Follows:** the runner does not need the workaround. The condition it was built to defeat is
+absent there, and the suite passes without it. CI therefore runs the simpler path, and a
+developer's Mac keeps the protection, which stays the default.
+
+**Does not follow:** that the plain path is deterministically stable. Three runs is three runs.
+The ten-run local measurement above exists because one green run proves very little, and nothing
+here is a claim of the kind that measurement was needed to make. The switch is
+`INBOXSWEEP_UI_TEST_PLAIN_WINDOW`, read by the test target, so the question stays answerable.
+
+`UITestWindow` itself is unchanged. The choice lives in the test target, which is the side that
+should own it: the app is told what to do, and the suite decides what to ask for.
+
+### One unit assertion the runner changed
+
+Two tests asserted that a store's file carries `isExcludedFromBackup`. Both fail on the runner,
+and none of the usual explanations survived contact:
+
+- **not the signing.** Rebuilt locally with CI's exact ad-hoc flags: passes.
+- **not the app's write order.** Atomic write, then `chmod`, then the exclusion.
+- **not the volume.** A standalone probe on the runner set and read back the flag in
+  `/var/folders`, in `/Users/runner`, and in the app's own container directory, all one volume.
+
+The answer came from asking the platform inside the sandboxed test host, on the same file:
+
+```
+set:       succeeds, throws nothing
+read back: Optional(false)
+```
+
+The request is accepted and discarded. So the tests now compare the store's file against a
+**control file in the same directory** that asked for the same thing, rather than against a bare
+`true`. Where the platform keeps the flag both read `true`; where it discards it both read
+`false`; and a store that stopped asking fails either way, because the control still reports what
+a file that did ask would have got. There is no environment check in it, nothing is skipped, and
+it is stricter than what it replaced.
+
 ## Remaining build output
 
 One line appears in every build and is not a project warning:
@@ -438,21 +509,19 @@ ls "$APP/Contents/embedded.provisionprofile"       # absent on this configuratio
 
 ### Repository text checks
 
-Two one-liners over the files Git actually tracks, so build output, `DerivedData`, and anything
-untracked are outside them by construction.
-
 ```bash
-# No em dash anywhere in tracked text. Expected output: 0
-git ls-files -z | xargs -0 grep -o '\u2014' 2>/dev/null | wc -l
-
-# Nothing token-shaped or account-shaped in tracked files. Expected: no output.
-git ls-files -z | xargs -0 grep -nIE 'ya29\.|1//0|refresh_token|client_secret' 2>/dev/null
+Scripts/check_no_em_dashes.sh
+Scripts/check_privacy.sh
 ```
 
-The first is the check Interval 11 introduced, and it is stated as a command rather than
-automated because there is no CI in this repository yet. The exclusions are exactly what
-`git ls-files` excludes: untracked files, ignored files, and build products. Binary files are
-skipped by `grep` itself, which is why the second one passes `-I`.
+Interval 11 stated both of these as one-liners, because there was no CI in this repository to run
+them. There is now, and they are scripts rather than commands in a document so that the same
+thing runs on a desk and on a runner. Both scan the files Git actually tracks, so build output,
+`DerivedData`, and anything untracked are outside them by construction.
+
+The em dash check taught its own small lesson on the first run: the original version contained a
+literal em dash in its own source and failed on itself, which is the check working. It now builds
+the character with `printf` instead.
 
 Every one of the launch modes above is inert without its launch argument, reaches no UI, and
 prints no token, refresh token, authorization code, or client secret. The probes write synthetic markers

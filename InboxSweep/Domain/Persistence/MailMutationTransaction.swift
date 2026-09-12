@@ -324,7 +324,7 @@ nonisolated struct MailMutationTransaction: Identifiable, Hashable, Sendable {
     /// So a rule-driven archive is recorded, counted, listed, and attributed to its rule, and it
     /// carries no undo. Nothing is fabricated in its place: Activity says there is none and says
     /// why, and archived mail is still in All Mail where Gmail's own **Move to Inbox** will put it
-    /// back. See ``Docs/Rules.md``.
+    /// back. See `docs/rules.md`.
     static func completing(
         _ receipt: MailArchiveSetReceipt,
         at occurredAt: Date,

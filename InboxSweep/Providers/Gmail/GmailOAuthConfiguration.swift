@@ -8,7 +8,7 @@ import Foundation
 /// there is nothing secret-shaped that could be committed to this repository by accident.
 ///
 /// The client ID itself is not a credential, but it is still account-specific, so it is
-/// supplied at runtime rather than hard-coded. See `Docs/OAuthSetup.md`.
+/// supplied at runtime rather than hard-coded. See `docs/gmail-integration.md`.
 nonisolated struct GmailOAuthConfiguration: Hashable, Sendable {
 
     /// Environment variable checked first, which is the convenient path when running from Xcode.
@@ -75,8 +75,8 @@ nonisolated extension GmailOAuthConfiguration {
 
     /// Explains, in the UI, what is missing and roughly how to fix it.
     static let missingConfigurationReason = """
-        No Google OAuth client ID was found. Add one by following Docs/OAuthSetup.md, either \
-        set the \(clientIDEnvironmentKey) environment variable or drop your \
-        \(propertyListName).plist into InboxSweep/Config/.
+        No Google OAuth client ID was found. Either set the \(clientIDEnvironmentKey) \
+        environment variable or drop your \(propertyListName).plist into InboxSweep/Config/. \
+        The Connecting Gmail page in the documentation walks through creating one.
         """
 }

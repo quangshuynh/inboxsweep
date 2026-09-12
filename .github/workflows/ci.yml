@@ -1,0 +1,207 @@
+name: CI
+
+# Every branch, because the point is to find out before a pull request exists. A same-repo pull
+# request shows the push run's checks, so a pull_request trigger here would only run everything
+# twice, and macOS minutes on a private repository are billed at ten times the rate.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The project's deployment target is macOS 26.5, so it needs the 26.5 SDK or newer.
+  # Xcode 26.6 is the default on the macos-26 image and is what the project is developed
+  # against; naming it here makes the toolchain a stated fact rather than whatever the
+  # image happens to default to.
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+  PROJECT: InboxSweep.xcodeproj
+  SCHEME: InboxSweep
+  DESTINATION: platform=macOS,arch=arm64
+  # No Apple Developer identity exists on a hosted runner, and the app does not need one to
+  # build or to run its own tests. Ad-hoc signing is still real signing: arm64 macOS refuses
+  # to launch an unsigned bundle, so the test host has to carry a signature.
+  SIGNING: >-
+    CODE_SIGN_STYLE=Manual
+    CODE_SIGN_IDENTITY=-
+    CODE_SIGNING_REQUIRED=YES
+    CODE_SIGNING_ALLOWED=YES
+    DEVELOPMENT_TEAM=
+
+jobs:
+  build:
+    name: Build (Debug and Release)
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Record the toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks | grep macosx
+
+      - name: Clean Debug build
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination "$DESTINATION" \
+            -derivedDataPath DerivedData-Debug \
+            $SIGNING clean build
+
+      - name: Clean Release build
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Release -destination "$DESTINATION" \
+            -derivedDataPath DerivedData-Release \
+            $SIGNING clean build
+
+  test:
+    name: Tests (unit and UI)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Record the toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      # The clean-desktop question this suite has been arguing with for three intervals.
+      # Whatever else is on the runner's screen is recorded before anything is launched, so a
+      # UI result can be read against what was actually in front of it.
+      - name: Record what else owns the screen
+        run: |
+          echo "Foreground-capable processes:"
+          osascript -e 'tell application "System Events" to get name of every application process whose background only is false' || true
+          echo "Displays:"
+          system_profiler SPDisplaysDataType 2>/dev/null | grep -E "Resolution|UI Looks" || true
+
+      # Two unit tests assert that a store's file is excluded from Time Machine backups, and
+      # both fail here while passing on a development Mac under the same ad-hoc signing. This
+      # asks the runner the question directly, in isolation from the app, so the next decision
+      # is made against a measurement rather than a guess about hosted file systems.
+      - name: Measure whether this file system keeps the backup-exclusion flag
+        run: |
+          CONTAINER="$HOME/Library/Containers/quang.InboxSweep/Data/tmp"
+          mkdir -p "$CONTAINER"
+          cat > /tmp/backup-flag.swift <<'SWIFT'
+          import Foundation
+          let container = FileManager.default.homeDirectoryForCurrentUser
+              .appending(path: "Library/Containers/quang.InboxSweep/Data/tmp")
+          for base in [FileManager.default.temporaryDirectory, FileManager.default.homeDirectoryForCurrentUser, container] {
+              var url = base.appending(path: "flag-\(UUID().uuidString)")
+              try? Data("x".utf8).write(to: url, options: [.atomic])
+              var values = URLResourceValues()
+              values.isExcludedFromBackup = true
+              do { try url.setResourceValues(values) } catch { print("set failed: \(error)") }
+              let readBack = try? url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+              print("path: \(url.path)")
+              print("read back: \(String(describing: readBack))")
+              let attrs = try? FileManager.default.attributesOfFileSystem(forPath: url.path)
+              print("volume: \(String(describing: attrs?[.systemNumber] ?? "?"))")
+              try? FileManager.default.removeItem(at: url)
+          }
+          SWIFT
+          swift /tmp/backup-flag.swift || true
+          echo "Mounts:"
+          mount | head -20
+          echo "tmutil destination:"
+          tmutil destinationinfo 2>&1 | head -5 || true
+
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination "$DESTINATION" \
+            -derivedDataPath DerivedData \
+            $SIGNING build-for-testing
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination "$DESTINATION" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath UnitTests.xcresult \
+            -only-testing:InboxSweepTests \
+            $SIGNING test-without-building
+
+      # Runs even when the unit suite failed. Two suites answer two different questions, and a
+      # job that stops at the first one throws away half the run's evidence for no saving: the
+      # app is already built. The job still fails if either does.
+      - name: UI tests
+        if: success() || failure()
+        env:
+          # The runner does not need the deterministic-window harness, and this is the measurement
+          # rather than an assumption: with it off, the full suite passed 20 of 20 three times, in
+          # 536s, 549s, and 528s, on a runner whose only foreground-capable process is Finder.
+          # With it on it also passed 20 of 20. On the machine this was written on, the same
+          # commit with the harness on scored 19 of 20, and the failure was the shape the
+          # Interval 11 note describes.
+          #
+          # So CI takes the simpler path and a desk keeps its protection, which is the default.
+          # Three runs is not a claim of deterministic stability; it is three runs, and the switch
+          # is here so anyone can take the measurement again.
+          TEST_RUNNER_INBOXSWEEP_UI_TEST_PLAIN_WINDOW: "1"
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Debug -destination "$DESTINATION" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath UITests.xcresult \
+            -only-testing:InboxSweepUITests \
+            $SIGNING test-without-building
+
+      - name: Upload result bundles
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresults
+          path: "*.xcresult"
+          retention-days: 7
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - run: pip install -r requirements-docs.txt
+
+      # --strict turns MkDocs' warnings into failures, which is what makes a broken internal
+      # link, a missing image, or a page left out of the navigation a red build rather than a
+      # page nobody notices.
+      - name: Build the docs site
+        run: mkdocs build --strict
+
+      # Covers the two things --strict does not: an image referenced from raw HTML, which
+      # MkDocs never parses as a link, and a link to a file shipped alongside the docs.
+      - name: Check that every referenced local file exists
+        run: python3 Scripts/check_docs_links.py
+
+  hygiene:
+    name: Hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: No em dashes in tracked text
+        run: Scripts/check_no_em_dashes.sh
+
+      - name: No real mailbox data or credentials in tracked files
+        run: Scripts/check_privacy.sh

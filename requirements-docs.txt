@@ -1,0 +1,9 @@
+# Documentation site dependencies.
+#
+# Pinned exactly. A docs build that silently changes its own output between two runs of the
+# same commit is not something anyone should have to debug, and `mkdocs build --strict` only
+# guards the content: the generator has to be pinned separately.
+#
+# Install with: pip install -r requirements-docs.txt
+mkdocs==1.6.1
+mkdocs-material==9.5.49

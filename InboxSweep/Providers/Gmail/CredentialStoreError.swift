@@ -49,7 +49,7 @@ nonisolated struct KeychainStatus: Hashable, Sendable, CustomStringConvertible {
     /// `errSecMissingEntitlement` from every data-protection-keychain write. That is not a
     /// failure of the save (it is the wrong keychain for this process) which is why
     /// ``KeychainCredentialStore`` treats it as a reason to try the next one rather than as an
-    /// error to report. See `Docs/SessionRestore.md`.
+    /// error to report. See `docs/session-restore.md`.
     var isKeychainUnavailable: Bool {
         rawValue == errSecMissingEntitlement || rawValue == errSecNotAvailable
     }

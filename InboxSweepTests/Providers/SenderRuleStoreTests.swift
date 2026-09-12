@@ -100,7 +100,14 @@ struct SenderRuleStoreTests {
             try FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.posixPermissions] as? NSNumber
         )
         #expect(permissions.int16Value == 0o600)
-        #expect(try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        // Compared against a control file in the same directory rather than against `true`,
+        // because the platform does not always keep this flag and says nothing when it does not.
+        // See `backupExclusionTakesEffect(in:)`, which is where the measurement is written down.
+        #expect(
+            try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+                == backupExclusionTakesEffect(in: directory),
+            "The rules file should be excluded from backups wherever a file in the same directory can be: \(file.path(percentEncoded: false))"
+        )
 
         // The file name is a digest, so a directory listing does not name the account.
         #expect(!file.lastPathComponent.contains("@"))

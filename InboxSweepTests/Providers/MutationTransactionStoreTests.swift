@@ -181,7 +181,13 @@ struct MutationTransactionStoreTests {
             try FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.posixPermissions] as? NSNumber
         )
         #expect(permissions.int16Value == 0o600)
-        #expect(try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        // Compared against a control file in the same directory rather than against `true`. See
+        // `backupExclusionTakesEffect(in:)`.
+        #expect(
+            try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+                == backupExclusionTakesEffect(in: directory),
+            "The history file should be excluded from backups wherever a file in the same directory can be: \(file.path(percentEncoded: false))"
+        )
     }
 
     @Test("The file names messages and never describes them")

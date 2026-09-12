@@ -1,0 +1,105 @@
+site_name: InboxSweep
+site_description: A privacy-conscious Gmail cleanup assistant for macOS. It recommends; you authorize.
+site_url: https://quangshuynh.github.io/inboxsweep/
+repo_url: https://github.com/quangshuynh/inboxsweep
+repo_name: quangshuynh/inboxsweep
+copyright: InboxSweep is released under the MIT Licence.
+
+docs_dir: docs
+site_dir: site
+
+# Every warning is an error. A relative link that points at nothing, a nav entry naming a page
+# that does not exist, and a docs file no page links to all fail the build rather than shipping.
+strict: true
+
+theme:
+  name: material
+  language: en
+  logo: images/inboxsweep-logo.png
+  favicon: images/inboxsweep-logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - content.code.copy
+    - toc.follow
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  # Material's own icon set, used for the card icons on the homepage. Part of the theme
+  # already installed, not an extra dependency.
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+# Warnings that --strict promotes to errors. `absolute_links` matters most: a link written as
+# /privacy-and-security/ works on the deployed site and breaks in every local preview and on
+# any path prefix, so it should never be written in the first place.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Install and run: getting-started.md
+      - Connecting Gmail: gmail-integration.md
+  - Using InboxSweep:
+      - Cleanup proposals: cleanup-proposals.md
+      - Archiving and undo: archive-and-undo.md
+      - Unsubscribing: unsubscribe.md
+      - Sender rules: rules.md
+      - Activity: activity.md
+  - Under the hood:
+      - Architecture: architecture.md
+      - Privacy and security: privacy-and-security.md
+  - Development:
+      - Testing: testing.md
+      - Working on InboxSweep: development.md
+      - Session restore: session-restore.md
+      - Signed Release verification: release-verification.md
+  - Reference:
+      - Limitations: limitations.md
+      - Roadmap: roadmap.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/quangshuynh/inboxsweep
+      name: InboxSweep on GitHub
