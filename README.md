@@ -9,14 +9,20 @@
   It recommends; you authorize.</strong>
 </p>
 
+<!--
+  The CI badge below renders once this repository is public. GitHub serves workflow badges for a
+  private repository only to an authenticated session, and a README image is fetched through an
+  unauthenticated proxy, so it shows as a broken image until then. The link works either way.
+
+  There is deliberately no badge for the documentation site: GitHub Pages is not enabled on this
+  repository, so a badge for it would claim something that is not true.
+-->
 <p align="center">
   <a href="https://github.com/quangshuynh/inboxsweep/actions/workflows/ci.yml"><img src="https://github.com/quangshuynh/inboxsweep/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/quangshuynh/inboxsweep/actions/workflows/pages.yml"><img src="https://github.com/quangshuynh/inboxsweep/actions/workflows/pages.yml/badge.svg" alt="Docs"></a>
   <img src="https://img.shields.io/badge/platform-macOS%2026.5%2B-lightgrey" alt="macOS 26.5+">
   <img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6">
+  <img src="https://img.shields.io/badge/licence-MIT-blue" alt="MIT licence">
 </p>
-
-<p align="center"><strong><a href="https://quangshuynh.github.io/inboxsweep/">Read the documentation</a></strong></p>
 
 ---
 
@@ -65,8 +71,8 @@ It is a native SwiftUI app with no server, no account, no analytics, and no AI.
 - **No Google token ever leaves Google.** A one-click unsubscribe goes to the sender's own host
   over a transport that has never held a credential.
 
-Full detail, including [what is not claimed](https://quangshuynh.github.io/inboxsweep/privacy-and-security/#what-is-not-claimed),
-is on the [Privacy and security](https://quangshuynh.github.io/inboxsweep/privacy-and-security/)
+Full detail, including [what is not claimed](docs/privacy-and-security.md#what-is-not-claimed),
+is on the [Privacy and security](docs/privacy-and-security.md)
 page.
 
 ## Quick start
@@ -93,25 +99,34 @@ xcodebuild -project InboxSweep.xcodeproj -scheme InboxSweep \
 ```
 
 To connect a real account, follow
-[Connecting Gmail](https://quangshuynh.github.io/inboxsweep/gmail-integration/).
+[Connecting Gmail](docs/gmail-integration.md).
 
 ## Documentation
 
-Everything beyond this page lives at **<https://quangshuynh.github.io/inboxsweep/>**.
+Everything beyond this page lives in [`docs/`](docs/), built as a site with MkDocs:
+
+```bash
+pip install -r requirements-docs.txt
+mkdocs serve
+```
+
+GitHub Pages is not enabled on this repository yet, so there is no hosted copy to link. The
+deploy workflow is committed and ready; turning on **Settings > Pages > Source: GitHub Actions**
+publishes it to `https://quangshuynh.github.io/inboxsweep/`.
 
 | | |
 | --- | --- |
-| [Install and run](https://quangshuynh.github.io/inboxsweep/getting-started/) | Requirements, building, first connect |
-| [Connecting Gmail](https://quangshuynh.github.io/inboxsweep/gmail-integration/) | OAuth setup, and what each scope means |
-| [Cleanup proposals](https://quangshuynh.github.io/inboxsweep/cleanup-proposals/) | How a recommendation is calculated, and why it cannot execute |
-| [Archiving and undo](https://quangshuynh.github.io/inboxsweep/archive-and-undo/) | The confirmation, partial failure, undo lifetime |
-| [Unsubscribing](https://quangshuynh.github.io/inboxsweep/unsubscribe/) | The five states, the three mechanisms, the redirect policy |
-| [Sender rules](https://quangshuynh.github.io/inboxsweep/rules/) | The one standing authorization, and its bounds |
-| [Activity](https://quangshuynh.github.io/inboxsweep/activity/) | What is recorded, and what deliberately is not |
-| [Architecture](https://quangshuynh.github.io/inboxsweep/architecture/) | Layers, seams, and the decisions behind them |
-| [Privacy and security](https://quangshuynh.github.io/inboxsweep/privacy-and-security/) | Every claim, and the limits of each |
-| [Testing](https://quangshuynh.github.io/inboxsweep/testing/) | The suites, CI, and what a clean runner measured |
-| [Limitations](https://quangshuynh.github.io/inboxsweep/limitations/) | What it cannot do |
+| [Install and run](docs/getting-started.md) | Requirements, building, first connect |
+| [Connecting Gmail](docs/gmail-integration.md) | OAuth setup, and what each scope means |
+| [Cleanup proposals](docs/cleanup-proposals.md) | How a recommendation is calculated, and why it cannot execute |
+| [Archiving and undo](docs/archive-and-undo.md) | The confirmation, partial failure, undo lifetime |
+| [Unsubscribing](docs/unsubscribe.md) | The five states, the three mechanisms, the redirect policy |
+| [Sender rules](docs/rules.md) | The one standing authorization, and its bounds |
+| [Activity](docs/activity.md) | What is recorded, and what deliberately is not |
+| [Architecture](docs/architecture.md) | Layers, seams, and the decisions behind them |
+| [Privacy and security](docs/privacy-and-security.md) | Every claim, and the limits of each |
+| [Testing](docs/testing.md) | The suites, CI, and what a clean runner measured |
+| [Limitations](docs/limitations.md) | What it cannot do |
 
 ## Status
 

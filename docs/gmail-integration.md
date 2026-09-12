@@ -88,8 +88,9 @@ Either option works. The environment variable takes precedence.
     directory is gitignored**, and a check in CI fails the build if anything under it is ever
     committed.
 
-    To write the file by hand, `Docs/GoogleOAuthClient.example.plist` in the repository is a
-    template. Only `CLIENT_ID` is required; `REVERSED_CLIENT_ID` is derived from it when absent.
+    To write the file by hand, [`GoogleOAuthClient.example.plist`](examples/GoogleOAuthClient.example.plist)
+    is a template. Only `CLIENT_ID` is required; `REVERSED_CLIENT_ID` is derived from it when
+    absent.
 
 === "Environment variable"
 
