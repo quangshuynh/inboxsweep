@@ -16,8 +16,14 @@ fail() { echo "FAIL: $1"; status=1; }
 # --- Addresses -------------------------------------------------------------------------------
 # Fixtures use the domains RFC 2606 and RFC 6761 reserve for documentation, so anything else is
 # either a real correspondent or a real service that should not be written to.
+#
+# Asset filenames are the one shape that reads as an address without being one: Apple writes a
+# retina variant as icon_16x16@2x.png, which is an at-sign followed by something ending in a
+# file extension. A trailing extension is never a top-level domain, so dropping those leaves
+# the addresses and nothing else.
 if addresses=$(git grep -hoI -E "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" -- . 2>/dev/null); then
     foreign=$(echo "$addresses" | sed 's/.*@//' | tr '[:upper:]' '[:lower:]' | sort -u |
+        grep -v -E "\.(png|jpg|jpeg|gif|heic|svg|pdf|json|plist)$" |
         grep -v -E "(^|\.)(example\.(com|org|net|invalid)|example|test|localhost|invalid)$" || true)
     if [ -n "$foreign" ]; then
         fail "email addresses outside the reserved documentation domains:"

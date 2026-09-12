@@ -89,3 +89,6 @@ build/
 
 ## macOS
 .DS_Store
+
+# MkDocs build output; the Pages workflow builds this on a runner.
+site/
