@@ -9,8 +9,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The character is built rather than written, because this file is tracked text too and a
+# literal one here would make the check fail on itself. That is not hypothetical: the first
+# version of this script did exactly that, and CI caught it.
+#
+# printf rather than a bash 4.2 Unicode escape, because macOS still ships bash 3.2.
+em_dash=$(printf '\xe2\x80\x94')
+
 # -I skips binary files, so the logo and any other asset are not scanned as text.
-if matches=$(git grep -nI $'—' -- . 2>/dev/null); then
+if matches=$(git grep -nI -- "$em_dash" 2>/dev/null); then
     echo "Em dashes (U+2014) found in tracked text:"
     echo "$matches"
     echo

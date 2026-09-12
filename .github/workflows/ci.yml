@@ -82,6 +82,34 @@ jobs:
           echo "Displays:"
           system_profiler SPDisplaysDataType 2>/dev/null | grep -E "Resolution|UI Looks" || true
 
+      # Two unit tests assert that a store's file is excluded from Time Machine backups, and
+      # both fail here while passing on a development Mac under the same ad-hoc signing. This
+      # asks the runner the question directly, in isolation from the app, so the next decision
+      # is made against a measurement rather than a guess about hosted file systems.
+      - name: Measure whether this file system keeps the backup-exclusion flag
+        run: |
+          cat > /tmp/backup-flag.swift <<'SWIFT'
+          import Foundation
+          for base in [FileManager.default.temporaryDirectory, URL.temporaryDirectory] {
+              var url = base.appending(path: "flag-\(UUID().uuidString)")
+              try? Data("x".utf8).write(to: url, options: [.atomic])
+              var values = URLResourceValues()
+              values.isExcludedFromBackup = true
+              do { try url.setResourceValues(values) } catch { print("set failed: \(error)") }
+              let readBack = try? url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+              print("path: \(url.path)")
+              print("read back: \(String(describing: readBack))")
+              let attrs = try? FileManager.default.attributesOfFileSystem(forPath: url.path)
+              print("volume: \(String(describing: attrs?[.systemNumber] ?? "?"))")
+              try? FileManager.default.removeItem(at: url)
+          }
+          SWIFT
+          swift /tmp/backup-flag.swift || true
+          echo "Mounts:"
+          mount | head -20
+          echo "tmutil destination:"
+          tmutil destinationinfo 2>&1 | head -5 || true
+
       - name: Build for testing
         run: |
           set -o pipefail
@@ -100,7 +128,11 @@ jobs:
             -only-testing:InboxSweepTests \
             $SIGNING test-without-building
 
+      # Runs even when the unit suite failed. Two suites answer two different questions, and a
+      # job that stops at the first one throws away half the run's evidence for no saving: the
+      # app is already built. The job still fails if either does.
       - name: UI tests
+        if: success() || failure()
         run: |
           set -o pipefail
           xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
