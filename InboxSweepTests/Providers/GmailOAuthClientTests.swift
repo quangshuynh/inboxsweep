@@ -228,7 +228,7 @@ struct GmailOAuthClientTests {
         let error = await #expect(throws: MailProviderError.self) {
             _ = try await client(transport: transport).refresh(using: "refresh-token")
         }
-        #expect(try #require(error?.failureReason).contains("OAuthSetup"))
+        #expect(try #require(error?.failureReason).contains("Connecting Gmail"))
     }
 
     @Test("An unreadable token response is reported as malformed, not as a denial")

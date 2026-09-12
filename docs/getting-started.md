@@ -18,7 +18,7 @@ anything in the code needs it. See [Limitations](limitations.md).
 ## Build and run
 
 ```bash
-git clone https://github.com/quangshuynh/InboxSweep.git
+git clone https://github.com/quangshuynh/inboxsweep.git
 cd InboxSweep
 open InboxSweep.xcodeproj
 ```
@@ -44,7 +44,7 @@ xcodebuild -project InboxSweep.xcodeproj -scheme InboxSweep \
 ```
 
 Both configurations are built clean on every push by
-[CI](https://github.com/quangshuynh/InboxSweep/actions/workflows/ci.yml). See
+[CI](https://github.com/quangshuynh/inboxsweep/actions/workflows/ci.yml). See
 [Testing](testing.md) for how to run the suites.
 
 ## Connecting a real mailbox

@@ -395,6 +395,10 @@ after a rule pass:
   into one element, which swallowed two screens' footers while leaving their scrolling content
   addressable. The identifier belongs on the title, which is what the older screens already did.
 
+## What CI measured about the UI harness
+
+PLACEHOLDER
+
 ## Remaining build output
 
 One line appears in every build and is not a project warning:
@@ -438,21 +442,19 @@ ls "$APP/Contents/embedded.provisionprofile"       # absent on this configuratio
 
 ### Repository text checks
 
-Two one-liners over the files Git actually tracks, so build output, `DerivedData`, and anything
-untracked are outside them by construction.
-
 ```bash
-# No em dash anywhere in tracked text. Expected output: 0
-git ls-files -z | xargs -0 grep -o '\u2014' 2>/dev/null | wc -l
-
-# Nothing token-shaped or account-shaped in tracked files. Expected: no output.
-git ls-files -z | xargs -0 grep -nIE 'ya29\.|1//0|refresh_token|client_secret' 2>/dev/null
+Scripts/check_no_em_dashes.sh
+Scripts/check_privacy.sh
 ```
 
-The first is the check Interval 11 introduced, and it is stated as a command rather than
-automated because there is no CI in this repository yet. The exclusions are exactly what
-`git ls-files` excludes: untracked files, ignored files, and build products. Binary files are
-skipped by `grep` itself, which is why the second one passes `-I`.
+Interval 11 stated both of these as one-liners, because there was no CI in this repository to run
+them. There is now, and they are scripts rather than commands in a document so that the same
+thing runs on a desk and on a runner. Both scan the files Git actually tracks, so build output,
+`DerivedData`, and anything untracked are outside them by construction.
+
+The em dash check taught its own small lesson on the first run: the original version contained a
+literal em dash in its own source and failed on itself, which is the check working. It now builds
+the character with `printf` instead.
 
 Every one of the launch modes above is inert without its launch argument, reaches no UI, and
 prints no token, refresh token, authorization code, or client secret. The probes write synthetic markers

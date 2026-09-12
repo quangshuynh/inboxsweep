@@ -41,7 +41,7 @@ import Foundation
 /// address per rule, plus the display value already shown on screen. No subjects, no message
 /// identifiers, no counts, no history of what the rule has matched. The file is owner-readable
 /// only, excluded from backups, and deleted with the account when the user disconnects, exactly
-/// like the other two. ``Docs/Rules.md`` says all of this in the same words.
+/// like the other two. `docs/rules.md` says all of this in the same words.
 nonisolated struct SenderRule: Identifiable, Hashable, Sendable {
 
     /// Stable identity for this rule, used by the UI and by the Activity entries it produces.

@@ -1,8 +1,8 @@
 site_name: InboxSweep
 site_description: A privacy-conscious Gmail cleanup assistant for macOS. It recommends; you authorize.
-site_url: https://quangshuynh.github.io/InboxSweep/
-repo_url: https://github.com/quangshuynh/InboxSweep
-repo_name: quangshuynh/InboxSweep
+site_url: https://quangshuynh.github.io/inboxsweep/
+repo_url: https://github.com/quangshuynh/inboxsweep
+repo_name: quangshuynh/inboxsweep
 copyright: InboxSweep is released under the MIT Licence.
 
 docs_dir: docs
@@ -92,6 +92,8 @@ nav:
   - Development:
       - Testing: testing.md
       - Working on InboxSweep: development.md
+      - Session restore: session-restore.md
+      - Signed Release verification: release-verification.md
   - Reference:
       - Limitations: limitations.md
       - Roadmap: roadmap.md
@@ -99,5 +101,5 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/quangshuynh/InboxSweep
+      link: https://github.com/quangshuynh/inboxsweep
       name: InboxSweep on GitHub

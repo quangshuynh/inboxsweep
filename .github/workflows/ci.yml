@@ -150,6 +150,32 @@ jobs:
           path: "*.xcresult"
           retention-days: 7
 
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - run: pip install -r requirements-docs.txt
+
+      # --strict turns MkDocs' warnings into failures, which is what makes a broken internal
+      # link, a missing image, or a page left out of the navigation a red build rather than a
+      # page nobody notices.
+      - name: Build the docs site
+        run: mkdocs build --strict
+
+      # Covers the two things --strict does not: an image referenced from raw HTML, which
+      # MkDocs never parses as a link, and a link to a file shipped alongside the docs.
+      - name: Check that every referenced local file exists
+        run: python3 Scripts/check_docs_links.py
+
   hygiene:
     name: Hygiene
     runs-on: ubuntu-latest
